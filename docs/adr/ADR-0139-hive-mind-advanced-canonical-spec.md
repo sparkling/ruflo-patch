@@ -1,19 +1,15 @@
-# ADR-0139: hive-mind-advanced — canonical specification per upstream guidance registry
+---
+status: proposed
+date: 2026-05-04
+tags: [hive-mind, skills, guidance, spec]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: Proposed (2026-05-04). Documents the **intended** behaviour of the `hive-mind-advanced` skill / `hive-mind` capability area as defined by upstream `ruvnet/ruflo`. Does **not** describe what the implementation actually does today (gap analysis is deferred to a follow-up ADR — see §Open follow-ups).
-- **Date**: 2026-05-04
-- **Deciders**: Henrik Pettersen
-- **Related**:
-  - ADR-0114 §Done U5 (council protocol delivery gap)
-  - ADR-0131 (worker failure protocol)
-  - ADR-0132 (sub-queen failure escalation)
-  - ADR-0138 (shipping working council template)
-  - Memory `feedback-hive-mind-advanced-exists.md` (skill is real, ADRs are fork-side)
-  - Memory `feedback-hive-orchestration-pattern.md` (designed pattern vs empirical gap)
-  - Memory `reference-hive-runtime-crosstalk-pattern.md` (in-repo file-based fallback, validated 2026-05-04)
-- **Scope**: One capability area (`hive-mind`) and one skill (`hive-mind-advanced`) as enumerated by upstream `guidance-tools.ts`. Treats the upstream registry as ground truth.
+# hive-mind-advanced — canonical specification per upstream guidance registry
 
-## Context
+## Context and Problem Statement
 
 We need a single, citable, **upstream-grounded** reference for what the `hive-mind-advanced` skill is supposed to do. Three problems forced this:
 
@@ -23,7 +19,7 @@ We need a single, citable, **upstream-grounded** reference for what the `hive-mi
 
 Before we can write the gap-analysis ADR ("here is what the skill *actually* does and where it falls short"), we need an authoritative "here is what it is *supposed* to do" record. That record is this ADR.
 
-## Provenance — why we trust this as upstream-canonical
+### Provenance — why we trust this as upstream-canonical
 
 The data block in §Decision below is reproduced verbatim from the output of the `mcp__ruflo__guidance_capabilities` MCP tool, filtered to the `hive-mind` area. That tool's data source is a TypeScript object literal in:
 
@@ -44,7 +40,7 @@ Verification performed 2026-05-04:
 
 Conclusion: the `hive-mind` capability block in `guidance-tools.ts` is **upstream-canonical and unmodified by the fork**. Citing this block as "what upstream says the skill does" is sound.
 
-### Correction (2026-05-05): SKILL.md body is also upstream-canonical
+#### Correction (2026-05-05): SKILL.md body is also upstream-canonical
 
 An earlier draft of this ADR claimed the skill body at `plugins/ruflo-hive-mind/skills/hive-mind-advanced/SKILL.md` was fork-authored, on the grounds that no `plugins/ruflo-hive-mind/` directory exists in upstream `ruvnet/ruflo`. **That inference was wrong.** The plugin envelope path is fork-only, but the SKILL.md content lives upstream under different paths. Live inventory:
 
@@ -69,7 +65,17 @@ The narrowly-true earlier observation — that no `plugins/ruflo-hive-mind/` dir
 
 **Conclusion (corrected):** both the registry block AND the skill body are upstream-authored. There is no upstream/fork asymmetry to document. Earlier wording to that effect is hereby retracted.
 
-## Decision — the canonical spec, verbatim
+## Considered Options
+
+* **Pin the upstream guidance registry block as the canonical spec (chosen)** — treat the machine-readable registry as ground truth for what the capability is, with the SKILL.md body as implementation guidance that may be wrong.
+
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "Pin the upstream guidance registry block as the canonical spec", because the registry is the smallest, most stable, most auditable, machine-readable description of what the hive-mind capability is — and intent must be pinned before any gap analysis can be done without circularity.
+
+### The canonical spec, verbatim
 
 The upstream `guidance_capabilities(area: "hive-mind", format: "detailed")` MCP tool response is:
 
@@ -185,32 +191,17 @@ The registry block is small on purpose. It explicitly does not declare:
 
 Many of these appear in SKILL.md prose. None of them are part of the upstream registry's declared surface. When the SKILL.md and the registry disagree on what the capability does, **the registry is the spec; the skill body is implementation guidance and may be wrong**.
 
-## Rationale
+### Consequences
 
-- The upstream guidance registry is the smallest, most stable, machine-readable description of what the hive-mind capability is. It backs four MCP tools (`guidance_capabilities`, `guidance_recommend`, `guidance_quickref`, `guidance_workflow`) that the rest of the system uses for self-description.
-- Compared to the SKILL.md, the registry block has been touched only twice: original write (`2287d8b616`) and an unrelated codemod (`e047b99f9`). It is therefore the most auditable source of truth.
-- Compared to memory entries documenting empirical behaviour, the registry expresses **intent** — what the substrate was designed to provide. We need both, but intent comes first; gap analysis only makes sense relative to a stated intent.
-- Pinning intent now lets us write the gap ADR without circularity (the gap ADR was previously trying to be both the intent record and the gap record at once, which is why it kept drifting toward over-specification).
+* Good, because a single, citable, upstream-grounded "this is what the capability is supposed to do" record exists. Future ADRs cite this one rather than re-deriving the spec from SKILL.md prose.
+* Good, because the provenance check (§Provenance) is a template for future "is this upstream or fork?" questions. Same six-line check works for any capability area.
+* Good, because it establishes the precedent that **the registry is the spec; the skill body is implementation guidance**. Resolves prior conflicts where SKILL.md prose diverged from registry data.
+* Good, because it anchors all subsequent work — the gap ADR, any skill-rewrite, any ADR documenting fork-side runtime additions — to a fixed reference point that won't shift.
+* Bad, because the registry block is intentionally small. Anyone expecting a full behavioural spec from this ADR will be disappointed; the spec is "consensus on a proposition, six tools, six commands, five agents, one skill." Everything beyond that is gap territory.
+* Bad, because pinning to the registry gives upstream `ruvnet` veto power over what counts as "in spec." If the fork wants to extend the capability (e.g. add real inter-worker dialectic), that has to be either (a) registered as a fork-side capability extension with its own ADR, or (b) framed as out-of-scope of this capability area entirely.
+* Neutral, because the earlier-claimed "upstream owns the registry, fork owns the skill body" asymmetry was retracted in §Provenance after the live inventory check. Both surfaces are upstream-authored. The fork owns only the plugin envelope and a minor overlay — see §Provenance Correction (2026-05-05).
 
-## Consequences
-
-### Positive
-
-- A single, citable, upstream-grounded "this is what the capability is supposed to do" record exists. Future ADRs cite this one rather than re-deriving the spec from SKILL.md prose.
-- The provenance check (§Provenance) is a template for future "is this upstream or fork?" questions. Same six-line check works for any capability area.
-- Establishes the precedent that **the registry is the spec; the skill body is implementation guidance**. Resolves prior conflicts where SKILL.md prose diverged from registry data.
-- Anchors all subsequent work — the gap ADR, any skill-rewrite, any ADR documenting fork-side runtime additions — to a fixed reference point that won't shift.
-
-### Negative
-
-- The registry block is intentionally small. Anyone expecting a full behavioural spec from this ADR will be disappointed; the spec is "consensus on a proposition, six tools, six commands, five agents, one skill." Everything beyond that is gap territory.
-- Pinning to the registry gives upstream `ruvnet` veto power over what counts as "in spec." If the fork wants to extend the capability (e.g. add real inter-worker dialectic), that has to be either (a) registered as a fork-side capability extension with its own ADR, or (b) framed as out-of-scope of this capability area entirely.
-
-### Neutral
-
-- The earlier-claimed "upstream owns the registry, fork owns the skill body" asymmetry was retracted in §Provenance after the live inventory check. Both surfaces are upstream-authored. The fork owns only the plugin envelope and a minor overlay — see §Provenance Correction (2026-05-05).
-
-## Verification
+### Confirmation
 
 To re-confirm this ADR's claim that the spec is upstream-canonical, run:
 
@@ -235,6 +226,13 @@ mcp__ruflo__guidance_capabilities({ area: "hive-mind", format: "detailed" })
 
 If any of those drift in future, this ADR is the trigger to either update the spec or open a sup­erseding ADR.
 
+## Rationale
+
+- The upstream guidance registry is the smallest, most stable, machine-readable description of what the hive-mind capability is. It backs four MCP tools (`guidance_capabilities`, `guidance_recommend`, `guidance_quickref`, `guidance_workflow`) that the rest of the system uses for self-description.
+- Compared to the SKILL.md, the registry block has been touched only twice: original write (`2287d8b616`) and an unrelated codemod (`e047b99f9`). It is therefore the most auditable source of truth.
+- Compared to memory entries documenting empirical behaviour, the registry expresses **intent** — what the substrate was designed to provide. We need both, but intent comes first; gap analysis only makes sense relative to a stated intent.
+- Pinning intent now lets us write the gap ADR without circularity (the gap ADR was previously trying to be both the intent record and the gap record at once, which is why it kept drifting toward over-specification).
+
 ## Open follow-ups
 
 These are explicitly **out of scope** of this ADR. Each warrants its own follow-up ADR:
@@ -246,3 +244,11 @@ These are explicitly **out of scope** of this ADR. Each warrants its own follow-
 3. **Capability extension ADR (optional).** If the fork wants to formally support free-form inter-worker dialectic / structured council transcripts, that's a new capability area (e.g. `hive-mind-council` or extending `swarm-orchestration`) with its own registry entry. Not a modification of `hive-mind`. Decision: do we want this, and if so, fork-side or upstream PR? (Memory `feedback-no-upstream-donate-backs.md` says fork-side.)
 
 4. **Skill ↔ registry coupling.** Both the registry and the SKILL.md body are upstream-authored (per §Provenance Correction). The fork ships an overlay (plugin envelope + `allowed-tools:` + codemod brand-rename). If upstream bumps the registry's `skills` list or revises the SKILL.md body, the fork's overlay must be re-applied; no automation enforces this today.
+
+## More Information
+
+Original status: Proposed (2026-05-04). Documents the **intended** behaviour of the `hive-mind-advanced` skill / `hive-mind` capability area as defined by upstream `ruvnet/ruflo`. Does **not** describe what the implementation actually does today (gap analysis is deferred to a follow-up ADR — see §Open follow-ups).
+
+This ADR relates to ADR-0114 §Done U5 (council protocol delivery gap), ADR-0131 (worker failure protocol), ADR-0132 (sub-queen failure escalation), ADR-0138 (shipping working council template), memory `feedback-hive-mind-advanced-exists.md` (skill is real, ADRs are fork-side), memory `feedback-hive-orchestration-pattern.md` (designed pattern vs empirical gap), and memory `reference-hive-runtime-crosstalk-pattern.md` (in-repo file-based fallback, validated 2026-05-04).
+
+Scope: One capability area (`hive-mind`) and one skill (`hive-mind-advanced`) as enumerated by upstream `guidance-tools.ts`. Treats the upstream registry as ground truth.

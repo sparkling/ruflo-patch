@@ -1,12 +1,15 @@
-# ADR-0058: Memory, Learning & Storage — Deep Analysis
+---
+status: superseded
+date: 2026-04-04
+tags: [memory, learning, storage, audit]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: Superseded by ADR-0059, ADR-0083, ADR-0086, ADR-0094
-- **Date**: 2026-04-04
-- **Updated**: 2026-04-21 (status flipped from "Active (living document)" — substance absorbed, see Status Update 2026-04-21)
-- **Deciders**: ruflo-patch maintainers
-- **Methodology**: SPARC + multi-agent swarm analysis (4 hives, 30+ agents)
+# Memory, Learning & Storage — Deep Analysis
 
-## Context
+## Context and Problem Statement
 
 This ADR documents the findings from a comprehensive swarm-assisted audit of the ruflo memory, learning, and storage subsystems. It traces root causes across both upstream repos (ruflo, agentic-flow) and the ruflo-patch pipeline, cross-referencing ADRs, patches, commits, and upstream issues.
 
@@ -288,3 +291,7 @@ Reordered based on architecture understanding: fix the drain first, then the cac
 3. The "8 persistence mechanisms" list is obsolete — sidecar JSON files were eliminated per ADR-0085.
 
 Keep this document for its historical diagnostic value (the P0 drain bug was correctly identified here first), but do not treat it as authoritative current architecture.
+
+## More Information
+
+This audit was recorded by the ruflo-patch maintainers using SPARC + multi-agent swarm analysis (4 hives, 30+ agents). Original status: "Superseded by ADR-0059, ADR-0083, ADR-0086, ADR-0094"; dated 2026-04-04; updated 2026-04-21 (status flipped from "Active (living document)" — substance absorbed). This document is superseded by ADR-0059, ADR-0083, ADR-0086, and ADR-0094.

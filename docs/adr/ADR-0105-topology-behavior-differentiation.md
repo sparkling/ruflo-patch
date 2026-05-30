@@ -1,20 +1,15 @@
-# ADR-0105: Topology behavior differentiation
+---
+status: accepted
+date: 2026-04-29
+tags: [hive-mind, topology, swarm, coordination]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: Accepted (Option C, 2026-05-02); behavioural dispatch superseded by ADR-0128 (T10 complete in ADR-0118 §Status, 2026-05-03). Original investigation residuals: none.
-- **Date**: 2026-04-29 (promoted 2026-05-01)
-- **Roadmap**: ADR-0103 item 1
-- **Scope**: hive-mind topology semantics (`hierarchical` / `mesh` /
-  `hierarchical-mesh` / `adaptive`).
+# Topology behavior differentiation
 
-### Implementation note (2026-05-03)
-
-State layer wired and behavioural dispatch shipped via T10/ADR-0128. Wire points:
-
-- `forks/ruflo/v3/@claude-flow/swarm/src/topology-manager.ts:1-656` — TopologyManager state layer (adjacency list, leader election, role-indexed maps)
-- `forks/ruflo/v3/@claude-flow/swarm/src/unified-coordinator.ts:139,170` — TopologyManager imported and instantiated by UnifiedSwarmCoordinator
-- `forks/ruflo/v3/@claude-flow/cli/src/commands/hive-mind.ts:91-137` — per-topology coordination-protocol blocks at the worker-spawn dispatch site (ADR-0128 ownership)
-
-## Context
+## Context and Problem Statement
 
 README §Swarm Coordination promises:
 - "Coordination | Queen, Swarm, Consensus | Manages agent teams (Raft, Byzantine, Gossip)"
@@ -87,7 +82,7 @@ Overlap: `mesh` and `hierarchical`. Mismatched: README's `hierarchical-mesh` ≈
 - ❌ Label alignment: README claims four topologies that don't all match the code's four.
 - ❌ Behavior: today, topology is a prompt string the Queen reads.
 
-## Decision options
+## Considered Options
 
 ### Option A — Wire-up (substantive fix)
 
@@ -142,7 +137,46 @@ migration stalled.
 
 Effort estimate: between A and B.
 
-## Test plan
+## Decision Outcome
+
+Chosen option: "Option C (hybrid) consuming both orphaned/upstream primitives", because wiring `TopologyManager` as an authoritative state-tracking layer makes the `--topology` field non-mendacious (it becomes a state-managed value with leader-election semantics instead of a prompt-string echo) with low blast radius, while keeping the working prompt-driven Queen as the actual coordination mechanism and unblocking ADR-0107 and ADR-0109.
+
+Ship **Option C (hybrid)** consuming **both** orphaned/upstream primitives. They sit at different abstraction layers and are complementary, not substitutes:
+
+1. **`swarm/src/topology-manager.ts`** (656 LOC, currently orphaned in fork's swarm package — own it on next merge per ADR-0111 §"Orphaned `swarm/src/` classes — per-class disposition") — provides the **in-process swarm coordination state layer**: `addNode/removeNode/electLeader/rebalance` + adjacency list + role index over an EventEmitter. This is where "who's the current leader, how are nodes connected, when do we rebalance" live. Wire it as state-tracking only:
+   - Instantiate per hive on the MCP server side
+   - Persist state via `withHiveStoreLock` (the same primitive ADR-0098 + ADR-0104 §5 already use)
+   - Workers register via `mcp__ruflo__hive-mind_memory({action:'set'})` — extend the §6 worker-coordination contract from ADR-0104 with a `hive-mind_register` step
+   - `mcp__ruflo__hive-mind_status` returns the **authoritative** topology type + node list (not just an echo of CLI flags)
+   - Estimated: ~50-80 LOC of glue + paired acceptance tests per ADR-0097
+
+2. **`v3/@claude-flow/cli/src/ruvector/graph-backend.ts`** (upstream ADR-087, NAPI-RS via `@ruvector/graph-node`, 10× faster than WASM — adopt on the upstream merge per ADR-0111 §"Cross-fork merge order" step 2 group F) — provides the **persistent agent-relationship graph layer**: `addNode / addEdge / addHyperedge / getNeighbors(nodeId, hops) / recordCausalEdge / recordCollaboration / recordSwarmTeam`. This is where "which agents have collaborated, causal edges between events, swarm team membership over time" live.
+
+**Why both, not one or the other**:
+
+- TopologyManager is **per-hive runtime state** (resets between sessions, EventEmitter-driven, in-memory + JSON-persisted via our lock)
+- `graph-backend.ts` is **cross-hive durable history** (NAPI-backed graph DB, persistent across sessions, query language for k-hop traversal)
+- Picking one obscures a real layer. ADR-0107 (Queen types) and ADR-0109 (worker failure) both want pieces of each — Queen types want authoritative topology view (TopologyManager) and cross-collaboration history (graph-backend); worker-failure handling wants leader-election (TopologyManager) and "which workers historically completed similar tasks" (graph-backend).
+
+**Earlier framing was wrong**: an earlier draft of this ADR + ADR-0111 said "consume `graph-backend.ts`, leave TopologyManager as `@internal`." That muddied the layers. Corrected here.
+
+**Out-of-scope per-class items** (preserved from §Out of scope, restated for clarity):
+
+- `swarm/src/queen-coordinator.ts` (2030 LOC) — **don't wire**. Conflicts with ADR-0104's working architecture (Queen IS a `claude` subprocess, not a TS class). Mark `// @internal — V2→V3 migration target, superseded by ADR-0104 prompt-driven Queen`.
+- `swarm/src/consensus/{raft,gossip,index}.ts` + `byzantine.ts` (~3500-4500 LOC combined) — **don't wire intra-hive**; preserve as `@internal — federated cross-hive infrastructure (see ADR-0106 federation track)`. Trust model in a single hive doesn't justify them. Cross-machine federation will need them — re-implementing is wasteful when 4000+ tested LOC exists.
+
+### Consequences
+
+* Good, because the blast radius is low (state-tracking only; doesn't touch the working prompt-driven Queen).
+* Good, because it makes the topology field **non-mendacious**: today `--topology hierarchical-mesh` is a prompt-string echo; after this ADR, it's an authoritative state-managed value with leader-election semantics.
+* Good, because it unblocks ADR-0107 (Queen types — authoritative topology view) and ADR-0109 (fault tolerance — leader-election + collaboration history) without committing to full Option A.
+* Good, because it provides the regression-test surface (`_status` returns authoritative topology) the harness needs to detect drift.
+* Good, because it honors ADR-0111's per-class disposition: TopologyManager wired, QueenCoordinator parked, ConsensusEngine reserved for federation.
+* Neutral, because a follow-up ADR (ADR-0105b or similar) can later decide whether to push to full Option A (per-topology routing semantics like ring-pass / mesh-broadcast / hierarchical-subtree-visibility) or accept the hybrid as the long-term shape.
+
+### Confirmation
+
+#### Test plan
 
 For whichever option ships:
 
@@ -225,38 +259,14 @@ If Option B (doc-only):
 - Whether to deprecate the orphaned `UnifiedSwarmCoordinator` — separate
   cleanup ADR if Option B wins.
 
-## Recommendation
+## More Information
 
-Ship **Option C (hybrid)** consuming **both** orphaned/upstream primitives. They sit at different abstraction layers and are complementary, not substitutes:
+Status: Accepted (Option C, 2026-05-02); behavioural dispatch superseded by ADR-0128 (T10 complete in ADR-0118 §Status, 2026-05-03). Original investigation residuals: none. Dated 2026-04-29 (promoted 2026-05-01). Roadmap: ADR-0103 item 1. Scope: hive-mind topology semantics (`hierarchical` / `mesh` / `hierarchical-mesh` / `adaptive`).
 
-1. **`swarm/src/topology-manager.ts`** (656 LOC, currently orphaned in fork's swarm package — own it on next merge per ADR-0111 §"Orphaned `swarm/src/` classes — per-class disposition") — provides the **in-process swarm coordination state layer**: `addNode/removeNode/electLeader/rebalance` + adjacency list + role index over an EventEmitter. This is where "who's the current leader, how are nodes connected, when do we rebalance" live. Wire it as state-tracking only:
-   - Instantiate per hive on the MCP server side
-   - Persist state via `withHiveStoreLock` (the same primitive ADR-0098 + ADR-0104 §5 already use)
-   - Workers register via `mcp__ruflo__hive-mind_memory({action:'set'})` — extend the §6 worker-coordination contract from ADR-0104 with a `hive-mind_register` step
-   - `mcp__ruflo__hive-mind_status` returns the **authoritative** topology type + node list (not just an echo of CLI flags)
-   - Estimated: ~50-80 LOC of glue + paired acceptance tests per ADR-0097
+### Implementation note (2026-05-03)
 
-2. **`v3/@claude-flow/cli/src/ruvector/graph-backend.ts`** (upstream ADR-087, NAPI-RS via `@ruvector/graph-node`, 10× faster than WASM — adopt on the upstream merge per ADR-0111 §"Cross-fork merge order" step 2 group F) — provides the **persistent agent-relationship graph layer**: `addNode / addEdge / addHyperedge / getNeighbors(nodeId, hops) / recordCausalEdge / recordCollaboration / recordSwarmTeam`. This is where "which agents have collaborated, causal edges between events, swarm team membership over time" live.
+State layer wired and behavioural dispatch shipped via T10/ADR-0128. Wire points:
 
-**Why both, not one or the other**:
-
-- TopologyManager is **per-hive runtime state** (resets between sessions, EventEmitter-driven, in-memory + JSON-persisted via our lock)
-- `graph-backend.ts` is **cross-hive durable history** (NAPI-backed graph DB, persistent across sessions, query language for k-hop traversal)
-- Picking one obscures a real layer. ADR-0107 (Queen types) and ADR-0109 (worker failure) both want pieces of each — Queen types want authoritative topology view (TopologyManager) and cross-collaboration history (graph-backend); worker-failure handling wants leader-election (TopologyManager) and "which workers historically completed similar tasks" (graph-backend).
-
-**Earlier framing was wrong**: an earlier draft of this ADR + ADR-0111 said "consume `graph-backend.ts`, leave TopologyManager as `@internal`." That muddied the layers. Corrected here.
-
-**Out-of-scope per-class items** (preserved from §Out of scope, restated for clarity):
-
-- `swarm/src/queen-coordinator.ts` (2030 LOC) — **don't wire**. Conflicts with ADR-0104's working architecture (Queen IS a `claude` subprocess, not a TS class). Mark `// @internal — V2→V3 migration target, superseded by ADR-0104 prompt-driven Queen`.
-- `swarm/src/consensus/{raft,gossip,index}.ts` + `byzantine.ts` (~3500-4500 LOC combined) — **don't wire intra-hive**; preserve as `@internal — federated cross-hive infrastructure (see ADR-0106 federation track)`. Trust model in a single hive doesn't justify them. Cross-machine federation will need them — re-implementing is wasteful when 4000+ tested LOC exists.
-
-**Rationale for Option C with both primitives**:
-
-- Low blast radius (state-tracking only; doesn't touch the working prompt-driven Queen)
-- Makes the topology field **non-mendacious**: today `--topology hierarchical-mesh` is a prompt-string echo; after this ADR, it's an authoritative state-managed value with leader-election semantics
-- Unblocks ADR-0107 (Queen types — authoritative topology view) and ADR-0109 (fault tolerance — leader-election + collaboration history) without committing to full Option A
-- Provides the regression-test surface (`_status` returns authoritative topology) the harness needs to detect drift
-- Honors ADR-0111's per-class disposition: TopologyManager wired, QueenCoordinator parked, ConsensusEngine reserved for federation
-
-A follow-up ADR (ADR-0105b or similar) can decide whether to push to full Option A (per-topology routing semantics like ring-pass / mesh-broadcast / hierarchical-subtree-visibility) or accept the hybrid as the long-term shape.
+- `forks/ruflo/v3/@claude-flow/swarm/src/topology-manager.ts:1-656` — TopologyManager state layer (adjacency list, leader election, role-indexed maps)
+- `forks/ruflo/v3/@claude-flow/swarm/src/unified-coordinator.ts:139,170` — TopologyManager imported and instantiated by UnifiedSwarmCoordinator
+- `forks/ruflo/v3/@claude-flow/cli/src/commands/hive-mind.ts:91-137` — per-topology coordination-protocol blocks at the worker-spawn dispatch site (ADR-0128 ownership)

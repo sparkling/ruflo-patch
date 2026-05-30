@@ -1,11 +1,9 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-24
-implemented: 2026-05-28
-tags: [audit-followup, plugins, marketplace, honesty, doa, phantom-tools, integrity-lint, ct-o]
+tags: [audit-followup, plugins, marketplace, honesty]
 supersedes: []
-depends-on: [0143, 0201, 0210, 0233, 0235]
+depends-on: [ADR-0143, ADR-0201, ADR-0210, ADR-0233, ADR-0235]
 implements: []
 ---
 
@@ -33,7 +31,7 @@ implements: []
 
 # Plugin marketplace integrity and honesty (CT-O)
 
-## Context
+## Context and Problem Statement
 
 [[ADR-0233]] §CT-O ("Plugin marketplace honesty / wiring") consolidates the
 nine slice-07 audit findings that remain after [[ADR-0235]] (CT-B) absorbed
@@ -264,7 +262,7 @@ Applied per finding-cluster per [[feedback-remediation-adr-preflight]].
 
 All four pre-flight checks pass per cluster. Proceed to Decision.
 
-## Considered options
+## Considered Options
 
 ### Option A — Marketplace integrity lint only
 
@@ -338,7 +336,9 @@ decision tree:
   a behaviour change visible to anyone who scripted the marketplace
   contents.
 
-## Decision
+## Decision Outcome
+
+Chosen option: "Combination of Options A + C, with a narrow codemod-style edit for F-07-004", because each of the three CT-O classes (integrity, DOA, description) gets its natural remedy and the combination closes all 9 findings without forcing one mechanism to do work it is wrong-shaped for.
 
 **Chosen: combination of Options A + C, with a narrow codemod-style edit
 for F-07-004.** The three CT-O classes (integrity, DOA, description) each
@@ -447,27 +447,27 @@ Acceptance criteria after this ADR lands:
 9. **F-07-010 (no idempotency hooks NOTE)**: No acceptance gate in this
    ADR; deferred to future plugin-lifecycle ADR.
 
-## Consequences
+### Consequences
 
-* **Good**, because the two CRITICAL DOA / phantom findings (F-07-001,
+* Good, because the two CRITICAL DOA / phantom findings (F-07-001,
   F-07-002) get [[ADR-0210]]-conformant dispositions — implement-or-delete,
   not label — and the marketplace stops advertising structurally
   unreachable functionality.
-* **Good**, because the marketplace integrity lint converts the audit's
+* Good, because the marketplace integrity lint converts the audit's
   one-time slice-07 manual cross-check into a build-time gate that future
   upstream merges cannot regress past without tripping. Same defence-shape
   as [[ADR-0235]]'s brand lint, applied to the plugin layer.
-* **Good**, because the per-plugin description rewrites (F-07-006,
+* Good, because the per-plugin description rewrites (F-07-006,
   F-07-007) apply [[ADR-0210]]'s description-honesty principle to the
   human-marketing layer (marketplace manifest), not just the LLM-facing
   `description` field. The marketplace user makes install decisions on
   this prose; the operator-over-trust risk is the human analogue of the
   LLM-selection layer ADR-0210 already governs.
-* **Good**, because F-07-004's fix lands at fork source where the
+* Good, because F-07-004's fix lands at fork source where the
   marketplace ships from, so it actually reaches users (the codemod's
   build-temp rewrite never did, because plugins ship via git-relative
   paths in `marketplace.json`, not via npm tarballs).
-* **Bad**, because the preferred F-07-001 disposition (delete the plugin
+* Bad, because the preferred F-07-001 disposition (delete the plugin
   from `marketplace.json` + delete the tree) is a behaviour change
   anyone who scripted "all plugins listed in marketplace.json" against
   the fork must accommodate. The fallback (b) preserves the entry but
@@ -475,20 +475,20 @@ Acceptance criteria after this ADR lands:
   (manifest entry advertising structurally unreachable functionality) is
   worse than either disposition. [[feedback-skip-accepted-as-squelch]]
   rules out the "leave it as-is and accept" third option.
-* **Bad**, because the per-plugin hand-edits (F-07-002 description,
+* Bad, because the per-plugin hand-edits (F-07-002 description,
   F-07-006 descriptions, F-07-007 description) diverge from upstream
   `ruvnet/ruflo` prose. The merge tax at next upstream sync is bounded
   (string fields in JSON manifests, easy to triage in `git mergetool`)
   but real. [[feedback-update-integration-ledger]] requires recording
   each rewrite in `docs/upstream/INTEGRATION-LEDGER.md` so the next
   upstream-sync agent does not re-introduce the upstream phrasing.
-* **Bad**, because F-07-008 is deferred without a clear unblock path.
+* Bad, because F-07-008 is deferred without a clear unblock path.
   The runtime verification (does `claude plugin install` rewrite paths?)
   is cheap to perform — a single sandbox `claude plugin install ruflo-cost-tracker@ruflo`
   + grep — but does not fit in this ADR's scope. Implementer should run
   the probe and either close (i) or schedule the rewrite (ii) before
   the next plugin-related audit.
-* **Neutral**, because the marketplace integrity lint adds a fork-only
+* Neutral, because the marketplace integrity lint adds a fork-only
   test that runs on every `npm run test:pipeline`. Cost is bounded (file
   walks, no network), but the test file joins the existing
   `tests/pipeline/` corpus and must be maintained as plugins evolve.
@@ -514,6 +514,7 @@ Acceptance criteria after this ADR lands:
 
 ## More information
 
+* Original status: accepted 2026-05-24; the decided work was implemented on 2026-05-28.
 * **[[ADR-0233]]** §CT-O — parent theme; lists the 10 slice-07 findings (9
   in this ADR's scope; F-07-003 owned by [[ADR-0235]]).
 * **[[ADR-0210]]** — stub-honesty mandate (implement / restore / delete, not

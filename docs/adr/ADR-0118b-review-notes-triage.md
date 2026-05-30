@@ -1,8 +1,17 @@
-# ADR-0118 Review Notes Triage
+---
+status: accepted
+date: 2026-05-02
+tags: [hive-mind, triage, tracker]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: Living tracker (per ADR-0094 pattern)
-- **Date**: 2026-05-02 (initial); resolved 2026-05-02 by 15-agent triage
-- **Purpose**: Consolidates open questions surfaced during MADR/SPARC critique of ADR-0119–ADR-0128.
+# Review Notes Triage
+
+## Context and Problem Statement
+
+This is a living tracker (per the ADR-0094 pattern) that consolidates open questions surfaced during MADR/SPARC critique of ADR-0119–ADR-0128. The questions were resolved on 2026-05-02 by a 15-agent triage. This document records the triage buckets, the resolved Henrik decisions, the per-row auto-resolutions, the deferred rows, and the resolution log.
 
 ## Summary after triage
 
@@ -135,8 +144,11 @@ These remain in the tracker pending a concrete trigger:
 | 2026-05-02 | 52 | Dependency graph direction | Already done |
 | 2026-05-02 | 54 | Sub-queen failure R8 paragraph | Pending ADR-0109 edit |
 
-## References
+## More Information
 
+Original status: Living tracker (per ADR-0094 pattern). Date: 2026-05-02 (initial); resolved 2026-05-02 by 15-agent triage. Purpose: Consolidates open questions surfaced during MADR/SPARC critique of ADR-0119–ADR-0128.
+
+References:
 - ADR-0118 — hive-mind runtime gaps tracker (parent)
 - ADR-0119 through ADR-0128 — per-task ADRs whose review notes are consolidated here
 - `feedback-no-fallbacks.md` — fail-loud requirement underlying H1, H3, rows 1, 16, 40

@@ -1,13 +1,15 @@
-# ADR-0127: Hive-Mind T9 — Adaptive topology with load-based optimization and auto-scaling
+---
+status: accepted
+date: 2026-05-02
+tags: [hive-mind, topology, autoscaling]
+supersedes: []
+depends-on: [ADR-0116, ADR-0118, ADR-0125, ADR-0128]
+implements: []
+---
 
-- **Status**: **Implemented (2026-05-03)** per ADR-0118 §Status (T9 complete).
-- **Date**: 2026-05-02
-- **Deciders**: Henrik Pettersen
-- **Depends on**: ADR-0116 (hive-mind marketplace plugin), ADR-0118 (hive-mind runtime gaps tracker), ADR-0125 (T7 — Adaptive queen-type), ADR-0128 (T10 — topology runtime; provides `swarm.mutateTopology()` dispatch surface this ADR mutates into)
-- **Related**: ADR-0114 (3-layer hive architecture — substrate/protocol/execution), ADR-0105 (topology behavior differentiation; marks `queen-coordinator.ts` as `@internal` — see Review notes), ADR-0104 (prompt-driven Queen architecture)
-- **Scope**: Fork-side artifact for `sparkling/ruflo` distribution. Per `feedback-no-upstream-donate-backs.md`, this stays on `sparkling/main`; we do not file a PR against `ruvnet/ruflo`.
+# Hive-Mind T9 — Adaptive topology with load-based optimization and auto-scaling
 
-## Context
+## Context and Problem Statement
 
 ADR-0116's verification matrix row "Adaptive topology" flagged the gap: the marketplace plugin README advertises load-based optimization and auto-scaling, but the runtime carries the claim only as a config flag. Concretely:
 
@@ -39,39 +41,6 @@ This ADR escalates T9 ahead of implementation, rather than landing it as a §T9 
 - **Option B — Event-driven from queue depth (no poll, no timer).** Coordinator emits `HealthReport` only when worker queue depth crosses a threshold. No background loop, no interval timer, no idle ticking.
 - **Option C — Declarative thresholds in config table (no runtime, no learning).** Operator declares thresholds in `swarm.config.json`; coordinator enforces them mechanically without queen involvement. No autonomous decision plane; ship the surface as configuration only.
 
-## Pros and Cons of the Options
-
-### Option A — Poll loop + queen-side consumer (CHOSEN)
-
-- Pro: protocol-layer authority is centralised in one new module (`adaptive-loop.ts`); no parallel control plane in coordinator
-- Pro: dampening / settle window / flip-rate ceiling all explicit and centralised in the loop's tick predicate (one place, not three)
-- Pro: `HealthReport` shape gives the consumer full picture (queue percentiles, idle count, CoV, breach duration, flips-in-window) for combined decisions
-- Pro: routes through ADR-0114 protocol layer cleanly (coordinator → event → consumer → mutation)
-- Con: poll interval introduces latency (preliminary 5s) between threshold breach and action
-- Con: idle ticking even under steady-state load
-- Con: consumer unreachable blocks scaling; loop must halt loudly, not fall back
-- Con: requires a new TS module, not just inline coordinator changes — T7's prompt-only shape forces this (see §Cross-task dependency posture)
-
-### Option B — Event-driven from queue depth
-
-- Pro: zero latency on threshold breach (event fires the moment queue depth crosses)
-- Pro: no idle work
-- Pro: with a bounded debounce buffer (single timer per axis, fired only on sustained state), Option B converges on Option A's behaviour with finer-grained reaction; the gap closes if the 5s poll proves too coarse in practice. This is genuinely competitive, not strawman.
-- Con: dampening must live somewhere. Option A puts it in the loop's settle predicate (one place). Option B's "buffered event consumer" reintroduces a timer per axis (queue depth, CoV, idle count) and an explicit settle window across them — three timers + cross-axis coordination, not one.
-- Con: queue depth alone misses the uneven-load topology trigger (CoV is a population stat computed across the worker set, not an edge event on a single worker's queue). Option B has to either run a second polling pass for CoV (defeating the "no poll" pro) or accept that topology mutation is poll-driven while scaling is event-driven (split control surface).
-- Con: "split control surface" matters because the global settle window applies across scale + topology actions; a split design has to coordinate the timer and the event-debouncer manually. Option A does this for free in one tick.
-
-Reconsider B if (a) the 5s poll proves too coarse for scale reaction during real load tests, AND (b) the buffered debounce can be expressed without re-introducing the cross-axis settle-window coordination problem.
-
-### Option C — Declarative thresholds, no runtime
-
-- Pro: no autonomous control surface — operator owns every decision
-- Pro: zero oscillation risk; nothing fires without config
-- Pro: simplest implementation
-- Con: doesn't satisfy USERGUIDE contract ("auto-scaling")
-- Con: no learning, no adaptation; static config can't track load patterns
-- Con: parks the gap permanently; ADR-0116 row never lifts
-
 ## Decision Outcome
 
 **Chosen option: A — poll loop + queen-side consumer**, because:
@@ -83,24 +52,89 @@ Reconsider B if (a) the 5s poll proves too coarse for scale reaction during real
 
 Options B and C fail on dampening / contract grounds respectively. **B is reconsidered if** (a) the 5s poll interval proves too coarse for scale reaction during real load tests AND (b) the buffered-debounce design can be expressed without re-introducing cross-axis settle-window coordination — both must hold, not either. **C is reconsidered only if** autonomous control is removed from the USERGUIDE contract; this would also lift the ADR-0116 verification matrix row to "documented as manual config" rather than satisfied.
 
-## Consequences
+**Convert the `autoScaling` boolean flag into a runtime control loop that polls `_status` health metrics and acts on them.** The loop has three responsibilities, in order of escalation:
 
-### Positive
+1. **Worker count adjustment** (lowest risk): scale up when queue depth exceeds a high-water threshold; scale down idle workers when activity drops below a low-water threshold.
+2. **Topology mutation** (high risk; gated by T10): emit a switch decision from `hierarchical` to `mesh` when load CoV exceeds the high threshold; from `mesh` to `hierarchical` when CoV drops below the low threshold. Until T10 lands `swarm.mutateTopology()`, mutation calls return a not-implemented marker; decision emission is exercised end-to-end. Once T10 is green, mutations are real.
+3. **Hysteresis, dampening, and flip-rate circuit-breaker** (safety control): three predicates on every action — sustained crossing for the dampening duration, global settle window since last action, AND a max-flips-per-window ceiling that halts the loop on adversarial input. Default values are stated below as **preliminary** — they may need their own ADR if contested.
 
-- Protocol-layer authority centralised in `adaptive-loop.ts`; no parallel control plane in `unified-coordinator.ts`; no behavioural re-wiring of ADR-0105's parked `queen-coordinator.ts`
-- Hysteresis, dampening, AND flip-rate ceiling explicit and centralised in one tick predicate; no scattered threshold checks
-- `HealthReport` shape (extended type-only at line 183) gives the consumer combined view for cross-axis decisions (scale + topology); existing `monitorSwarmHealth()` source reused, not parallelised
-- ADR-0114 layering preserved (coordinator observes → consumer decides → coordinator executes); ADR-0105 layering preserved (queen-coordinator.ts is type-extension only)
-- Annotation-lift path clear: scaling component closes the ADR-0116 row's scale half once T9 acceptance is green; topology half closes once T10 lands `swarm.mutateTopology()`
+The decision-maker is a NEW TS module (`adaptive-loop.ts`), not the LLM-driven adaptive queen prompt T7 produces. T7 is prompt-only and has no programmatic surface; the consumer here lives on the queen's side of the coordinator boundary (per ADR-0114) but in code rather than in an LLM session. The control loop runs in `unified-coordinator.ts`; threshold breaches surface as `HealthReport` events that `adaptive-loop.ts` consumes and acts on. This keeps the autonomous-control surface routed through a protocol-layer authority rather than creating a parallel control plane in the coordinator and rather than re-wiring the parked `queen-coordinator.ts` (per ADR-0105).
 
-### Negative
+### Consequences
 
-- Oscillation risk on threshold edges if dampening defaults are wrong. Mitigated by (a) 2× threshold gap, (b) global settle window, AND (c) max-flips-per-window circuit-breaker (preliminary: 4 flips per hour halts the loop loud per `feedback-no-fallbacks.md`). The first two bound steady-state oscillation; the third bounds adversarial / pathological input. All three values are **PRELIMINARY** and may need their own ADR if contested.
-- Partition during a scale event leaves queen and coordinator with different worker-count beliefs. The reconciliation strategy is "next `HealthReport` carries actual `_status` worker count; queen reconciles on receipt", but this is non-trivial when the partition is asymmetric (queen reachable from coordinator, half the workers unreachable). In that case the `_status` worker count is itself a partial view and the queen will scale based on the visible subset. Treated explicitly in §Refinement.
-- Queen unreachable blocks scaling; per `feedback-no-fallbacks.md`, the loop halts loudly rather than fall back to coordinator-local decisions. The halt criterion is bounded: queen unreachable for > 1 dampening window → halt. Not "any one missed event".
-- Mid-task topology switch is hard to make safe; in-flight task state must survive the switch or the switch must defer. The switch-deferral bound (preliminary: 3 dampening windows) plus loud abandonment if the bound is crossed is the only safe shape — silently skipping the switch would be a `feedback-no-fallbacks.md` violation.
-- Idle poll cost (preliminary 5s interval) under steady-state load — small but non-zero.
-- Coupling to T10. The topology-mutation responsibility cannot be exercised end-to-end until T10 (ADR-0128) lands `swarm.mutateTopology()` as a real dispatch surface. Until then, T9 ships scaling-only and topology mutation is type-level (queen emits the decision; mutation call returns a not-implemented marker that fails loudly). See §Cross-task dependency posture.
+* Good, because protocol-layer authority is centralised in `adaptive-loop.ts`; no parallel control plane in `unified-coordinator.ts`; no behavioural re-wiring of ADR-0105's parked `queen-coordinator.ts`.
+* Good, because hysteresis, dampening, AND flip-rate ceiling are explicit and centralised in one tick predicate; no scattered threshold checks.
+* Good, because the `HealthReport` shape (extended type-only at line 183) gives the consumer combined view for cross-axis decisions (scale + topology); existing `monitorSwarmHealth()` source reused, not parallelised.
+* Good, because ADR-0114 layering is preserved (coordinator observes → consumer decides → coordinator executes); ADR-0105 layering preserved (queen-coordinator.ts is type-extension only).
+* Good, because the annotation-lift path is clear: scaling component closes the ADR-0116 row's scale half once T9 acceptance is green; topology half closes once T10 lands `swarm.mutateTopology()`.
+* Bad, because of oscillation risk on threshold edges if dampening defaults are wrong. Mitigated by (a) 2× threshold gap, (b) global settle window, AND (c) max-flips-per-window circuit-breaker (preliminary: 4 flips per hour halts the loop loud per `feedback-no-fallbacks.md`). The first two bound steady-state oscillation; the third bounds adversarial / pathological input. All three values are **PRELIMINARY** and may need their own ADR if contested.
+* Bad, because partition during a scale event leaves queen and coordinator with different worker-count beliefs. The reconciliation strategy is "next `HealthReport` carries actual `_status` worker count; queen reconciles on receipt", but this is non-trivial when the partition is asymmetric (queen reachable from coordinator, half the workers unreachable). In that case the `_status` worker count is itself a partial view and the queen will scale based on the visible subset. Treated explicitly in §Refinement.
+* Bad, because queen unreachable blocks scaling; per `feedback-no-fallbacks.md`, the loop halts loudly rather than fall back to coordinator-local decisions. The halt criterion is bounded: queen unreachable for > 1 dampening window → halt. Not "any one missed event".
+* Bad, because mid-task topology switch is hard to make safe; in-flight task state must survive the switch or the switch must defer. The switch-deferral bound (preliminary: 3 dampening windows) plus loud abandonment if the bound is crossed is the only safe shape — silently skipping the switch would be a `feedback-no-fallbacks.md` violation.
+* Bad, because of idle poll cost (preliminary 5s interval) under steady-state load — small but non-zero.
+* Bad, because of coupling to T10. The topology-mutation responsibility cannot be exercised end-to-end until T10 (ADR-0128) lands `swarm.mutateTopology()` as a real dispatch surface. Until then, T9 ships scaling-only and topology mutation is type-level (queen emits the decision; mutation call returns a not-implemented marker that fails loudly). See §Cross-task dependency posture.
+
+### Confirmation
+
+#### Unit tests (`tests/unit/`)
+
+- **`dampening-predicate.test.mjs`**: threshold crossings under settle window produce zero actions; sustained crossings produce one action
+- **`threshold-math.test.mjs`**: high-water > low-water enforced; CoV thresholds 0 ≤ low < high ≤ 1 enforced; NaN and negative queue depth throw loud
+- **`health-report-delta.test.mjs`**: queue percentiles, idle worker count, load CoV correctness on synthetic worker arrays
+- **`flip-rate-ceiling.test.mjs`**: 4 flips within a 1h sliding window halts the loop; 4 flips spanning the window boundary do NOT halt
+- **`abandoned-switch-surfaces.test.mjs`**: switch deferred past 3 dampening windows emits a fault on `_status`, never silently no-ops
+
+#### Integration tests (`tests/unit/`)
+
+- **`oscillation-flap.test.mjs`**: flap load just above and below threshold; assert zero topology switches and zero scale actions across the flap window
+- **`sustained-scale-up.test.mjs`**: drive queue depth above high-water for ≥ dampening window; assert exactly one spawn
+- **`sustained-scale-down.test.mjs`**: drive a worker to idle for ≥ dampening window; assert exactly one termination, never below configured minimum
+- **`topology-switch.test.mjs`**: sustained uneven load (CoV > high threshold for dampening window) → `hierarchical` → `mesh` decision emitted by consumer; until T10, mutation throws not-implemented marker; reverse assertion after load stabilises
+- **`adversarial-flip-rate.test.mjs`**: load tuned to satisfy dampening on every flip → circuit-breaker halts after 4 flips, not silent toleration
+- **`partition-asymmetric.test.mjs`**: half workers unreachable → loop suspends scaling, emits partition fault rather than scaling on partial view
+
+#### Acceptance tests
+
+- **`acceptance-adr0127-scale-event.sh`**: end-to-end scale event in init'd project — drive load via test harness; assert worker count adjusted in `_status`
+- **`acceptance-adr0127-runtime-presence.sh`**: verify adaptive topology runtime presence (loop registered, `HealthReport` emitted with new fields, `adaptive-loop.ts` consumer wired); does not exercise full simulation
+- **Topology mutation acceptance**: deferred until T10 lands; until then, asserts the consumer emits `cov-high`/`cov-low` decisions and that `swarm.mutateTopology()` throws the not-implemented marker — per §Cross-task dependency posture
+
+#### ESCALATION CHECKPOINT
+
+**If dampening parameters (poll interval, settle window, threshold gap, CoV bounds, per-type minimum, flip-rate ceiling) become contested during implementation — meaning more than one defensible default exists and the choice is not mechanical — halt implementation and write a design ADR before merge.** This is the ADR-0118 §T9 escalation rule, carried forward verbatim and extended with the flip-rate ceiling parameter. The default position (5s poll, 30s settle, 30s dampening, 2× threshold gap, CoV [0.3, 0.6], per-type min 1, max 4 flips/hour) is **PRELIMINARY** — a starting point for the implementation prompt, not a settled decision. Defaults that prove indefensible against the adversarial-flip-rate or partition-asymmetric tests are themselves an escalation trigger.
+
+## Pros and Cons of the Options
+
+### Option A — Poll loop + queen-side consumer (CHOSEN)
+
+- Good, because protocol-layer authority is centralised in one new module (`adaptive-loop.ts`); no parallel control plane in coordinator
+- Good, because dampening / settle window / flip-rate ceiling all explicit and centralised in the loop's tick predicate (one place, not three)
+- Good, because `HealthReport` shape gives the consumer full picture (queue percentiles, idle count, CoV, breach duration, flips-in-window) for combined decisions
+- Good, because it routes through ADR-0114 protocol layer cleanly (coordinator → event → consumer → mutation)
+- Bad, because the poll interval introduces latency (preliminary 5s) between threshold breach and action
+- Bad, because of idle ticking even under steady-state load
+- Bad, because consumer unreachable blocks scaling; loop must halt loudly, not fall back
+- Bad, because it requires a new TS module, not just inline coordinator changes — T7's prompt-only shape forces this (see §Cross-task dependency posture)
+
+### Option B — Event-driven from queue depth
+
+- Good, because of zero latency on threshold breach (event fires the moment queue depth crosses)
+- Good, because of no idle work
+- Good, because with a bounded debounce buffer (single timer per axis, fired only on sustained state), Option B converges on Option A's behaviour with finer-grained reaction; the gap closes if the 5s poll proves too coarse in practice. This is genuinely competitive, not strawman.
+- Bad, because dampening must live somewhere. Option A puts it in the loop's settle predicate (one place). Option B's "buffered event consumer" reintroduces a timer per axis (queue depth, CoV, idle count) and an explicit settle window across them — three timers + cross-axis coordination, not one.
+- Bad, because queue depth alone misses the uneven-load topology trigger (CoV is a population stat computed across the worker set, not an edge event on a single worker's queue). Option B has to either run a second polling pass for CoV (defeating the "no poll" pro) or accept that topology mutation is poll-driven while scaling is event-driven (split control surface).
+- Bad, because "split control surface" matters: the global settle window applies across scale + topology actions; a split design has to coordinate the timer and the event-debouncer manually. Option A does this for free in one tick.
+
+Reconsider B if (a) the 5s poll proves too coarse for scale reaction during real load tests, AND (b) the buffered debounce can be expressed without re-introducing the cross-axis settle-window coordination problem.
+
+### Option C — Declarative thresholds, no runtime
+
+- Good, because of no autonomous control surface — operator owns every decision
+- Good, because of zero oscillation risk; nothing fires without config
+- Good, because of the simplest implementation
+- Bad, because it doesn't satisfy USERGUIDE contract ("auto-scaling")
+- Bad, because of no learning, no adaptation; static config can't track load patterns
+- Bad, because it parks the gap permanently; ADR-0116 row never lifts
 
 ## Validation
 
@@ -130,16 +164,6 @@ Options B and C fail on dampening / contract grounds respectively. **B is recons
 ### ESCALATION CHECKPOINT
 
 **If dampening parameters (poll interval, settle window, threshold gap, CoV bounds, per-type minimum, flip-rate ceiling) become contested during implementation — meaning more than one defensible default exists and the choice is not mechanical — halt implementation and write a design ADR before merge.** This is the ADR-0118 §T9 escalation rule, carried forward verbatim and extended with the flip-rate ceiling parameter. The default position (5s poll, 30s settle, 30s dampening, 2× threshold gap, CoV [0.3, 0.6], per-type min 1, max 4 flips/hour) is **PRELIMINARY** — a starting point for the implementation prompt, not a settled decision. Defaults that prove indefensible against the adversarial-flip-rate or partition-asymmetric tests are themselves an escalation trigger.
-
-## Decision
-
-**Convert the `autoScaling` boolean flag into a runtime control loop that polls `_status` health metrics and acts on them.** The loop has three responsibilities, in order of escalation:
-
-1. **Worker count adjustment** (lowest risk): scale up when queue depth exceeds a high-water threshold; scale down idle workers when activity drops below a low-water threshold.
-2. **Topology mutation** (high risk; gated by T10): emit a switch decision from `hierarchical` to `mesh` when load CoV exceeds the high threshold; from `mesh` to `hierarchical` when CoV drops below the low threshold. Until T10 lands `swarm.mutateTopology()`, mutation calls return a not-implemented marker; decision emission is exercised end-to-end. Once T10 is green, mutations are real.
-3. **Hysteresis, dampening, and flip-rate circuit-breaker** (safety control): three predicates on every action — sustained crossing for the dampening duration, global settle window since last action, AND a max-flips-per-window ceiling that halts the loop on adversarial input. Default values are stated below as **preliminary** — they may need their own ADR if contested.
-
-The decision-maker is a NEW TS module (`adaptive-loop.ts`), not the LLM-driven adaptive queen prompt T7 produces. T7 is prompt-only and has no programmatic surface; the consumer here lives on the queen's side of the coordinator boundary (per ADR-0114) but in code rather than in an LLM session. The control loop runs in `unified-coordinator.ts`; threshold breaches surface as `HealthReport` events that `adaptive-loop.ts` consumes and acts on. This keeps the autonomous-control surface routed through a protocol-layer authority rather than creating a parallel control plane in the coordinator and rather than re-wiring the parked `queen-coordinator.ts` (per ADR-0105).
 
 ## Implementation plan
 
@@ -375,7 +399,29 @@ A new acceptance check verifies adaptive topology runtime presence: `unified-coo
 
 8. **Threshold defaults are placeholders, not measurements.** All eight values in §Specification are reasoned-from-first-principles guesses, not derived from load-test data. The implementation prompt is required to run integration tests with synthetic load profiles and record observed behaviour against each default; defaults that produce degenerate behaviour (constant flap, persistent under-reaction, scale storm) are escalation triggers.
 
-## Review notes
+## More Information
+
+Original status: **Implemented (2026-05-03)** per ADR-0118 §Status (T9 complete).
+
+This ADR depends on ADR-0116 (hive-mind marketplace plugin), ADR-0118 (hive-mind runtime gaps tracker), ADR-0125 (T7 — Adaptive queen-type), and ADR-0128 (T10 — topology runtime; provides `swarm.mutateTopology()` dispatch surface this ADR mutates into). It is related to ADR-0114 (3-layer hive architecture — substrate/protocol/execution), ADR-0105 (topology behavior differentiation; marks `queen-coordinator.ts` as `@internal` — see Review notes), and ADR-0104 (prompt-driven Queen architecture).
+
+Scope: Fork-side artifact for `sparkling/ruflo` distribution. Per `feedback-no-upstream-donate-backs.md`, this stays on `sparkling/main`; we do not file a PR against `ruvnet/ruflo`.
+
+References:
+- ADR-0116 — hive-mind marketplace plugin (verification matrix; "Adaptive topology" gap row)
+- ADR-0118 — hive-mind runtime gaps tracker (§T9 source bullets, escalation criterion)
+- ADR-0125 — T7 adaptive queen-type (prompt-only; see §Cross-task dependency posture)
+- ADR-0128 — T10 topology runtime (provides `swarm.mutateTopology()` dispatch surface)
+- ADR-0105 — topology behavior differentiation (marks `queen-coordinator.ts` `@internal`; informs new-module placement of the consumer)
+- ADR-0114 — 3-layer hive architecture (substrate/protocol/execution layering constraint)
+- ADR-0104 — prompt-driven Queen architecture (Queen IS a `claude` subprocess; informs why `queen-coordinator.ts` is parked)
+- `forks/ruflo/v3/@claude-flow/swarm/src/unified-coordinator.ts:585` — current `autoScaling` flag site
+- `forks/ruflo/v3/@claude-flow/swarm/src/queen-coordinator.ts:183` — `HealthReport` interface declaration (JSDoc opens at 182)
+- `forks/ruflo/v3/@claude-flow/swarm/src/queen-coordinator.ts:1415` — existing `monitorSwarmHealth()` report producer reused by the loop
+- `feedback-no-fallbacks.md` — fail-loud requirement for queen-unreachable, flip-rate ceiling, deferred-switch abandonment, and pre-T10 mutation marker
+- `feedback-all-test-levels.md` — unit + integration + acceptance ship in the same commit
+
+### Review notes
 
 Open questions and unresolved positions surfaced during ADR review. None blocks the chosen option (poll loop + queen-side consumer); each is a real concern the implementation prompt must address.
 
@@ -396,18 +442,3 @@ Open questions and unresolved positions surfaced during ADR review. None blocks 
 8. **The Decision Outcome's 4th rationale point is forced by T7's shape.** — resolved-with-condition (triage row 48: post-hoc rationale acknowledged; re-validate if T7 evolves). The structure choice (Option A) wasn't made specifically to accommodate T7's prompt-only nature; rather, A's tolerance for the "queen-side consumer is a TS module, not a method on the queen" rewording made the T7 mismatch survivable. This is the kind of post-hoc rationale that warrants caution. If T7's shape evolves, re-validate the choice.
 
 9. **Mid-task topology switch deferral to "next loop tick" plus "abandon after 3 dampening windows" is two parameters, not one.** (triage row 49 — DEFER-TO-IMPL: only confirmed switches count; abandonment is separate fault axis) Both are placeholders. The deferral bound interacts with the flip-rate ceiling: a switch deferred 3× then abandoned still counts toward the flip-rate ceiling? Or only confirmed switches? Pin down before implementation; the safe answer is "only confirmed switches", but this needs to be explicit.
-
-## References
-
-- ADR-0116 — hive-mind marketplace plugin (verification matrix; "Adaptive topology" gap row)
-- ADR-0118 — hive-mind runtime gaps tracker (§T9 source bullets, escalation criterion)
-- ADR-0125 — T7 adaptive queen-type (prompt-only; see §Cross-task dependency posture)
-- ADR-0128 — T10 topology runtime (provides `swarm.mutateTopology()` dispatch surface)
-- ADR-0105 — topology behavior differentiation (marks `queen-coordinator.ts` `@internal`; informs new-module placement of the consumer)
-- ADR-0114 — 3-layer hive architecture (substrate/protocol/execution layering constraint)
-- ADR-0104 — prompt-driven Queen architecture (Queen IS a `claude` subprocess; informs why `queen-coordinator.ts` is parked)
-- `forks/ruflo/v3/@claude-flow/swarm/src/unified-coordinator.ts:585` — current `autoScaling` flag site
-- `forks/ruflo/v3/@claude-flow/swarm/src/queen-coordinator.ts:183` — `HealthReport` interface declaration (JSDoc opens at 182)
-- `forks/ruflo/v3/@claude-flow/swarm/src/queen-coordinator.ts:1415` — existing `monitorSwarmHealth()` report producer reused by the loop
-- `feedback-no-fallbacks.md` — fail-loud requirement for queen-unreachable, flip-rate ceiling, deferred-switch abandonment, and pre-T10 mutation marker
-- `feedback-all-test-levels.md` — unit + integration + acceptance ship in the same commit

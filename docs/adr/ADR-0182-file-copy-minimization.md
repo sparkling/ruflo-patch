@@ -1,10 +1,7 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-16
-accepted: 2026-05-28
-implemented: 2026-05-28
-tags: [pipeline, performance, ssd-wear, fseventsd, acceptance, build]
+tags: [pipeline, performance, build]
 supersedes: []
 depends-on: [ADR-0025, ADR-0038, ADR-0039, ADR-0048, ADR-0150]
 implements: []
@@ -196,6 +193,8 @@ L1–L4 are the load-bearing wins (~190k file-events of the ~192k total per-rele
 * Bad, because the architecturally-correct rsync site is `scripts/copy-source.sh` (5 parallel fork→build delta syncs), and that's already in production via ADR-0038.
 
 ## More Information
+
+Original status: accepted 2026-05-28, implemented 2026-05-28, completed.
 
 ### Test-suite design principle: separate init-writer from config-reader tests
 

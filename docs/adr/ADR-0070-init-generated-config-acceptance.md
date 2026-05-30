@@ -1,13 +1,15 @@
-# ADR-0070: Init-Generated Config Acceptance Tests
+---
+status: accepted
+date: 2026-04-05
+tags: [acceptance, init, config, testing]
+supersedes: []
+depends-on: [ADR-0068, ADR-0069]
+implements: []
+---
 
-- **Status**: Implemented (fully wired 2026-04-06)
-- **Date**: 2026-04-05
-- **Updated**: 2026-04-06 (function naming, config format, CLI flag fixes — see ADR-0071)
-- **Depends on**: ADR-0069 (config chain), ADR-0068 (controller wiring)
-- **Deciders**: Henrik Pettersen
-- **Relates to**: ADR-0038 (Cascading Pipeline), ADR-0071 (native binary bundling)
+# Init-Generated Config Acceptance Tests
 
-## Context
+## Context and Problem Statement
 
 ADR-0069 added 16+ config.json keys and a config template module. However, no
 acceptance test validates that `init --full` generates correct DEFAULT VALUES.
@@ -32,7 +34,15 @@ acceptance checks. Three categories of gap exist:
 3. **No CLI flag coverage** -- `init --port`, `--similarity-threshold`,
    `--max-agents` are untested
 
-## Decision
+## Considered Options
+
+* **Add a new acceptance check library wired as a Phase 5 group in the main harness, using a fresh temp directory and raw init output (chosen)** — over running checks via a separate standalone script.
+
+(No alternatives were recorded; the design rationale below explains why Phase 5 lives in the main harness rather than a separate script.)
+
+## Decision Outcome
+
+Chosen option: "Add a new acceptance check library wired as a Phase 5 group in the main harness", because the checks must run as part of every `npm run test:acceptance` to catch regressions, reuse `CLI_BIN` from the installed packages, and validate raw generated output with no harness stamping.
 
 Add a new acceptance check library (`lib/acceptance-init-generated-checks.sh`)
 and wire it as a Phase 5 group in the main harness. The checks use a completely
@@ -324,6 +334,20 @@ same against `embeddings.json`.
 Runtime checks use `_run_and_kill` with the CLI binary. Flag override checks
 create `$_P5_DIR/flag-{name}`, run init there, and validate.
 
+### Consequences
+
+* Good, because every config default is now regression-tested.
+* Good, because init output is tested without harness contamination.
+* Good, because CLI flag overrides get first-ever acceptance coverage.
+* Good, because backward compatibility (no-overwrite, config set/get) is verified.
+* Good, because init template changes that break defaults are caught before publishing.
+* Bad, because ~36s is added to the acceptance run time.
+* Neutral (migration), because existing ADR-0069 init checks (`adr0069-init-*`) continue running; they serve as a fast sanity check in the mega-parallel wave. Phase 5 checks are the authoritative source of truth for init output correctness.
+
+### Confirmation
+
+The Phase 5 checks are themselves the verification mechanism: 23 checks (all passing as of 2026-04-06) validate config.json structure/defaults, embeddings.json values without harness stamping, runtime memory store/search, CLI flag overrides, and backward compatibility. As of the post-sync update, Phase 5 checks were 157/159 passing (2 failures are new gap checks, not regressions), and a baseline regression guard warns if fewer than 148 checks pass.
+
 ## Timing estimate
 
 | Phase 5 section | Estimated time |
@@ -351,18 +375,6 @@ because it catches a class of bug that no existing test covers.
   invocations in some environments. The Phase 5 runtime checks (`p5-rt-*`)
   exercise this path and will catch regressions.
 
-## Consequences
-
-- **Positive**: Every config default is now regression-tested
-- **Positive**: Init output is tested without harness contamination
-- **Positive**: CLI flag overrides get first-ever acceptance coverage
-- **Positive**: Backward compatibility (no-overwrite, config set/get) is verified
-- **Positive**: Init template changes that break defaults are caught before publishing
-- **Negative**: ~36s added to acceptance run time
-- **Migration**: Existing ADR-0069 init checks (`adr0069-init-*`) continue
-  running; they serve as a fast sanity check in the mega-parallel wave. Phase 5
-  checks are the authoritative source of truth for init output correctness.
-
 ## Post-Sync Update (2026-04-06)
 
 Upstream sync merged. Impact: MINOR.
@@ -370,3 +382,7 @@ Upstream sync merged. Impact: MINOR.
 - CLI flag parsing camelCase fix (discovered independently, also fixed upstream in v3.5.52)
 - test-acceptance-fast.sh P5 group: 16 undefined function calls fixed (was calling wrong names)
 - Baseline regression guard added to test-acceptance.sh (warns if < 148 passed)
+
+## More Information
+
+Original status: "Implemented (fully wired 2026-04-06)." Recorded 2026-04-05; updated 2026-04-06 (function naming, config format, CLI flag fixes — see ADR-0071); deciders: Henrik Pettersen. This ADR depends on ADR-0069 (config chain) and ADR-0068 (controller wiring); it also relates to ADR-0038 (Cascading Pipeline) and ADR-0071 (native binary bundling).

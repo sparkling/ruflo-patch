@@ -1,11 +1,15 @@
-# ADR-0061: Controller Integration Completion
+---
+status: accepted
+date: 2026-04-05
+tags: [controllers, agentdb, integration, registry]
+supersedes: []
+depends-on: [ADR-0060]
+implements: []
+---
 
-- **Status**: Implemented
-- **Date**: 2026-04-05
-- **Deciders**: 8-member hive-mind panel (Reuven Cohen as Queen, 7 specialists) + 15-agent source verification swarm
-- **Methodology**: SPARC + hierarchical hive-mind consensus with BFT voting + deep source audit
+# Controller Integration Completion
 
-## Context
+## Context and Problem Statement
 
 ADRs 0033 through 0048 describe a system of 44-50 controllers across 7 initialization levels. A source audit (2026-04-05) found the actual state is far behind the documented target:
 
@@ -97,7 +101,15 @@ The ADR-0048 claim "12 controller classes not exported from agentdb" is **stale*
 
 All other 34 classes confirmed exported with line numbers verified by S14.
 
-## Decision
+## Considered Options
+
+* Complete controller integration across our forks via the pipeline (copy-source → codemod → build → publish), fixing 10 existing bugs and wiring 15 new controllers (chosen).
+
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "Complete controller integration via the fork pipeline", because this is a patch repo whose purpose is to ship working upstream code — all changes flow through our forks of `ruflo`, `agentic-flow`, and `ruv-FANN`, with nothing requiring upstream PRs or external approval.
 
 ### 10 Bugs in Existing Code (swarm-verified)
 
@@ -529,26 +541,26 @@ export const INIT_LEVELS: InitLevel[] = [
 | Defer (needs design change) | guardedVectorBackend | 1 |
 | **Total implementable** | **2 forks** | **28** |
 
-## Consequences
+### Consequences
 
-### Positive
+#### Positive
 
-- Closes the gap between ADR documentation and actual source
-- 10 existing bugs documented and fixable (2 critical: learningSystem/nightlyLearner missing embedder)
-- Self-learning loop complete: SelfLearningRvfBackend auto-tunes HNSW, SONA adapts routing, ContrastiveTrainer improves embeddings
-- Attention-weighted search replaces pure cosine distance ranking
-- Security guardrails (CircuitBreaker, RateLimiter, ResourceTracker) prevent cascading failures
-- All constructor signatures verified from source by 15 agents — no ADR assumptions
-- All phases use dynamic imports with try-catch — graceful degradation maintained
+* Good, because it closes the gap between ADR documentation and actual source.
+* Good, because 10 existing bugs are documented and fixable (2 critical: learningSystem/nightlyLearner missing embedder).
+* Good, because the self-learning loop is complete: SelfLearningRvfBackend auto-tunes HNSW, SONA adapts routing, ContrastiveTrainer improves embeddings.
+* Good, because attention-weighted search replaces pure cosine distance ranking.
+* Good, because security guardrails (CircuitBreaker, RateLimiter, ResourceTracker) prevent cascading failures.
+* Good, because all constructor signatures were verified from source by 15 agents — no ADR assumptions.
+* Good, because all phases use dynamic imports with try-catch — graceful degradation maintained.
 
-### Negative
+#### Negative
 
-- 25h total effort across 7 phases (Phase 0-6)
-- Phase 5 (self-learning) carries highest risk — WASM/native I/O in constructor chain
-- guardedVectorBackend sequencing bug deferred (needs registry enhancement)
-- QuantizedVectorStore barrel export swapped in Phase 0 fork patch — may break consumers expecting the `optimizations/Quantization.ts` API
+* Bad, because it requires 25h total effort across 7 phases (Phase 0-6).
+* Bad, because Phase 5 (self-learning) carries highest risk — WASM/native I/O in constructor chain.
+* Bad, because guardedVectorBackend sequencing bug is deferred (needs registry enhancement).
+* Bad, because QuantizedVectorStore barrel export swapped in Phase 0 fork patch — may break consumers expecting the `optimizations/Quantization.ts` API.
 
-### Risks
+#### Risks
 
 - **QuantizedVectorStore dual-class** (S10): Barrel-exported version defeats purpose of quantization. Must either fix upstream barrel or use deep import path
 - Heavy deps (@xenova/transformers, @ruvector/attention) must stay behind dynamic imports — static imports would break the build pipeline (P7 finding)
@@ -556,9 +568,9 @@ export const INIT_LEVELS: InitLevel[] = [
 - 3 static-only classes (MetadataFilter, ContextSynthesizer, MMRDiversityRanker) don't fit the registry lifecycle pattern
 - NativeAccelerator singleton (`getAccelerator()`) creates shared state — `resetAccelerator()` needed for test isolation
 
-## Testing
+### Confirmation
 
-### Per-Phase Test Strategy
+#### Per-Phase Test Strategy
 
 | Phase | Unit test | Acceptance check |
 |-------|-----------|-----------------|
@@ -569,9 +581,52 @@ export const INIT_LEVELS: InitLevel[] = [
 | 5 | SelfLearningRvfBackend.create() succeeds; 7 children counted via getStats() | `agentdb_health` reports composite children |
 | 6 | CircuitBreaker opens after 5 failures; RateLimiter rejects over limit | Security controllers in health output |
 
-### Acceptance floor update
+#### Acceptance floor update
 
 Current floor: 5 controllers (lib/acceptance-controller-checks.sh:22). After all phases, raise to 20 (conservative — allows for some null returns on CI where native bindings may be absent).
+
+Implementation Status (2026-04-05):
+
+Implemented by 15-agent swarm across 5 parallel tracks.
+
+| Phase | Status | Details |
+|-------|--------|---------|
+| 0 | **Done** | Barrel exports patched (4 security classes + QuantizedVectorStore swap) |
+| 1 | **Done** | 7 bug fixes applied, bridge config updated with 6 new enables |
+| 2 | **Done** | solverBandit + attentionMetrics wired, enabled by default |
+| 3 | **Done** | 4 attention controllers wired, enabled if agentdb |
+| 4 | **Done** | queryOptimizer + enhancedEmbeddingService + quantizedVectorStore wired |
+| 5 | **Done** | nativeAccelerator + selfLearningRvfBackend + federatedLearningManager wired |
+| 6 | **Done** | 4 security controllers + auditLogger wired at Level 0 |
+
+Final Controller Counts:
+
+| Category | Count |
+|----------|------:|
+| Working (enabled by default or gated on agentdb) | 40 |
+| Opt-in disabled (federatedLearningManager) | 1 |
+| Placeholders (no upstream implementation) | 3 |
+| Deferred bug (guardedVectorBackend sequencing) | 1 |
+| **Total registry slots** | **45** |
+
+Post-Implementation Decision: Enable selfLearningRvfBackend and quantizedVectorStore. A 9-member hive-mind panel (Queen + 8 experts) initially voted 8-0 to keep all three Phase 5 controllers opt-in. On review, the panel reconsidered: this is a **patch repo** whose purpose is to ship working upstream code. selfLearningRvfBackend (the headline self-learning feature) and quantizedVectorStore (30x memory compression, Bug #9 already fixed) were changed from `return false` to `return this.agentdb !== null`. federatedLearningManager remains opt-in (no-op without agents, 60s timer leak).
+
+Files Modified:
+
+| Fork | File | Changes |
+|------|------|---------|
+| agentic-flow | `packages/agentdb/src/index.ts` | +4 security barrel exports, QuantizedVectorStore barrel swap |
+| ruflo | `v3/@claude-flow/memory/src/controller-registry.ts` | 7 bug fixes, 17 new cases, types, INIT_LEVELS, isEnabled |
+| ruflo | `v3/@claude-flow/cli/src/memory/memory-bridge.ts` | +6 controller enables in bridge config |
+| ruflo-patch | `tests/unit/controller-adr0061.test.mjs` | 32 unit tests (8 suites) |
+| ruflo-patch | `lib/acceptance-controller-checks.sh` | Floor 5→20, ADR-0061 barrel check |
+| ruflo-patch | `scripts/test-acceptance.sh` | Wired new check into controller group |
+
+Tests:
+
+- 32/32 unit tests pass (`node --test tests/unit/controller-adr0061.test.mjs`)
+- Acceptance floor raised from 5 to 20
+- New acceptance check: `check_adr0061_controller_types` verifies security barrel exports
 
 ## Appendix: Swarm Agent Roster
 
@@ -593,57 +648,8 @@ Current floor: 5 controllers (lib/acceptance-controller-checks.sh:22). After all
 | S14 | Barrel export audit | index.ts (full), controllers/index.ts (full) | 34/38 exported; 4 missing from barrel confirmed |
 | S15 | Bridge→enabled→factory chain | memory-bridge.ts:63-118, controller-registry.ts:513-572, 619-923 | Full 28-controller decision chain mapped; learningBridge only bridge-disabled controller |
 
-## Implementation Status (2026-04-05)
+## More Information
 
-Implemented by 15-agent swarm across 5 parallel tracks.
+Original status: Implemented. Date: 2026-04-05. Deciders: 8-member hive-mind panel (Reuven Cohen as Queen, 7 specialists) + 15-agent source verification swarm. Methodology: SPARC + hierarchical hive-mind consensus with BFT voting + deep source audit.
 
-| Phase | Status | Details |
-|-------|--------|---------|
-| 0 | **Done** | Barrel exports patched (4 security classes + QuantizedVectorStore swap) |
-| 1 | **Done** | 7 bug fixes applied, bridge config updated with 6 new enables |
-| 2 | **Done** | solverBandit + attentionMetrics wired, enabled by default |
-| 3 | **Done** | 4 attention controllers wired, enabled if agentdb |
-| 4 | **Done** | queryOptimizer + enhancedEmbeddingService + quantizedVectorStore wired |
-| 5 | **Done** | nativeAccelerator + selfLearningRvfBackend + federatedLearningManager wired |
-| 6 | **Done** | 4 security controllers + auditLogger wired at Level 0 |
-
-### Final Controller Counts
-
-| Category | Count |
-|----------|------:|
-| Working (enabled by default or gated on agentdb) | 40 |
-| Opt-in disabled (federatedLearningManager) | 1 |
-| Placeholders (no upstream implementation) | 3 |
-| Deferred bug (guardedVectorBackend sequencing) | 1 |
-| **Total registry slots** | **45** |
-
-### Post-Implementation Decision: Enable selfLearningRvfBackend and quantizedVectorStore
-
-A 9-member hive-mind panel (Queen + 8 experts) initially voted 8-0 to keep all three Phase 5 controllers opt-in. On review, the panel reconsidered: this is a **patch repo** whose purpose is to ship working upstream code. selfLearningRvfBackend (the headline self-learning feature) and quantizedVectorStore (30x memory compression, Bug #9 already fixed) were changed from `return false` to `return this.agentdb !== null`. federatedLearningManager remains opt-in (no-op without agents, 60s timer leak).
-
-### Files Modified
-
-| Fork | File | Changes |
-|------|------|---------|
-| agentic-flow | `packages/agentdb/src/index.ts` | +4 security barrel exports, QuantizedVectorStore barrel swap |
-| ruflo | `v3/@claude-flow/memory/src/controller-registry.ts` | 7 bug fixes, 17 new cases, types, INIT_LEVELS, isEnabled |
-| ruflo | `v3/@claude-flow/cli/src/memory/memory-bridge.ts` | +6 controller enables in bridge config |
-| ruflo-patch | `tests/unit/controller-adr0061.test.mjs` | 32 unit tests (8 suites) |
-| ruflo-patch | `lib/acceptance-controller-checks.sh` | Floor 5→20, ADR-0061 barrel check |
-| ruflo-patch | `scripts/test-acceptance.sh` | Wired new check into controller group |
-
-### Tests
-
-- 32/32 unit tests pass (`node --test tests/unit/controller-adr0061.test.mjs`)
-- Acceptance floor raised from 5 to 20
-- New acceptance check: `check_adr0061_controller_types` verifies security barrel exports
-
-## Related
-
-- **ADR-0033**: Original controller activation (27 of 28)
-- **ADR-0039**: Upstream controller integration roadmap (superseded)
-- **ADR-0040**: ADR-0033 wiring remediation
-- **ADR-0041**: Composition-aware controller architecture (composition rules)
-- **ADR-0043-0047**: Individual controller integration ADRs (design intent, partially implemented)
-- **ADR-0048**: Lazy controller initialization (deferred init, ONNX cache, measured performance)
-- **ADR-0060**: Fork patch hygiene (pipeline rules for fork changes)
+This decision relates to the following ADRs: ADR-0033 (Original controller activation, 27 of 28); ADR-0039 (Upstream controller integration roadmap, superseded); ADR-0040 (ADR-0033 wiring remediation); ADR-0041 (Composition-aware controller architecture — composition rules); ADR-0043-0047 (Individual controller integration ADRs — design intent, partially implemented); ADR-0048 (Lazy controller initialization — deferred init, ONNX cache, measured performance); and ADR-0060 (Fork patch hygiene — pipeline rules for fork changes).

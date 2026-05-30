@@ -1,12 +1,15 @@
-# ADR-0093: Controller MCP Wiring Gaps — Audit & Remediation Plan
+---
+status: accepted
+date: 2026-04-16
+tags: [controllers, mcp, agentdb, wiring]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: Implemented — 2026-04-21
-- **Date**: 2026-04-16
-- **Scope**: `@claude-flow/cli` MCP tool handlers + `@sparkleideas/agentdb` controller constructors
-- **Related**: ADR-0090 (Tier B5 — the swarm that surfaced these gaps), ADR-0086 (Debt 15 — the original controller-persistence trade-off), ADR-0089 (Controller Intercept Pattern)
-- **Surfaced by**: ADR-0090 Tier B5 12-agent verifier swarm + 8-agent fixall swarm (2026-04-16)
+# Controller MCP Wiring Gaps — Audit & Remediation Plan
 
-## Context
+## Context and Problem Statement
 
 ADR-0090 Tier B5 set out to verify that each of the 15 neural controllers claimed by ADR-0086's Debt 15 trade-off actually persists state to SQLite via a write → readback → restart round-trip.
 
@@ -138,7 +141,15 @@ Read-only recall controller. The only 2 MCP tools (`agentdb_causal_recall`, `age
 
 **Verdict**: SKIP_ACCEPTED.
 
-## Decision
+## Considered Options
+
+* **Two-tier remediation: patch the 5 Tier 1 controllers (constructor schema inits + one MCP re-route + check-side priming) and accept the 6 Tier 2 controllers as permanent documented SKIP with regression-guard regexes (chosen).**
+
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "Two-tier remediation — patch the 5 Tier 1 controllers and accept the 6 Tier 2 controllers as permanent documented SKIP", because Tier 1 controllers have a real persistence path reachable with the same constructor-DDL/MCP-routing pattern as the existing fixes, while Tier 2 controllers genuinely have no SQLite write path and SKIP_ACCEPTED (with auto-flip-to-FAIL regexes) is the honest verdict.
 
 ### Tier 1 — Patch in next session (committed scope)
 
@@ -154,6 +165,14 @@ Ordered by dependency:
 ### Tier 2 — Accept as SKIP (permanent, documented)
 
 Items 6-11. These controllers are correct to SKIP — they don't persist to SQLite by design. The B5 check's regression-guard regexes are the correct long-term mechanism: if upstream ever adds a write surface, the regex stops matching and the check falls through to the row-count verification path.
+
+### Consequences
+
+* Neutral, because the per-controller trade-offs and outcomes are captured in the Findings (Tier 1/Tier 2) sections, the Acceptance criteria, and the Status Update below; the original record did not enumerate a separate consequences list.
+
+### Confirmation
+
+Implemented 2026-04-21. This ADR is implemented when: (1) Items 1-5 are patched (fork + check-side) and their B5 checks flip to PASS; (2) Items 6-11 remain SKIP_ACCEPTED with documented reasons in the check source; (3) the B5 scorecard reads ≥ 9 PASS / ≤ 6 SKIP / 0 FAIL; (4) ADR-0090 Tier A1 Debt 15 check remains PASS (reflexion round-trip, count_after_store=1, count_after_reopen=1). See the Acceptance criteria and Status Update 2026-04-21 sections for the per-item fork-commit pointers and verification.
 
 ## Acceptance criteria
 
@@ -173,18 +192,6 @@ Documented in `/tmp/fixall-silent-pass-audit.md` (2026-04-16). NOT fixed in this
 4. `agentdb_causal-edge` — write/read split-brain: `addEdge` fails → KV-store fallback with unicode-arrow key; subsequent `causal_query` reads in-memory graph, returns `results:[]`.
 
 These are tracked for a separate ADR or a follow-up pass within ADR-0090.
-
-## References
-
-- ADR-0090 Tier B5 swarm sessions (2026-04-16):
-  - 12-agent verifier swarm `swarm-1776344929436-34u1im` (architect + 11 per-controller reports)
-  - 12-agent implementation swarm `swarm-1776366604818-ih6byt` (builder + 11 verifiers)
-  - 8-agent fixall swarm `swarm-1776370651103-qx7djp` (forensics + 5 triagers + auditor + builder)
-- Fork commits (forks/ruflo main): `e408085d8`, `8802b026d`, `250d4c04c`, `907b8d20e`, `65a43d91d`
-- Fork commits (forks/agentic-flow main): `b14a664` (SkillLibrary), `7a977f1` (ReflexionMemory)
-- Verifier reports: `/tmp/b5-verify-*.md`, `/tmp/fixall-*.md`
-- Architect report: `/tmp/b5-architect.md` (297 lines, canonical per-controller matrix)
-- Registry forensics: `/tmp/fixall-registry-forensics.md` (method-name drift root cause)
 
 ## Status Update 2026-04-21
 
@@ -208,3 +215,18 @@ These are tracked for a separate ADR or a follow-up pass within ADR-0090.
 - **Test**: `tests/unit/adr-0093-nightly-learner-migration.test.mjs` — 13/13 pass. Group 1 source invariants (cites ADR-0093 + A1, PRAGMA introspection, OLD-col detection set, child-first DROP order, canonical NEW column list, ADR-0082 re-throw). Group 2 behavioral round-trip via `sqlite3` CLI: seeds OLD schema, runs detector + DROP + CREATE orchestration, asserts (i) NEW columns present, (ii) OLD columns gone, (iii) `createExperiment`-style INSERT succeeds, (iv) `calculateUplift`-style UPDATE on all 6 result columns succeeds. Group 3 schema parity against `frontier-schema.sql` for both `createExperiment` INSERT target columns and `calculateUplift` UPDATE target columns.
 - **Build**: only pre-existing cross-fork `@types/node`/module-resolution errors; zero new errors in `NightlyLearner.ts` (grep `NightlyLearner.ts` on the build log = 0 matches).
 - **Files**: fork source — `/Users/henrik/source/forks/agentic-flow/packages/agentdb/src/controllers/NightlyLearner.ts` lines 94-206 (migration + canonical DDL). Test — `/Users/henrik/source/ruflo-patch/tests/unit/adr-0093-nightly-learner-migration.test.mjs`. Not committed; fork branch `main`.
+
+## More Information
+
+Original status: "Implemented — 2026-04-21", with a recorded Date of 2026-04-16. Scope: `@claude-flow/cli` MCP tool handlers + `@sparkleideas/agentdb` controller constructors. This ADR was surfaced by the ADR-0090 Tier B5 12-agent verifier swarm + 8-agent fixall swarm (2026-04-16), and is related to ADR-0090 (Tier B5 — the swarm that surfaced these gaps), ADR-0086 (Debt 15 — the original controller-persistence trade-off), and ADR-0089 (Controller Intercept Pattern).
+
+References:
+- ADR-0090 Tier B5 swarm sessions (2026-04-16):
+  - 12-agent verifier swarm `swarm-1776344929436-34u1im` (architect + 11 per-controller reports)
+  - 12-agent implementation swarm `swarm-1776366604818-ih6byt` (builder + 11 verifiers)
+  - 8-agent fixall swarm `swarm-1776370651103-qx7djp` (forensics + 5 triagers + auditor + builder)
+- Fork commits (forks/ruflo main): `e408085d8`, `8802b026d`, `250d4c04c`, `907b8d20e`, `65a43d91d`
+- Fork commits (forks/agentic-flow main): `b14a664` (SkillLibrary), `7a977f1` (ReflexionMemory)
+- Verifier reports: `/tmp/b5-verify-*.md`, `/tmp/fixall-*.md`
+- Architect report: `/tmp/b5-architect.md` (297 lines, canonical per-controller matrix)
+- Registry forensics: `/tmp/fixall-registry-forensics.md` (method-name drift root cause)

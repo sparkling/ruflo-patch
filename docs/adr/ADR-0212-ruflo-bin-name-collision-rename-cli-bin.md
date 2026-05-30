@@ -1,11 +1,9 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-19
-implemented-date: 2026-05-22
-tags: [packaging, npm-bin, user-facing-brand, collision, swarm-reviewed]
+tags: [packaging, npm-bin, user-facing-brand, collision]
 supersedes: []
-depends-on: [0201, 0143]
+depends-on: [ADR-0201, ADR-0143]
 implements: []
 ---
 
@@ -141,6 +139,8 @@ A fresh 6-expert council re-verified ADR-0212. **Option B re-affirmed (5 endorse
 * **Cosmetic:** the `-rename-cli-bin` filename slug lags the REMOVE decision (reference-stable; optional rename); `ruflo-mcp` consumer line is `~:378` (not `:364`); tidy the stale `diagnostic-checks.sh:~57` "execFileSync('npx')" comment.
 
 ## More Information
+
+Lifecycle dates from the original record: accepted 2026-05-19, implemented 2026-05-22. This ADR was swarm-reviewed.
 
 * **Evidence:** `docs/audits/2026-05-19-soundness-audit/12-runtime-init-and-mcp-server.md` (F-12-001; bottom line "end-to-end runtime: sound").
 * **Upstream:** `ruvnet/ruflo/v3/@claude-flow/cli/package.json` (CLI bin, no `ruflo`); `ruvnet/ruflo/ruflo/package.json` (wrapper owns `ruflo`).

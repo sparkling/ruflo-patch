@@ -1,15 +1,15 @@
-# ADR-0056: MCP Server Unified Backend — RVF Primary, SQLite Fallback
-
-**Status**: Implemented (v3.5.15-patch.115, 2026-03-22)
-**Date**: 2026-03-22
-**Deciders**: System Architecture
-**Methodology**: SPARC + MADR
-
+---
+status: accepted
+date: 2026-03-22
+tags: [mcp, backend, rvf, sqlite]
+supersedes: []
+depends-on: []
+implements: []
 ---
 
-## S - Specification
+# MCP Server Unified Backend — RVF Primary, SQLite Fallback
 
-### Problem
+## Context and Problem Statement
 
 The agentdb MCP server (`agentdb-mcp-server.ts`) uses `db-fallback.js` (sql.js WASM
 SQLite) as its only storage backend. This was always intended as a fallback — the
@@ -49,11 +49,23 @@ Adopt `db-unified.ts` in the MCP server so that:
 - COW branching becomes available through the graph backend
 - Vector search uses HNSW when ruvector is installed, brute-force when not
 
----
+## Considered Options
 
-## P - Pseudocode
+* Adopt `db-unified.ts` (RVF/RuVector primary, SQLite fallback) in the MCP server, with HNSW vector search and COW branching, falling back to `db-fallback.js` if unified init fails (chosen).
 
-### Current initialization (MCP server)
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "Adopt `db-unified.ts` in the MCP server with RVF/RuVector primary and SQLite fallback", because a fully built unified module already exists and is used by every other AgentDB consumer, so adopting it upgrades vector search from O(n) brute-force to HNSW and unlocks COW branching while keeping existing `.db` files working unchanged.
+
+### S - Specification
+
+(See Context and Problem Statement above for the problem, history, and goal.)
+
+### P - Pseudocode
+
+#### Current initialization (MCP server)
 
 ```
 import { createDatabase } from '../db-fallback.js';
@@ -62,7 +74,7 @@ const db = await createDatabase(dbPath);
 const reflexion = new ReflexionMemory(db, embeddingService);
 ```
 
-### Target initialization
+#### Target initialization
 
 ```
 import { createUnifiedDatabase } from '../db-unified.js';
@@ -90,7 +102,7 @@ const skills = new SkillLibrary(db, embeddingService, { vectorBackend });
 // ... etc
 ```
 
-### Branch operations (enabled by graph backend)
+#### Branch operations (enabled by graph backend)
 
 ```
 // When graphDb is available:
@@ -104,11 +116,9 @@ tool: agentdb_branch_merge
   → BEGIN IMMEDIATE; copy overlay → parent; DELETE branch; COMMIT
 ```
 
----
+### A - Architecture
 
-## A - Architecture
-
-### Before (current)
+#### Before (current)
 
 ```
 MCP Server
@@ -121,7 +131,7 @@ MCP Server
               └── Vector search = brute-force JS loop
 ```
 
-### After
+#### After
 
 ```
 MCP Server
@@ -142,7 +152,7 @@ MCP Server
          └── Brute-force fallback → cosine in JS loop
 ```
 
-### What changes for consumers
+#### What changes for consumers
 
 | Consumer | Before | After |
 |----------|--------|-------|
@@ -152,11 +162,9 @@ MCP Server
 | COW branching | Not available | Available via graph backend or SQLite tables |
 | Relational queries | SQLite | SQLite (unchanged) |
 
----
+### R - Refinement
 
-## R - Refinement
-
-### Files to change
+#### Files to change
 
 **1. `agentdb-mcp-server.ts`** (primary change)
 
@@ -237,14 +245,14 @@ CREATE TABLE IF NOT EXISTS branch_entries (
 );
 ```
 
-### What NOT to change
+#### What NOT to change
 
 - Do NOT remove `db-fallback.js` — it's still needed as the SQLite implementation
 - Do NOT make `@ruvector/rvf` a required dependency — it stays optional
 - Do NOT change the existing 32 tool definitions or handlers
 - Do NOT change the SQL schema for existing tables (episodes, skills, etc.)
 
-### Risk assessment
+#### Risk assessment
 
 | Risk | Severity | Mitigation |
 |------|----------|------------|
@@ -254,11 +262,9 @@ CREATE TABLE IF NOT EXISTS branch_entries (
 | Branch merge atomicity | Medium | SQLite `BEGIN IMMEDIATE ... COMMIT` |
 | `@ruvector/rvf` not installed in CI | Low | All changes are additive — brute-force fallback works without ruvector |
 
----
+### C - Completion
 
-## C - Completion
-
-### Implementation checklist
+#### Implementation checklist
 
 - [ ] Read `db-unified.ts` and `backends/factory.ts` to verify APIs
 - [ ] Update MCP server initialization: `createDatabase` → `createUnifiedDatabase` with fallback
@@ -272,7 +278,7 @@ CREATE TABLE IF NOT EXISTS branch_entries (
 - [ ] Run `npm run deploy` (56+/56+ acceptance)
 - [ ] Push all repos
 
-### Estimated effort
+#### Estimated effort
 
 | Component | Lines |
 |-----------|:-----:|
@@ -283,7 +289,26 @@ CREATE TABLE IF NOT EXISTS branch_entries (
 | Branch handlers (3 cases) | ~120 |
 | **Total** | **~245** |
 
-### Success criteria
+### Consequences
+
+#### Positive
+
+* Good, because vector search goes from O(n) brute-force to O(log n) HNSW.
+* Good, because COW branching is available via MCP for A/B experimentation.
+* Good, because the MCP server aligns with the rest of the codebase (CLI, tests, controller-registry).
+* Good, because the "db-fallback" name finally makes sense — it IS the fallback.
+* Good, because consuming projects (Laika) get branch tools without implementing their own.
+
+#### Negative
+
+* Bad, because of the more complex initialization (unified + fallback chain).
+* Bad, because RVF is optional — behavior differs depending on what's installed.
+* Bad, because branch tables add schema surface area.
+* Bad, because migration from `.db` to `.graph` happens automatically, which may surprise users.
+
+### Confirmation
+
+#### Success criteria
 
 - Existing `.db` databases continue working unchanged
 - New databases get HNSW vector search when ruvector is installed
@@ -291,28 +316,8 @@ CREATE TABLE IF NOT EXISTS branch_entries (
 - 59/59 acceptance (56 existing + 3 new branch tests)
 - No regressions on existing 32 MCP tools
 
----
+## More Information
 
-## Consequences
+This decision was recorded by System Architecture using the SPARC + MADR methodology. Original status: "Implemented (v3.5.15-patch.115, 2026-03-22)".
 
-### Positive
-
-- Vector search goes from O(n) brute-force to O(log n) HNSW
-- COW branching available via MCP for A/B experimentation
-- MCP server aligns with the rest of the codebase (CLI, tests, controller-registry)
-- The "db-fallback" name finally makes sense — it IS the fallback
-- Consuming projects (Laika) get branch tools without implementing their own
-
-### Negative
-
-- More complex initialization (unified + fallback chain)
-- RVF is optional — behavior differs depending on what's installed
-- Branch tables add schema surface area
-- Migration from `.db` to `.graph` happens automatically, which may surprise users
-
-## Related
-
-- **ADR-0052**: Config-driven embedding — provides `getEmbeddingConfig()` used for dimension
-- **ADR-0055**: NightlyLearner + MCP tools — established the 41-tool pattern
-- **ADR-0050**: Controller activation — established the deferred init pipeline
-- **db-unified.ts**: The module that already implements this — just needs adoption
+The original record cross-referenced these related decisions: ADR-0052 (config-driven embedding — provides `getEmbeddingConfig()` used for dimension); ADR-0055 (NightlyLearner + MCP tools — established the 41-tool pattern); ADR-0050 (controller activation — established the deferred init pipeline); and `db-unified.ts` (the module that already implements this — it just needs adoption).

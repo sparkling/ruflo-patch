@@ -1,16 +1,13 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-10
-closed-on: 2026-05-10
-methodology: [post-incident-investigation, evidence-grading]
-decision-makers: [Henrik Pettersen]
-tags: [agentdb, ruvector, rvf, storage-routing, post-adr-0162-cluster, fail-loud]
-related: [0160, 0161, 0162, 0163, 0164]
-audience: ai-executor
+tags: [agentdb, ruvector, rvf, fail-loud]
+supersedes: []
+depends-on: []
+implements: []
 ---
 
-# ADR-0165: AgentDB backend-resolution audit + residual 12-failure cluster post-ADR-0162
+# AgentDB backend-resolution audit + residual 12-failure cluster post-ADR-0162
 
 > **Status**: investigation in flight. This ADR captures the residual 12-failure cluster left after ADR-0163's t3-2-concurrent regression closed, and a load-bearing architectural question: does AgentDB actually use RuVector/RVF as configured, or is it silently falling back to SQLite?
 
@@ -74,7 +71,9 @@ These are NOT vectorless-recovery (which ADR-0163 fixed at `7deff1027`). They lo
 * Architectural integrity — the dual-storage pattern (RVF via `memory_*` tools + SQLite via `agentdb_*` tools) is not what AgentDB's `db-unified.ts` documents. Either the architecture is wrong or the implementation is wrong; one of them must be reconciled.
 * `project-rvf-primary` — RVF is the canonical primary store. SQLite paths must be either (a) decommissioned, (b) routed through RVF via AgentDB's RuVector backend, or (c) explicitly documented as parallel for `agentdb_*`-only use cases.
 
-## Considered Options (placeholder — to be refined post-investigation)
+## Considered Options
+
+(Placeholder at authoring time — to be refined post-investigation.)
 
 * **Option A: Fail loud** — if H1 is true, modify AgentDB's backend-resolution to throw on RVF init failure instead of silently falling back. Surface the underlying RVF failure so it can be diagnosed.
 * **Option B: Fix routing** — if H2 is true, fix the hand-port that broke agentdb's RVF wiring. Restore the pre-ADR-0162 routing.
@@ -83,7 +82,17 @@ These are NOT vectorless-recovery (which ADR-0163 fixed at `7deff1027`). They lo
 
 ## Decision Outcome
 
-**Pending investigation.** This ADR will be amended once the agentdb-backend-resolution audit completes.
+**Pending investigation.** This ADR will be amended once the agentdb-backend-resolution audit completes. (The investigation later converged on Option A — fail loud — for the B1 sub-cluster plus a path-clobbering fix for the B2 sub-cluster; see the Amendments below for the full resolution.)
+
+### Consequences
+
+* Good, because the fail-loud fix (B1, `d6ccca63a`) makes the silent SQLite fallback impossible regardless of which architectural path is chosen later, satisfying `feedback-no-fallbacks`.
+* Good, because the embeddings.json canonical-storage-keys fix (B2, `5dac592e9`) restores per-project `.swarm/memory.rvf` resolution, closing the path-clobbering bug.
+* Neutral, because the architectural gap (AgentDB's `db-unified.ts` documents "PRIMARY: RuVector" while `core/AgentDB.ts` hard-wires SQLite) is a documented aspirational-vs-delivered mismatch deferred to ADR-0166 — neither fix requires resolving it.
+
+### Confirmation
+
+`npm run release` reaches 674/674 acceptance and 4440/4440 unit (verification release `accept-2026-05-10T184434Z`, `@sparkleideas/cli@3.7.0-alpha.10-patch.18`), with all 12 cluster failures resolved. The full per-sub-cluster verification appears in Amendment 2026-05-10b.
 
 ## Investigation tasks (in flight)
 
@@ -112,6 +121,8 @@ Output: `/tmp/adr0165-investigation/AUDIT.md`. ADR will be amended with findings
 4. Could the B2 sub-cluster's "no .rvf produced" be related to the same agentdb-resolution issue (i.e., something in the init cascade is preventing RVF from being created at all in some test scenarios)?
 
 ## More information
+
+Original metadata: Methodology post-incident-investigation + evidence-grading; audience `ai-executor`; marked `completed: true` with `closed-on: 2026-05-10`. This investigation was recorded as related to ADR-0160, ADR-0161, ADR-0162, ADR-0163, and ADR-0164.
 
 * **Council artifacts (ADR-0163 closure)**:
   - `/tmp/adr0163-cluster/CLASSIFY.md` — original 12-test classification (Class B, ADR-0162-induced)

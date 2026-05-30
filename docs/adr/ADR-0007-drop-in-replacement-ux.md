@@ -1,10 +1,15 @@
-# ADR-0007: Drop-in Replacement UX
+---
+status: accepted
+date: 2026-03-05
+tags: [ux, cli, npm, mcp]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-## Status
+# Drop-in Replacement UX
 
-Accepted
-
-## Context
+## Context and Problem Statement
 
 ### Specification (SPARC-S)
 
@@ -43,7 +48,16 @@ EXAMPLE:
   npx @claude-flow/cli mcp start     ->  npx @sparkleideas/cli mcp start
 ```
 
-## Decision
+## Considered Options
+
+* **`@sparkleideas/cli` is a drop-in replacement for `@claude-flow/cli` — users swap the package name in commands and MCP config (chosen).**
+* **Orchestrator pattern** -- Rejected. In this pattern, `npx ruflo` would be a setup/patching step, and then the user runs `npx claude-flow init` separately. Two steps instead of one. The command `ruflo init` becomes ambiguous: does it run the patch step, or the init routine? Cache injection (making `npx @claude-flow/cli` resolve to our code) is fragile and conflicts with npm's cache invalidation behavior.
+* **Dual-mode** (patch existing OR use rebuilt) -- Rejected. Offers users a choice between runtime patching and using rebuilt packages. Complex to implement, confusing to explain, and adds a decision point where none is needed. Users should not have to choose between operational modes for the same tool.
+* **Keep original names via Verdaccio** -- Rejected. Would allow `npx @claude-flow/cli@latest` to work unchanged, but requires every user to run a local Verdaccio instance and configure `.npmrc`. Cannot be distributed publicly on npm. Shifts complexity from a one-word command change to infrastructure setup on every machine.
+
+## Decision Outcome
+
+Chosen option: "`@sparkleideas/cli` is a drop-in replacement for `@claude-flow/cli`", because it offers the simplest possible migration — swap the package name in commands and one line in MCP config, with all flags, subcommands, and behaviors unchanged.
 
 ### Architecture (SPARC-A)
 
@@ -76,30 +90,17 @@ EXAMPLE:
 }
 ```
 
-### Considered Alternatives
+### Consequences
 
-1. **Orchestrator pattern** -- Rejected. In this pattern, `npx ruflo` would be a setup/patching step, and then the user runs `npx claude-flow init` separately. Two steps instead of one. The command `ruflo init` becomes ambiguous: does it run the patch step, or the init routine? Cache injection (making `npx @claude-flow/cli` resolve to our code) is fragile and conflicts with npm's cache invalidation behavior.
-
-2. **Dual-mode** (patch existing OR use rebuilt) -- Rejected. Offers users a choice between runtime patching and using rebuilt packages. Complex to implement, confusing to explain, and adds a decision point where none is needed. Users should not have to choose between operational modes for the same tool.
-
-3. **Keep original names via Verdaccio** -- Rejected. Would allow `npx @claude-flow/cli@latest` to work unchanged, but requires every user to run a local Verdaccio instance and configure `.npmrc`. Cannot be distributed publicly on npm. Shifts complexity from a one-word command change to infrastructure setup on every machine.
-
-## Consequences
-
-### Refinement (SPARC-R)
-
-**Positive:**
-
-- Simplest possible migration: change the package name in commands, one line in MCP config
-- No setup step, no configuration, no runtime patching -- published packages already contain all fixes
-- Existing documentation and workflows transfer directly -- just search-and-replace the package name
-- `npx @sparkleideas/cli` handles dependency resolution automatically via npm
-
-**Negative:**
-
-- Users must update their command references. This is a one-time cost per project (update MCP config, update any scripts or aliases that reference `@claude-flow/cli`)
-- Shell history and muscle memory reference the old commands. Tab completion mitigates this for interactive use.
-- Any upstream documentation or tutorials reference `@claude-flow/cli` -- users must mentally translate to `@sparkleideas/cli`
+* Good, because the simplest possible migration: change the package name in commands, one line in MCP config.
+* Good, because no setup step, no configuration, no runtime patching -- published packages already contain all fixes.
+* Good, because existing documentation and workflows transfer directly -- just search-and-replace the package name.
+* Good, because `npx @sparkleideas/cli` handles dependency resolution automatically via npm.
+* Bad, because users must update their command references. This is a one-time cost per project (update MCP config, update any scripts or aliases that reference `@claude-flow/cli`).
+* Bad, because shell history and muscle memory reference the old commands. Tab completion mitigates this for interactive use.
+* Bad, because any upstream documentation or tutorials reference `@claude-flow/cli` -- users must mentally translate to `@sparkleideas/cli`.
+* Neutral, because the CLI binary name in `@sparkleideas/cli`'s `package.json` `bin` field is `ruflo`, matching the upstream binary name.
+* Neutral, because no changes to the underlying CLI code beyond the scope rename handled by the codemod (ADR-0005) and the enhancement patches documented in ADR-0005 (MC-001 autoStart fix, FB-001/FB-002 fallback instrumentation).
 
 **Trade-offs and edge cases:**
 
@@ -107,12 +108,9 @@ EXAMPLE:
 - `repair-post-init.sh` currently copies helpers from the npx cache of `@claude-flow/cli`. With `@sparkleideas/cli`, it copies from the `@sparkleideas/cli` cache location. The script must be updated to discover the correct cache path.
 - If a user has both `@claude-flow/cli` and `@sparkleideas/cli` installed, they operate independently. There is no conflict because they use different package names and different npx cache locations.
 
-**Neutral:**
+### Confirmation
 
-- The CLI binary name in `@sparkleideas/cli`'s `package.json` `bin` field is `ruflo`, matching the upstream binary name
-- No changes to the underlying CLI code beyond the scope rename handled by the codemod (ADR-0005) and the enhancement patches documented in ADR-0005 (MC-001 autoStart fix, FB-001/FB-002 fallback instrumentation)
-
-### Completion (SPARC-C)
+Completion (SPARC-C):
 
 - [x] `npx @sparkleideas/cli init` works end-to-end on a clean machine
 - [x] `npx @sparkleideas/cli agent spawn -t coder` spawns an agent successfully

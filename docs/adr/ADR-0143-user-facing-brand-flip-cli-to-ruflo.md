@@ -1,12 +1,15 @@
-# ADR-0143: Flip user-facing brand from `@sparkleideas/cli` to `@sparkleideas/ruflo` post-wrapper-pivot
+---
+status: accepted
+date: 2026-05-04
+tags: [codemod, rebrand, pipeline, brand]
+supersedes: []
+depends-on: [ADR-0142]
+implements: []
+---
 
-- **Status**: **Accepted (2026-05-04)** — implemented across 3 commits (`9d594cf` tests-first + `4186399` Pass 7 impl + commit 3 release verification below). ADR-0142 prerequisite landed `fc96ef1`. Pass 7 contract verified post-release: **0** `@sparkleideas/cli` refs in user-facing scopes, **64** `@sparkleideas/ruflo` refs (the rebrand), **10** `@sparkleideas/cli` refs preserved in internal scopes (memory cross-package + cli's own `__tests__/`). New codemod runs ship in next bumped release.
-- **Date**: 2026-05-04
-- **Deciders**: Henrik Pettersen
-- **Depends on**: ADR-0142 (wrapper rewrite — non-negotiable prerequisite). **Builds on**: ADR-0007 (drop-in UX), ADR-0117 (the original ruflo-namespace rebrand effort, scoped narrowly because of the wrapper perf cost), ADR-0141 (Pass 5 generalization — sister-codemod-pass design for path-scoped rewrites). Commit `8aba0ad` (Pass 6) provides analogous prior-art for an npx-context regex pass.
-- **Scope**: Codemod adds a new path-scoped pass that rewrites `@sparkleideas/cli` → `@sparkleideas/ruflo` in user-facing contexts only. Internal pipeline, test infrastructure, and the wrapper's own dependency are explicitly out of scope.
+# Flip user-facing brand from `@sparkleideas/cli` to `@sparkleideas/ruflo` post-wrapper-pivot
 
-## Context
+## Context and Problem Statement
 
 Survey on 2026-05-04 found 415 `@sparkleideas/cli` references in active fork surfaces. Upstream's primary brand for the same use cases is `ruflo` (205× `npx ruflo@latest` in their README/USERGUIDE vs 5× `npx claude-flow@latest`). We diverged because the c76a727 redirect made the wrapper layer costly enough that recommending the direct-cli bypass was a meaningful UX choice.
 
@@ -25,7 +28,17 @@ ADR-0142 collapses the wrapper overhead from ~600ms-1.5s to ~70-100ms by switchi
 
 Categories A-D (~300 refs) flip; E + F (~116 refs) stay. The split is path-scoped, not regex-scoped, so the codemod can enforce it cleanly.
 
-## Decision
+## Considered Options
+
+* **Add codemod Pass 7: rewrite `@sparkleideas/cli` → `@sparkleideas/ruflo` in user-facing scopes only, with MCP config routed through the wrapper (B2) (chosen).**
+* **Option B1 — Keep MCP pointing at cli directly (rejected as primary; documented as fallback)** — init-generated MCP config stays `args: ["-y", "@sparkleideas/cli", …]` even though all other user surfaces flip to ruflo. Rejected as primary choice; documented as fallback. Trade-offs are nearly even, and a single canonical entry point is the simpler design under ADR-0142's loud-failure guards. Reverting to B1 if MCP startup proves flaky is a one-line codemod tweak.
+* **Option B0 — Skip the rebrand entirely (rejected)** — leave `@sparkleideas/cli` as the user-facing brand, accept divergence from upstream. Rejected. The wrapper-overhead reason for the divergence disappears under ADR-0142. Maintaining a divergence with no benefit is pure cost. Upstream's `ruflo` brand is also better marketing.
+* **Option C — Flip via fork-side patches instead of codemod (rejected)** — hand-edit each of the ~300 surfaces in `forks/ruflo`, commit upstream of the codemod. Rejected per memory `feedback-patches-in-fork.md`: this IS a scope rename, the codemod's charter. Fork patches don't survive upstream merges; the same regression returns next sync.
+* **Option D — Bigger scope: also rebrand internals (Cat E + F) (rejected)** — rewrite acceptance scripts, `_cli_cmd` helper, wrapper's own `package.json`, etc. Rejected. Internal direct-cli invocation is intentional (perf, version-control, atomic fork-source assumptions). Rebranding internals would force the wrapper to depend on itself or break the parallel acceptance harness. The split is meaningful.
+
+## Decision Outcome
+
+Chosen option: "Add codemod Pass 7", because ADR-0142 collapsed the wrapper overhead, removing the performance reason for the brand divergence — so brand consistency with upstream becomes the dominant concern, enforced cleanly by a path-scoped codemod pass.
 
 Add codemod **Pass 7**: rewrite `@sparkleideas/cli` → `@sparkleideas/ruflo` in user-facing scopes only. Pass 7 is a sibling to Pass 5 (ADR-0117) and Pass 6 (commit `8aba0ad`) — same structural pattern, different content.
 
@@ -98,27 +111,21 @@ B1 documented in §Alternatives below as the conservative fallback if B2 turns o
 - **`lib/acceptance-*.sh`**: acceptance tests probe the cli binary directly via `_cli_cmd` per memory `reference-cli-cmd-helper.md`. The 36× slowdown from npx serialization makes the redirect-via-wrapper unacceptable for parallel acceptance waves.
 - **Pipeline scripts**: `scripts/test-acceptance.sh`, `scripts/publish-verdaccio.sh`, etc. invoke the cli's bin directly because they need precise version control, not `@latest` resolution.
 
-## Consequences
+### Consequences
 
-### Positive
+* Good, because of brand consistency with upstream: ~300 surfaces flip to match upstream's `ruflo` convention; 5 sister files (cli/ruflo/mcp/etc.) line up cleanly.
+* Good, because it's codemod-enforced: future upstream merges that reintroduce `@claude-flow/cli` get auto-rewritten via Pass 1 (existing) → `@sparkleideas/cli` → Pass 7 (new) → `@sparkleideas/ruflo`. No fork-side maintenance.
+* Good, because it composes with ADR-0142: validates the wrapper-overhead reduction is real — if Pass 7 lands and users immediately complain about latency, ADR-0142's benchmarks were wrong.
+* Good, because it eases Pass 5 work: the 207 `claude-flow@<ver>` hits ADR-0141 targets become a smaller surface to think about, since Pass 7's brand flip happens at a different layer.
+* Bad, because of more codemod surface: Pass 7 adds ~50 LOC to `scripts/codemod.mjs` plus its own test file. Acceptable per Pass 5/6 precedent.
+* Bad, because of acceptance-check brittleness: any acceptance check that greps for `@sparkleideas/cli` in user-facing surfaces will fail after Pass 7 lands. Need to audit acceptance scripts for these greps and adjust.
+* Bad, because of documentation churn: 40+ markdown files in user-facing docs change in one commit — large diff to review.
+* Neutral, because of user retraining: any user with shell history of `npx @sparkleideas/cli …` keeps working (the cli package still exists; commands resolve fine). The flip is forward-compatible — old commands still work, new docs prefer the new form.
+* Neutral, because of search-and-replace asymmetry: users with internal scripts referencing `@sparkleideas/cli` won't have those auto-updated. Mitigated by leaving the cli package unchanged and functional.
 
-- **Brand consistency with upstream**: ~300 surfaces flip to match upstream's `ruflo` convention; 5 sister files (cli/ruflo/mcp/etc.) line up cleanly
-- **Codemod-enforced**: future upstream merges that reintroduce `@claude-flow/cli` get auto-rewritten via Pass 1 (existing) → `@sparkleideas/cli` → Pass 7 (new) → `@sparkleideas/ruflo`. No fork-side maintenance
-- **Composes with ADR-0142**: validates the wrapper-overhead reduction is real — if Pass 7 lands and users immediately complain about latency, ADR-0142's benchmarks were wrong
-- **Eases Pass 5 work**: the 207 `claude-flow@<ver>` hits ADR-0141 targets become a smaller surface to think about, since Pass 7's brand flip happens at a different layer
+### Confirmation
 
-### Negative
-
-- **More codemod surface**: Pass 7 adds ~50 LOC to `scripts/codemod.mjs` plus its own test file. Acceptable per Pass 5/6 precedent
-- **Acceptance-check brittleness**: any acceptance check that greps for `@sparkleideas/cli` in user-facing surfaces will fail after Pass 7 lands. Need to audit acceptance scripts for these greps and adjust
-- **Documentation churn**: 40+ markdown files in user-facing docs change in one commit — large diff to review
-
-### Neutral
-
-- **User retraining**: any user with shell history of `npx @sparkleideas/cli …` keeps working (the cli package still exists; commands resolve fine). The flip is forward-compatible — old commands still work, new docs prefer the new form
-- **Search-and-replace asymmetry**: users with internal scripts referencing `@sparkleideas/cli` won't have those auto-updated. Mitigated by leaving the cli package unchanged and functional
-
-## Acceptance criteria
+Acceptance criteria:
 
 1. `scripts/codemod.mjs` adds Pass 7 with the regex + path-scope predicate from §Decision; exported `applyPass7()` and `isPlugin7Scope()` helpers for testability (mirroring Pass 5's structure)
 2. `tests/pipeline/codemod.test.mjs` adds a new `describe('codemod: ADR-0143 Pass 7 …')` block with:
@@ -133,28 +140,6 @@ B1 documented in §Alternatives below as the conservative fallback if B2 turns o
 4. Acceptance script audit: any acceptance check that asserts `@sparkleideas/cli` appears in user-facing files updated to assert `@sparkleideas/ruflo` instead
 5. **Automated** init-MCP-config smoke (`adr0143-init-mcp` acceptance check, `lib/acceptance-adr0143-init-mcp.sh:check_adr0143_init_mcp_config`): fresh-installs the wrapper from Verdaccio, runs `ruflo init --yes --force` in a tmp dir, parses the generated `.mcp.json`, asserts the mcpServers entry uses the wrapper-canonical path (B2 — either `args: [..., "@sparkleideas/ruflo", ...]` for npx form OR `command: <local-bin>, args: ["mcp","start"]` for direct-bin form). Mirrors ADR-0117 AC#1's dual-path acceptance. Per project policy, no manual steps.
 6. Wrapper-overhead benchmark from ADR-0142 must be in place — if MCP boot via wrapper exceeds 200ms in measurement, fall back to B1 documented in §Alternatives
-
-## Alternatives considered
-
-### Option B1 — Keep MCP pointing at cli directly
-Init-generated MCP config stays `args: ["-y", "@sparkleideas/cli", …]` even though all other user surfaces flip to ruflo.
-
-**Rejected** as primary choice; documented as fallback. Trade-offs are nearly even, and a single canonical entry point is the simpler design under ADR-0142's loud-failure guards. Reverting to B1 if MCP startup proves flaky is a one-line codemod tweak.
-
-### Option B0 — Skip the rebrand entirely
-Leave `@sparkleideas/cli` as the user-facing brand, accept divergence from upstream.
-
-**Rejected**. The wrapper-overhead reason for the divergence disappears under ADR-0142. Maintaining a divergence with no benefit is pure cost. Upstream's `ruflo` brand is also better marketing.
-
-### Option C — Flip via fork-side patches instead of codemod
-Hand-edit each of the ~300 surfaces in `forks/ruflo`, commit upstream of the codemod.
-
-**Rejected** per memory `feedback-patches-in-fork.md`: this IS a scope rename, the codemod's charter. Fork patches don't survive upstream merges; the same regression returns next sync.
-
-### Option D — Bigger scope: also rebrand internals (Cat E + F)
-Rewrite acceptance scripts, `_cli_cmd` helper, wrapper's own `package.json`, etc.
-
-**Rejected**. Internal direct-cli invocation is intentional (perf, version-control, atomic fork-source assumptions). Rebranding internals would force the wrapper to depend on itself or break the parallel acceptance harness. The split is meaningful.
 
 ## Pre-flight findings (verified 2026-05-04)
 
@@ -311,14 +296,22 @@ Commit 3 message documents: pre-release user-facing-scope hit count (~300), post
 - **Full landed, regression discovered**: `git revert <commit-2>` is sufficient. Commit 3 is verification-only — nothing to revert
 - **MCP option B2 turns out flaky** (wrapper-startup bug crashes MCP): in-place codemod tweak — change `PASS7_USER_FACING_SUBDIRS` to exclude `v3/@claude-flow/cli/src/init/mcp-generator.ts` specifically, falling back to B1 (MCP keeps pointing at cli direct). One-line revert; documented as fallback in §Alternatives §Option B1
 
-## Reference
+## More Information
+
+Original status: **Accepted (2026-05-04)** — implemented across 3 commits (`9d594cf` tests-first + `4186399` Pass 7 impl + commit 3 release verification). ADR-0142 prerequisite landed `fc96ef1`. Pass 7 contract verified post-release: **0** `@sparkleideas/cli` refs in user-facing scopes, **64** `@sparkleideas/ruflo` refs (the rebrand), **10** `@sparkleideas/cli` refs preserved in internal scopes (memory cross-package + cli's own `__tests__/`). New codemod runs ship in next bumped release.
+
+This ADR depends on ADR-0142 (wrapper rewrite — non-negotiable prerequisite). It builds on ADR-0007 (drop-in UX), ADR-0117 (the original ruflo-namespace rebrand effort, scoped narrowly because of the wrapper perf cost), and ADR-0141 (Pass 5 generalization — sister-codemod-pass design for path-scoped rewrites). Commit `8aba0ad` (Pass 6) provides analogous prior-art for an npx-context regex pass.
+
+Scope: Codemod adds a new path-scoped pass that rewrites `@sparkleideas/cli` → `@sparkleideas/ruflo` in user-facing contexts only. Internal pipeline, test infrastructure, and the wrapper's own dependency are explicitly out of scope.
+
+References:
 
 - Wrapper-architecture prerequisite: ADR-0142 (must close first)
 - Original brand-rebrand effort (narrowly scoped due to wrapper cost): ADR-0117
 - Sister codemod passes for path-scoped rewrites: ADR-0141 (Pass 5 generalization), commit `8aba0ad` (Pass 6 — npx ruflo)
 - Pre-flight survey: 2026-05-04, see §"Pre-flight findings" above
 
-## Reference
+Additional references (the original recorded a second reference block):
 
 - Wrapper-architecture prerequisite: ADR-0142 (must close first)
 - Original brand-rebrand effort (narrowly scoped due to wrapper cost): ADR-0117

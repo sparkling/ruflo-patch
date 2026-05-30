@@ -1,28 +1,31 @@
-# ADR-0045: Embeddings, Compliance & Observability
+---
+status: accepted
+date: 2026-03-16
+tags: [embeddings, compliance, observability, controllers]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-## Status
+# Embeddings, Compliance & Observability
 
-Accepted
-
-## Date
-
-2026-03-16
-
-## Deciders
-
-sparkling team
-
-## Methodology
-
-SPARC + MADR
-
-## Context
+## Context and Problem Statement
 
 ADR-0039 Phases 10 and 16 identified three controllers that address embedding resilience, compliance auditing, and production observability. Currently, the system uses a hardcoded Xenova/all-MiniLM-L6-v2 (384-dim) with hash fallback (near-useless). Console.log is the only observability. No compliance audit trail exists.
 
-## Decision: Specification (SPARC-S)
+## Considered Options
 
-### Controllers
+* Wire A9 EnhancedEmbeddingService (Level 3), D3 AuditLogger (Level 3), and D1 TelemetryManager (Level 0) (chosen).
+
+(No alternatives were recorded. A correction from ADR-0039 establishes that AuditLogger and AttestationLog are orthogonal — see Specification.)
+
+## Decision Outcome
+
+Chosen option: "Wire A9 EnhancedEmbeddingService, D3 AuditLogger, and D1 TelemetryManager", because they jointly address embedding resilience (multi-provider with fallback), compliance auditing (human-readable journal orthogonal to the existing AttestationLog), and production observability (OpenTelemetry), none of which the current hardcoded-Xenova / console.log baseline provides.
+
+### Specification (SPARC-S)
+
+#### Controllers
 
 | ID | Class | Lines | Level | Description |
 |----|-------|:-----:|:-----:|-------------|
@@ -30,7 +33,7 @@ ADR-0039 Phases 10 and 16 identified three controllers that address embedding re
 | D3 | AuditLogger | 483 | 3 | 18 typed security events, file rotation (10MB, 10 files), SOC2/GDPR/HIPAA formatting. Already wired in auth.middleware.ts and rate-limit.middleware.ts |
 | D1 | TelemetryManager | 545 | 0 | OpenTelemetry spans + counters + histograms, OTLP/Prometheus/Console exporters, per-controller metrics (init time, call count, error rate, p50/p95/p99), <1% overhead |
 
-### AuditLogger vs AttestationLog (CORRECTION from ADR-0039)
+#### AuditLogger vs AttestationLog (CORRECTION from ADR-0039)
 
 Previous claim: "Overlaps attestationLog." Finding: NO overlap.
 
@@ -44,11 +47,11 @@ Previous claim: "Overlaps attestationLog." Finding: NO overlap.
 
 These are orthogonal. Both should exist.
 
-### D1 Level Correction
+#### D1 Level Correction
 
 ADR-0039 architecture table places D1 at Level 0. TelemetryManager must initialize before other controllers so it can instrument their init times.
 
-## Decision: Pseudocode (SPARC-P)
+### Pseudocode (SPARC-P)
 
 ```
 // controller-registry.ts -- A9 at Level 3
@@ -87,7 +90,7 @@ bridgeAuditEvent(type, payload):
   logger.log({ type, payload, timestamp: Date.now() })
 ```
 
-## Decision: Architecture (SPARC-A)
+### Architecture (SPARC-A)
 
 - A9 at Level 3 (after vector backend, needs dimension info from Level 2).
 - D3 at Level 3 (alongside A9, independent of vector backend).
@@ -96,16 +99,16 @@ bridgeAuditEvent(type, payload):
 - D3 complements AttestationLog (crypto chain) with human-readable compliance journal.
 - D1 provides OpenTelemetry spans for Grafana/Prometheus integration.
 
-## Decision: Refinement (SPARC-R)
+### Refinement (SPARC-R)
 
 - A9 auto dimension alignment handles provider switching transparently: OpenAI 1536-dim embeddings are projected down to 768, MiniLM 384-dim projected up. No consumer code changes needed.
 - D3 has zero overlap with AttestationLog. The deep analysis swarm confirmed different storage, different event schemas, different consumers.
 - D1 overhead measured at <1% in upstream benchmarks. Per-controller metrics (init time, call count, error rate, p50/p95/p99) are tracked automatically.
 - Phase 10 effort: 7h. Phase 16 effort: 6h. Phase 10 depends on Phase 9.
 
-## Decision: Completion (SPARC-C)
+### Completion (SPARC-C)
 
-### Checklist
+#### Checklist
 
 - [x] Wire A9 EnhancedEmbeddingService at Level 3 (~1435 lines)
 - [x] Wire D3 AuditLogger at Level 3 (~483 lines)
@@ -116,7 +119,21 @@ bridgeAuditEvent(type, payload):
 - [x] Wire D1 to instrument all controller init times and call counts
 - [x] Register MCP tools for A9 (embed, status) and D1 (metrics, spans)
 
-### Testing
+### Consequences
+
+* Good, because multi-provider embeddings eliminate single-point-of-failure on Xenova.
+* Good, because the LRU cache (100K) eliminates redundant embedding computation.
+* Good, because of the compliance audit trail (SOC2/HIPAA) via D3.
+* Good, because OpenTelemetry observability (D1) enables Grafana/Prometheus dashboards.
+* Good, because D1 init-time tracking helps identify slow controllers.
+* Bad, because A9 adds API key management complexity for OpenAI/Cohere providers.
+* Bad, because D3 file rotation adds disk I/O.
+* Bad, because D1 requires OTLP collector setup for full observability (Console exporter works out of box).
+* Neutral, because there are risks: A9 API whitelist may block legitimate providers if not configured; D1 <1% overhead claim needs validation under production memory-bridge load; and D3 file-based storage is not durable across container restarts without volume mount.
+
+### Confirmation
+
+#### Testing
 
 ```js
 // tests/unit/embeddings-compliance-observability.test.mjs
@@ -191,7 +208,7 @@ describe('ADR-0045: embeddings, compliance & observability', () => {
 });
 ```
 
-### Testing Guidance
+#### Testing Guidance
 
 **Unit test file**: `tests/unit/adr-0045-embeddings-compliance.test.mjs`
 
@@ -225,7 +242,7 @@ describe('ADR-0045: embeddings, compliance & observability', () => {
 - `bridgeEmbed` fallback chain changes: `npm run deploy` (full acceptance)
 - Acceptance check changes only: `npm run deploy`
 
-### Success Criteria
+#### Success Criteria
 
 - A9 embedding fallback chain: primary fails, secondary succeeds, no caller disruption
 - A9 dimension alignment produces 768-dim output from any provider
@@ -233,31 +250,8 @@ describe('ADR-0045: embeddings, compliance & observability', () => {
 - D3 and AttestationLog coexist without overlap
 - D1 spans visible in console exporter; counters increment per controller call
 
-## Consequences
+## More Information
 
-### Positive
+This decision was recorded by the sparkling team using the SPARC + MADR methodology.
 
-- Multi-provider embeddings eliminate single-point-of-failure on Xenova
-- LRU cache (100K) eliminates redundant embedding computation
-- Compliance audit trail (SOC2/HIPAA) via D3
-- OpenTelemetry observability (D1) enables Grafana/Prometheus dashboards
-- D1 init-time tracking helps identify slow controllers
-
-### Negative
-
-- A9 adds API key management complexity for OpenAI/Cohere providers
-- D3 file rotation adds disk I/O
-- D1 requires OTLP collector setup for full observability (Console exporter works out of box)
-
-### Risks
-
-- A9 API whitelist may block legitimate providers if not configured
-- D1 <1% overhead claim needs validation under production memory-bridge load
-- D3 file-based storage not durable across container restarts without volume mount
-
-## Related
-
-- **ADR-0039**: Upstream controller integration roadmap (parent, Phases 10 + 16)
-- **ADR-0033**: Complete AgentDB v3 controller activation (predecessor)
-- **ADR-0044**: Attention suite integration (Phase 9 prerequisite for Phase 10)
-- **ADR-0030**: Memory system optimization (embedding dimensions)
+The original record cross-referenced related decisions: ADR-0039 (upstream controller integration roadmap, the parent, covering Phases 10 + 16); ADR-0033 (complete AgentDB v3 controller activation, the predecessor); ADR-0044 (attention suite integration, the Phase 9 prerequisite for Phase 10); and ADR-0030 (memory system optimization, on embedding dimensions).

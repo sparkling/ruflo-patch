@@ -1,15 +1,17 @@
-# ADR-0074: Controller Wiring & Storage Architecture Audit
+---
+status: accepted
+date: 2026-04-06
+tags: [controller, storage, audit, config]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: Implemented
-- **Date**: 2026-04-06
-- **Implemented**: 2026-04-06 (CJS/ESM silo fix Phases 1-3, 4 acceptance checks)
-- **Scope**: ADR-0068 through ADR-0072 post-implementation audit
-- **Method**: Hive analysis — Queen (Reuven Cohen) + 5 ruflo specialist agents + 3 Explore agents
-- **Deciders**: Henrik Pettersen
+# Controller Wiring & Storage Architecture Audit
 
-## Context
+## Context and Problem Statement
 
-ADR-0068 through ADR-0072 represent a five-ADR wave that unified controller configuration, delegated controller wiring, consolidated fork branches, built native binaries from source, and added init-config acceptance tests. This ADR captures a comprehensive post-implementation audit of the resulting state: controller counts, storage backends, config chain completeness, upstream ADR alignment, and consistency assessment.
+ADR-0068 through ADR-0072 represent a five-ADR wave that unified controller configuration, delegated controller wiring, consolidated fork branches, built native binaries from source, and added init-config acceptance tests. This ADR captures a comprehensive post-implementation audit of the resulting state: controller counts, storage backends, config chain completeness, upstream ADR alignment, and consistency assessment. The audit was conducted via hive analysis — Queen (Reuven Cohen) + 5 ruflo specialist agents + 3 Explore agents; scope is the ADR-0068-through-ADR-0072 post-implementation state.
 
 ## 1. Controller Wiring: From 44 to 45
 
@@ -249,7 +251,7 @@ nightlyLearner, causalRecall, queryOptimizer, selfLearningRvfBackend, mutationGu
 | 7 | **Two RvfBackend classes** — different interfaces, confusing naming | **LOW** | Intentional, documented |
 | 8 | **GraphDB dead code** — graphAdapter always null, writes to void | **LOW** | Correctly deferred; SQLite CTEs sufficient |
 
-## Decision
+## Decision Outcome
 
 This ADR records the audit findings as the authoritative post-implementation state after the ADR-0068-0072 wave, plus a detailed fix plan for Issue #1 (CJS/ESM dual silo).
 
@@ -555,3 +557,7 @@ Fix the CJS/ESM dual silo (Issue #1) before anything else. "Intelligence data pe
 
 ### Intelligence dedup (#1518)
 Upstream v3.5.54 added intelligence store deduplication (4,482 → 157 entries). This partially addresses Issue #1 accumulation but does NOT fix the CJS/ESM silo itself.
+
+## More Information
+
+Original status: "Implemented (2026-04-06 — CJS/ESM silo fix Phases 1-3, 4 acceptance checks)." Recorded and implemented 2026-04-06; deciders: Henrik Pettersen. This is a post-implementation audit covering the ADR-0068 through ADR-0072 wave, conducted via hive analysis (Queen Reuven Cohen + 5 ruflo specialist agents + 3 Explore agents).

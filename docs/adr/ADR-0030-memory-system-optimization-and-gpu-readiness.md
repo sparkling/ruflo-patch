@@ -1,22 +1,15 @@
-# ADR-0030: Memory System Optimization, ONNX Embeddings & GPU Readiness
+---
+status: accepted
+date: 2026-03-15
+tags: [memory, embeddings, onnx, gpu]
+supersedes: []
+depends-on: [ADR-0027, ADR-0028, ADR-0029]
+implements: []
+---
 
-## Status
+# Memory System Optimization, ONNX Embeddings & GPU Readiness
 
-Accepted — **partially implemented as of patch.26; see ADR-0031 for runtime validation results**
-
-## Date
-
-2026-03-15
-
-## Deciders
-
-sparkling team
-
-## Methodology
-
-SPARC (Specification, Pseudocode, Architecture, Refinement, Completion) + MADR (Markdown Any Decision Records)
-
-## Context
+## Context and Problem Statement
 
 Following the fixes in ADR-0029, a comprehensive runtime analysis of `@sparkleideas/cli` v3.5.15-patch.25 was performed on a production server (AMD Ryzen 9 7950X3D, 187 GB RAM, 3.5 TB NVMe). The analysis tested all memory operations (store, retrieve, search, delete), learning pipelines (trajectory tracking, SONA, EWC++), pattern storage, and neural subsystems.
 
@@ -83,7 +76,7 @@ System health at time of analysis:
 
 All config-level patches are correctly applied. The bridge-fallback issue (OPT-001/002) is a runtime initialization problem, not a missing patch.
 
-### Decision Drivers
+## Decision Drivers
 
 1. Memory system using bridge-fallback for pattern operations instead of HNSW
 2. Embedding quality limited to 384-dim (reasoningbank bridge) vs available 768-dim (ONNX)
@@ -220,9 +213,9 @@ Add a second AX102 (7950X3D/192GB) for workload isolation.
 - **Pros**: Geographic redundancy, staging/prod split, 3x threads with AX162
 - **Cons**: EUR 109-199/mo, doesn't fix any software issues, current server at 5% utilization
 
-## Decision
+## Decision Outcome
 
-**Option A: CPU-Only Optimization** — apply immediately.
+Chosen option: "Option A: CPU-Only Optimization" — apply immediately. The 7950X3D's 96 MB 3D V-Cache makes memory-bandwidth-bound workloads (Flash Attention, HNSW, embedding inference) approach GPU performance at moderate scale, so software/config improvements deliver the gains without hardware cost while the server sits at 5% utilization.
 
 ### For the 7950X3D specifically — optimize CPU first
 
@@ -243,9 +236,9 @@ The 7950X3D's 3D V-Cache (96 MB L3) is 375x larger than an NVIDIA A100's 192 KB 
 
 **Option C: rejected** — server is at 5% utilization.
 
-## Decision: Specification (SPARC-S)
+### Specification (SPARC-S)
 
-### S1: Fix ReasoningBank Bridge-Fallback (OPT-001, OPT-002)
+#### S1: Fix ReasoningBank Bridge-Fallback (OPT-001, OPT-002)
 
 **Scope**: Patch the ReasoningBank controller initialization so `.store()` and `.search()` are properly bound.
 
@@ -253,7 +246,7 @@ The 7950X3D's 3D V-Cache (96 MB L3) is 375x larger than an NVIDIA A100's 192 KB 
 
 **Root cause**: The controller registry stores the ReasoningBank module object, but the module's `store` and `search` exports are not direct function properties — they may be wrapped in a class instance or require explicit binding.
 
-### S2: Install ONNX Embeddings
+#### S2: Install ONNX Embeddings
 
 **Scope**: Install `@xenova/transformers` and `onnxruntime-node` globally, configure `all-mpnet-base-v2` model (768-dim).
 
@@ -261,33 +254,33 @@ The 7950X3D's 3D V-Cache (96 MB L3) is 375x larger than an NVIDIA A100's 192 KB 
 - Global: `npm install -g @xenova/transformers onnxruntime-node`
 - Project: `.claude-flow/embeddings.json` (EM-001 config)
 
-### S3: Apply Optimized Config
+#### S3: Apply Optimized Config
 
 **Scope**: Update `.claude-flow/config.json` with hardware-appropriate settings.
 
-### S4: Fix Search Threshold (OPT-009)
+#### S4: Fix Search Threshold (OPT-009)
 
 **Scope**: Add model-aware adaptive threshold — 0.2 for 384-dim, 0.3 for 768-dim ONNX.
 
 **File**: `v3/@claude-flow/cli/src/memory/memory-bridge.ts:36-53`
 
-### S5: Fix Cross-Namespace Search (OPT-010)
+#### S5: Fix Cross-Namespace Search (OPT-010)
 
 **Scope**: When no namespace specified, aggregate results across all namespaces.
 
 **File**: `v3/@claude-flow/cli/src/memory/memory-bridge.ts` (bridgeSearchEntries)
 
-### S6: Backfill Legacy Embeddings (OPT-011)
+#### S6: Backfill Legacy Embeddings (OPT-011)
 
 **Scope**: Add `memory migrate` subcommand to regenerate embeddings for entries with `hasEmbedding: false`.
 
-### S7: Unify Neural and Intelligence Pattern Stores (OPT-017)
+#### S7: Unify Neural and Intelligence Pattern Stores (OPT-017)
 
 **Scope**: Wire `intelligence_pattern-store` to also populate `neural_patterns`, eliminating the dual-store divergence.
 
-## Decision: Pseudocode (SPARC-P)
+### Pseudocode (SPARC-P)
 
-### P1: ReasoningBank Bridge Fix
+#### P1: ReasoningBank Bridge Fix
 
 ```
 // memory-bridge.ts — getControllerRegistry()
@@ -319,7 +312,7 @@ function getControllerRegistry(dbPath):
   return registry
 ```
 
-### P2: ONNX Embeddings Configuration
+#### P2: ONNX Embeddings Configuration
 
 ```json
 // .claude-flow/embeddings.json
@@ -333,7 +326,7 @@ function getControllerRegistry(dbPath):
 }
 ```
 
-### P3: Optimized Config
+#### P3: Optimized Config
 
 ```json
 // .claude-flow/config.json — diff from defaults
@@ -364,7 +357,7 @@ function getControllerRegistry(dbPath):
 }
 ```
 
-### P4: Model-Aware Adaptive Threshold
+#### P4: Model-Aware Adaptive Threshold
 
 ```
 // memory-bridge.ts
@@ -383,7 +376,7 @@ function getAdaptiveThreshold(explicit, detectedModel, dimensions):
   return THRESHOLDS['onnx-768']
 ```
 
-### P5: Cross-Namespace Search
+#### P5: Cross-Namespace Search
 
 ```
 // memory-bridge.ts — bridgeSearchEntries()
@@ -405,7 +398,7 @@ function bridgeSearchEntries(options):
     return allResults.slice(0, options.limit)
 ```
 
-### P6: Embedding Backfill
+#### P6: Embedding Backfill
 
 ```
 // New subcommand: memory migrate
@@ -421,9 +414,9 @@ function memoryMigrate():
   log(`Backfilled ${entries.length} entries with ${model} embeddings`)
 ```
 
-## Decision: Architecture (SPARC-A)
+### Architecture (SPARC-A)
 
-### Patch Mapping
+#### Patch Mapping
 
 | Fix | Fork | File (relative to `v3/@claude-flow/`) | Lines | GitHub Issue |
 |-----|------|---------------------------------------|-------|-------------|
@@ -435,7 +428,7 @@ function memoryMigrate():
 | S6 | ruflo | `cli/src/commands/memory.ts` | New subcommand | TBD |
 | S7 | ruflo | `cli/src/mcp-tools/hooks-tools.ts` + `neural/` | pattern-store handler | TBD |
 
-### Dependencies
+#### Dependencies
 
 ```
 S2 (ONNX install) ──→ S4 (threshold becomes model-aware)
@@ -445,7 +438,7 @@ S5 (cross-ns)     ──→ independent
 S6 (backfill)     ──→ depends on S2 for best results
 ```
 
-### GPU Readiness Architecture (Future, Option B)
+#### GPU Readiness Architecture (Future, Option B)
 
 When a discrete GPU is added, the activation path is:
 
@@ -470,9 +463,9 @@ When a discrete GPU is added, the activation path is:
 
 No code changes needed — only build flags and config. The GPU plumbing is already implemented in upstream.
 
-## Decision: Refinement (SPARC-R)
+### Refinement (SPARC-R)
 
-### Validation Plan
+#### Validation Plan
 
 After applying fixes:
 
@@ -484,16 +477,16 @@ After applying fixes:
 6. **S6 validation**: `memory migrate` backfills entries; `memory_stats` shows 100% `embeddingCoverage`
 7. **S7 validation**: `neural_patterns list` shows patterns stored via `intelligence_pattern-store`
 
-### Regression Checks
+#### Regression Checks
 
 - All existing memory operations (store, retrieve, search, delete) still pass
 - Trajectory tracking pipeline still works end-to-end
 - SONA learning produces real patterns with >0 confidence
 - `npm run preflight && npm run test:unit` passes
 
-## Decision: Completion (SPARC-C)
+### Completion (SPARC-C)
 
-### Implementation Order
+#### Implementation Order
 
 1. **S3**: Apply optimized config (zero risk, immediate benefit)
 2. **S2**: Install ONNX runtime (independent, improves all subsequent tests)
@@ -503,7 +496,7 @@ After applying fixes:
 6. **S6**: Add `memory migrate` subcommand
 7. **S7**: Unify pattern stores
 
-### Estimated Impact
+#### Estimated Impact
 
 | Metric | Before | After (Option A) | After (Option B + GPU) |
 |--------|--------|-------------------|----------------------|
@@ -517,26 +510,18 @@ After applying fixes:
 | Batch embedding speed | ~2ms/entry (CPU) | ~1ms/entry (ONNX CPU) | ~0.1ms/entry (CUDA) |
 | Vector similarity (batch) | CPU only | CPU (AVX2) | 3.5-4x GPU shaders |
 
-## Consequences
+### Consequences
 
-### Positive
-
-- All detected fallbacks eliminated (bridge-fallback → ReasoningBank)
-- Search quality dramatically improved (384→768 dim, threshold fix, cross-namespace)
-- Server resources properly utilized (256→2048 MB cache, 5K→50K graph nodes)
-- Clear GPU activation path documented for future hardware addition
-- No hardware cost — all improvements are software/config
-
-### Negative
-
-- `@xenova/transformers` adds ~200 MB disk for model weights (first-run download)
-- Larger cache (2 GB) increases memory baseline (trivial on 187 GB machine)
-- Model-aware threshold adds minor complexity to search path
-
-### Risks
-
-- ReasoningBank bridge fix (S1) may require deeper investigation if the module's export structure differs from expected
-- Cross-namespace search (S5) may return too many results for broad queries — mitigated by similarity sorting and limit
+* Good, because all detected fallbacks eliminated (bridge-fallback → ReasoningBank)
+* Good, because search quality dramatically improved (384→768 dim, threshold fix, cross-namespace)
+* Good, because server resources properly utilized (256→2048 MB cache, 5K→50K graph nodes)
+* Good, because clear GPU activation path documented for future hardware addition
+* Good, because no hardware cost — all improvements are software/config
+* Bad, because `@xenova/transformers` adds ~200 MB disk for model weights (first-run download)
+* Bad, because larger cache (2 GB) increases memory baseline (trivial on 187 GB machine)
+* Bad, because model-aware threshold adds minor complexity to search path
+* Neutral, because (risk) ReasoningBank bridge fix (S1) may require deeper investigation if the module's export structure differs from expected
+* Neutral, because (risk) cross-namespace search (S5) may return too many results for broad queries — mitigated by similarity sorting and limit
 
 ## Implementation Status (Updated 2026-03-15)
 
@@ -556,14 +541,8 @@ Runtime validation against `@sparkleideas/cli@3.5.15-patch.26` (ADR-0031) found:
 
 See **ADR-0031** for full details, evidence, and the 7-patch remediation plan (DB-001 through DB-007).
 
-## Related
+## More Information
 
-- **ADR-0031**: Runtime validation of this ADR's fixes — 4 new bugs, 7 new patches planned
-- **ADR-0029**: Memory & learning system fixes (predecessor — fixes bugs, this ADR optimizes)
-- **ADR-0027**: Fork migration and version overhaul (patch model)
-- **ADR-0028**: Build type safety
-- **Upstream ADRs**:
-  - `ruvector/docs/adr/ADR-003-simd-optimization-strategy.md` — SIMD dispatch
-  - `ruvector/docs/architecture/decisions/ADR-008-flash-attention.md` — Flash Attention block sizes
-  - `ruv-FANN/cuda-wasm/docs/adr/ADR-005-arm-native-backend.md` — GPU backend abstraction
-- **Diagnostic source**: Runtime analysis of `@sparkleideas/cli@3.5.15-patch.25` on Ryzen 9 7950X3D (this conversation)
+This decision relates to several other records: ADR-0031 (runtime validation of this ADR's fixes — 4 new bugs, 7 new patches planned), ADR-0029 (memory & learning system fixes — predecessor that fixes bugs, where this ADR optimizes), ADR-0027 (fork migration and version overhaul — patch model), and ADR-0028 (build type safety). It also references upstream ADRs: `ruvector/docs/adr/ADR-003-simd-optimization-strategy.md` (SIMD dispatch), `ruvector/docs/architecture/decisions/ADR-008-flash-attention.md` (Flash Attention block sizes), and `ruv-FANN/cuda-wasm/docs/adr/ADR-005-arm-native-backend.md` (GPU backend abstraction). The diagnostic source was a runtime analysis of `@sparkleideas/cli@3.5.15-patch.25` on Ryzen 9 7950X3D.
+
+This record used the SPARC + MADR methodology, with section headings (Specification / Pseudocode / Architecture / Refinement / Completion) remapped to the canonical MADR sections during the ADR-0271 migration, preserving all content. The deciders were the sparkling team. Original status: "Accepted — partially implemented as of patch.26; see ADR-0031 for runtime validation results".

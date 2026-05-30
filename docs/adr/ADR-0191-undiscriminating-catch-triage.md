@@ -1,15 +1,15 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-19
-methodology: [MADR]
-decision-makers: [Henrik Pettersen]
-tags: [error-handling, fail-loud, ADR-0082, detector, silent-fallback]
-related: [0082, 0188, 0189, 0190]
-audience: ai-executor
+tags: [error-handling, fail-loud, detector]
+supersedes: []
+depends-on: [ADR-0082]
+implements: []
 ---
 
-# ADR-0191: Undiscriminating-catch triage — categorize the 370 baseline
+# Undiscriminating-catch triage — categorize the 370 baseline
+
+> **Document type**: detector triage map (companion). Original frontmatter recorded `methodology: [MADR]`, `decision-makers: [Henrik Pettersen]`, `audience: ai-executor`, `related: [0082, 0188, 0189, 0190]`, and status accepted/completed 2026-05-19.
 
 ## Context and Problem Statement
 

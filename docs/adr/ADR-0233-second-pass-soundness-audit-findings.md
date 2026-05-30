@@ -1,17 +1,17 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-24
-implemented-date: 2026-05-24
 tags: [audit, soundness, completeness, second-pass, audit-followup]
 supersedes: []
-depends-on: [0201]
+depends-on: [ADR-0201]
 implements: []
 ---
 
 # Second-pass soundness audit findings (2026-05-24)
 
-## Context
+## Context and Problem Statement
+
+This decision was completed; implemented on 2026-05-24.
 
 [[ADR-0201]] documented the 2026-05-19 audit of 6 named surfaces (controllers, hooks, MCP, daemon, init, skills) and surfaced an explicit backlog in its [Reviews still owed](./ADR-0201-codebase-soundness-completeness-audit-with-runtime-validation.md#reviews-still-owed-added-2026-05-24) section: 10 §D next-pass surfaces, 2 §E cross-cutting items, and 2 LOW §A items the first audit had marked as deferred.
 

@@ -1,13 +1,15 @@
-# ADR-0146: Substrate-dictated team binding for swarm coordination plugin
+---
+status: rejected
+date: 2026-05-05
+tags: [swarm, agent-teams, plugins, coordination]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: **[CLOSED 2026-05-29 → DECLINED; see [[ADR-0270]]]** The substrate-dictated mechanism (swarm MCP handlers emitting `requiredSetup`/`spawnTemplate`) is **declined**: it mutates the shared `swarm_*` MCP return surface (shared with the base swarm skill + upstream) — the boundary the swarm/hive split protects — for nothing the skill layer can't already provide. Team coordination is **already** a swarm capability at the skill layer (`plugins/ruflo-swarm/skills/swarm-init/SKILL.md` — `TeamCreate` + `Agent` + `SendMessage`, per §Context line 24 of this ADR); enriching that prose is a skill-layer enhancement, not a substrate change. **That enrichment LANDED 2026-05-29** (fork `ca6b4c3bf`): `swarm-init` now carries a full Agent-Teams coordination procedure (TeamCreate→spawn-with-`team_name`→SendMessage) + a swarm-vs-hive guardrail ("never team-bind a council"). The §Context "one sentence, no procedure" gap is closed at the right layer. Un-parented from ADR-0140 §Piece 6 (also declined — team comms is a swarm concern, not a hive one). Original status preserved below. — Proposed (2026-05-05). Blocked on ADR-0140 §Piece 6 ratification + first-running validation in fork. Not yet implemented.
-- **Date**: 2026-05-05
-- **Deciders**: Henrik Pettersen
-- **Depends on**: (none — un-parented 2026-05-29; formerly listed ADR-0140 §Piece 6 as the "canonical pattern," but that piece was declined and team-binding is canonically a **swarm** concern, not a hive-derived one. See [[ADR-0270]].)
-- **Related**: ADR-0140 (hive-mind-advanced implementation outline), ADR-0114 (substrate/protocol/execution layering), ADR-0145 (research collection — §D1 swarm-vs-hive comparison), ADR-0117 (marketplace MCP server registration)
-- **Scope**: Apply the substrate-dictated team binding pattern (defined canonically in ADR-0140 §Piece 6 for hive-mind) to the swarm coordination plugin. Fork-side, per `feedback-no-upstream-donate-backs.md`.
+# Substrate-dictated team binding for swarm coordination plugin
 
-## Context
+## Context and Problem Statement
 
 ADR-0140 §Piece 6 defines a substrate-dictated team binding pattern for the hive-mind coordination plugin: `hive-mind_init` returns `requiredSetup` directives (e.g., `TeamCreate({team_name: hiveId})`); `hive-mind_spawn` returns `spawnTemplate` with `team_name` pre-bound; the queen prompt executes these contracts deterministically. The result: hive workers join a Claude Code team automatically, unlocking 10 of the 15 behaviors gated on `oq()` (i.e. `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`) — `teammate_mailbox` and `team_context` system-reminder injection, `@<name>` resolution, `TaskUpdate` auto-claim, `task_assignment` mailbox messages, etc.
 
@@ -29,7 +31,15 @@ The swarm runtime (per ADR-0145 §D1's reading of `swarm-advanced`) uses `parall
 
 The architectural gap is identical to hive-mind's pre-Piece-6 state. The remediation pattern is identical too — only the file paths and substrate identifiers change.
 
-## Decision
+## Considered Options
+
+* **Apply the substrate-dictated team binding pattern (swarm MCP handlers emit `requiredSetup`/`spawnTemplate`) to the swarm coordination plugin (proposed; ultimately DECLINED — see Decision Outcome).**
+
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen outcome: rejected (DECLINED 2026-05-29). The substrate-dictated mechanism mutates the shared `swarm_*` MCP return surface (shared with the base swarm skill + upstream) — the boundary the swarm/hive split protects — for nothing the skill layer can't already provide. Team coordination is already a swarm capability at the skill layer (`plugins/ruflo-swarm/skills/swarm-init/SKILL.md` — `TeamCreate` + `Agent` + `SendMessage`); enriching that prose is a skill-layer enhancement, not a substrate change. That enrichment landed 2026-05-29 (fork `ca6b4c3bf`) at the right layer. The original proposal is preserved below for history.
 
 Apply the substrate-dictated team binding pattern (defined canonically in ADR-0140 §Piece 6) to the swarm coordination plugin. Specifically:
 
@@ -108,9 +118,25 @@ Add `it()` blocks asserting:
 - `spawnTemplate.argsTemplate.team_name` equals the parent `swarmId`
 - Round-trip: re-invoking `agent_spawn` with the same `swarmId` returns consistent `team_name` in the spawn template
 
+### Consequences
+
+* Neutral, because the swarm-side benefit is smaller per-message than hive (swarm coordination is shared-memory-first, not message-passing-first) but real (see §"What this unlocks for swarm"). Ultimately declined because the substrate-mutation cost outweighed the skill-layer-achievable benefit.
+
+### Confirmation
+
+The swarm-side application would be "done" when all of:
+
+1. `swarm_init` test asserts `response.requiredSetup` is an array containing a `TeamCreate` directive with `args.team_name` matching the swarmId
+2. `agent_spawn` test asserts `response.spawnTemplate.argsTemplate.team_name === swarmId`
+3. `swarm-advanced` fork overlay exists at `plugins/ruflo-swarm-advanced/skills/swarm-advanced/SKILL.md`, mirrors upstream procedural shape, and embeds the `requiredSetup`/`spawnTemplate` execution path in Pattern 1-4 workflows
+4. `swarm-init` plugin one-liner replaced with procedural reference
+5. ≥1 swarm session run end-to-end with the new pattern; verify Agent Teams behaviors active for swarm workers (`team_context` system reminder injects; teammates can `SendMessage` to peers)
+6. ≥1 graceful-degradation case verified (run with `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` unset; confirm pattern logs the gap and continues without team binding)
+7. Plugin manifest registered with the marketplace MCP server entry
+
 ## Sequencing
 
-This ADR is **blocked on ADR-0140 §Piece 6** for two reasons:
+This ADR was **blocked on ADR-0140 §Piece 6** for two reasons:
 
 1. **Schema stability.** ADR-0140 §Piece 6 defines the canonical schemas for `requiredSetup` and `spawnTemplate`. Implementing them in swarm before they are stable in hive risks two-substrate divergence at the contract level — hard to reconcile after the fact.
 2. **Pattern validation.** ADR-0140 §Piece 6 is the proof point. Validate the pattern works end-to-end in production hive sessions before applying it to a second substrate. If Piece 6 surfaces unexpected friction (e.g., `TeamCreate` permission edge cases, `oq()`-off graceful degradation issues), swarm should inherit the fixes, not re-discover the bugs.
@@ -131,18 +157,6 @@ Recommended ratification order:
 | `forks/ruflo/plugins/ruflo-swarm/skills/swarm-init/SKILL.md` | Existing — replace L16 one-liner with procedural reference | ~10 |
 
 Total: ~830 LOC fork-side. Larger than ADR-0140 §Piece 6 (~135 LOC) primarily because `swarm-advanced` requires a fresh fork overlay (the upstream skill body has to be reproduced or referenced).
-
-## Acceptance criteria
-
-The swarm-side application is "done" when all of:
-
-1. `swarm_init` test asserts `response.requiredSetup` is an array containing a `TeamCreate` directive with `args.team_name` matching the swarmId
-2. `agent_spawn` test asserts `response.spawnTemplate.argsTemplate.team_name === swarmId`
-3. `swarm-advanced` fork overlay exists at `plugins/ruflo-swarm-advanced/skills/swarm-advanced/SKILL.md`, mirrors upstream procedural shape, and embeds the `requiredSetup`/`spawnTemplate` execution path in Pattern 1-4 workflows
-4. `swarm-init` plugin one-liner replaced with procedural reference
-5. ≥1 swarm session run end-to-end with the new pattern; verify Agent Teams behaviors active for swarm workers (`team_context` system reminder injects; teammates can `SendMessage` to peers)
-6. ≥1 graceful-degradation case verified (run with `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` unset; confirm pattern logs the gap and continues without team binding)
-7. Plugin manifest registered with the marketplace MCP server entry
 
 ## What this unlocks for swarm
 
@@ -182,7 +196,17 @@ Both ADRs apply the same pattern. They are kept separate because:
 3. **Different cost profiles.** ADR-0140 §Piece 6 is ~135 LOC; this ADR is ~830 LOC because of the SKILL.md overlay. Different review surfaces.
 4. **Cross-reference rather than duplicate.** This ADR cites ADR-0140 §Piece 6 as the canonical pattern definition. Schemas are documented once (in ADR-0140 §Piece 6) and inherited here. If the schemas evolve, both ADRs reference the canonical source.
 
-## References
+## More Information
+
+Original status: **[CLOSED 2026-05-29 → DECLINED; see [[ADR-0270]]]** The substrate-dictated mechanism (swarm MCP handlers emitting `requiredSetup`/`spawnTemplate`) is **declined**: it mutates the shared `swarm_*` MCP return surface (shared with the base swarm skill + upstream) — the boundary the swarm/hive split protects — for nothing the skill layer can't already provide. Team coordination is **already** a swarm capability at the skill layer (`plugins/ruflo-swarm/skills/swarm-init/SKILL.md` — `TeamCreate` + `Agent` + `SendMessage`, per §Context line 24 of this ADR); enriching that prose is a skill-layer enhancement, not a substrate change. **That enrichment LANDED 2026-05-29** (fork `ca6b4c3bf`): `swarm-init` now carries a full Agent-Teams coordination procedure (TeamCreate→spawn-with-`team_name`→SendMessage) + a swarm-vs-hive guardrail ("never team-bind a council"). The §Context "one sentence, no procedure" gap is closed at the right layer. Un-parented from ADR-0140 §Piece 6 (also declined — team comms is a swarm concern, not a hive one). Original status preserved below. — Proposed (2026-05-05). Blocked on ADR-0140 §Piece 6 ratification + first-running validation in fork. Not yet implemented.
+
+This ADR was un-parented 2026-05-29; it formerly listed ADR-0140 §Piece 6 as the "canonical pattern," but that piece was declined and team-binding is canonically a **swarm** concern, not a hive-derived one.
+
+This ADR relates to ADR-0140 (hive-mind-advanced implementation outline), ADR-0114 (substrate/protocol/execution layering), ADR-0145 (research collection — §D1 swarm-vs-hive comparison), and ADR-0117 (marketplace MCP server registration).
+
+Scope: Apply the substrate-dictated team binding pattern (defined canonically in ADR-0140 §Piece 6 for hive-mind) to the swarm coordination plugin. Fork-side, per `feedback-no-upstream-donate-backs.md`.
+
+References:
 
 - ADR-0140 §Piece 6 — canonical pattern definition (hive-mind), the prerequisite for this ADR
 - ADR-0145 §D1 — swarm-advanced + sister-skills audit (no Agent Teams integration anywhere)

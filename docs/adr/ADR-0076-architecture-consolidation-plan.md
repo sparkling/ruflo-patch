@@ -1,15 +1,35 @@
-# ADR-0076: Architecture Consolidation Plan
+---
+status: accepted
+date: 2026-04-06
+tags: [architecture, consolidation, storage, controllers]
+supersedes: []
+depends-on: [ADR-0069, ADR-0073, ADR-0075]
+implements: []
+---
 
-> See also [ADR-0076a-ideal-state-implementation-plan.md](ADR-0076a-ideal-state-implementation-plan.md) for detailed phase tracking.
+# Architecture Consolidation Plan
 
-- **Status**: Track A Implemented, Track B Completed (via ADR-0077 + ADR-0085)
-- **Date**: 2026-04-06
-- **Revised**: 2026-04-06 (upstream-compatible constraint applied)
-- **Completed**: 2026-04-13 (ADR-0085 deleted bridge, eliminated sidecar, closed all gaps)
-- **Depends on**: ADR-0075 (assessment), ADR-0073 (storage upgrade), ADR-0069 F1 (controller delegation)
-- **Analysis**: Two hive councils (10 + 10 agents), including Reuven Cohen perspective
+## Context and Problem Statement
 
-## Decision
+ADR-0075 assessed the architecture state and identified critical problems: three parallel controller registries, six embedding implementations with live 384-dim defaults, four HNSW implementations, seven storage backends with only one reachable, and dead code in critical paths. This ADR plans the consolidation work to address those findings, under the constraint that the fork must remain compatible with upstream so changes can keep merging and patches can be contributed back. Detailed phase tracking lives in ADR-0076a (ideal-state implementation plan). The plan was produced by two hive councils (10 + 10 agents), including a Reuven Cohen (upstream creator) perspective.
+
+## Key Insight: Upstream Creator Perspective
+
+Reuven Cohen (simulated upstream creator perspective) confirmed:
+- **HybridBackend is NOT dead** — planned production default (SQLite for queries + RVF for vectors)
+- **AgentDBService IS going away** — was always scaffolding; shim approach aligns with upstream roadmap
+- **Would accept PRs**: A1 (cosineSim), A3 (dimension validation), B1 (config), B4 (shim)
+- **Would NOT accept**: Deleting HybridBackend, memory-bridge.ts, sql.js fallback, VectorDb HNSW
+- **Top contribution request**: AgentDBService shim while agentic-flow is upstream-inactive
+
+## Considered Options
+
+* **Two-track additive-only consolidation under the upstream-compatibility constraint (chosen — revised)** — Track A surgical correctness fixes plus Track B new files alongside existing ones with early-return guards; no deletions, no restructuring, near-zero merge conflict risk.
+* **Original deletion-heavy plan (rejected)** — delete HybridBackend, memory-bridge.ts, sql.js fallback, split controller-registry.ts, delete AgentDBService (~9,555 lines deleted). Rejected because HybridBackend is a planned production default, memory-bridge.ts/sql.js encapsulate intentional edge-case handling, controller-registry.ts is the highest merge-conflict file, and wholesale deletion would break upstream merge compatibility.
+
+## Decision Outcome
+
+Chosen option: "Two-track additive-only consolidation under the upstream-compatibility constraint", because we do not deviate from upstream's file structure, so we can continue merging changes and contributing patches back.
 
 Implement consolidation in two tracks under the **upstream compatibility constraint**: we do
 not deviate from upstream's file structure, so we can continue merging changes and contributing
@@ -22,16 +42,7 @@ structural changes.
 ones, early-return guards that intercept when initialized and fall through when not. No files
 deleted, no files restructured, no upstream merge conflicts.
 
-## Key Insight: Upstream Creator Perspective
-
-Reuven Cohen (simulated upstream creator perspective) confirmed:
-- **HybridBackend is NOT dead** — planned production default (SQLite for queries + RVF for vectors)
-- **AgentDBService IS going away** — was always scaffolding; shim approach aligns with upstream roadmap
-- **Would accept PRs**: A1 (cosineSim), A3 (dimension validation), B1 (config), B4 (shim)
-- **Would NOT accept**: Deleting HybridBackend, memory-bridge.ts, sql.js fallback, VectorDb HNSW
-- **Top contribution request**: AgentDBService shim while agentic-flow is upstream-inactive
-
-## Track A — Correctness Fixes (IMPLEMENTED)
+### Track A — Correctness Fixes (IMPLEMENTED)
 
 | Fix | What | Status |
 |-----|------|--------|
@@ -41,21 +52,21 @@ Reuven Cohen (simulated upstream creator perspective) confirmed:
 | A4 | Dual-instance singleton guard on 6 shared controllers | **Done** |
 | Tests | 31 unit tests (source + runtime) | **Done** |
 
-## Track B — Upstream-Compatible Structural Consolidation (REVISED)
+### Track B — Upstream-Compatible Structural Consolidation (REVISED)
 
-### Core principle: additive layers, not deletions
+#### Core principle: additive layers, not deletions
 
 Instead of: Delete old file → create replacement
 Do: Create new file alongside old → route new code through it → leave old file for upstream
 
-### Safe merge pattern (from fork-maintenance expert)
+#### Safe merge pattern (from fork-maintenance expert)
 
 1. New files go in `src/unified/` subdirectory — zero collision risk
 2. ONE export line at the end of `index.ts` barrel — lowest-conflict position
 3. `codemod.mjs` handles new `@claude-flow/*` imports automatically
 4. Early-return guards: `if (newLayer) return newLayer.handle(); /* existing path continues */`
 
-### Phase B1: Unified Config (1 week, additive)
+#### Phase B1: Unified Config (1 week, additive)
 
 **Goal**: Single `resolveConfig()` alongside existing 5 resolution chains.
 
@@ -72,7 +83,7 @@ Both resolve to the same cached `getEmbeddingConfig()` singleton underneath.
 **Upstream PR**: Yes — "Add resolveConfig() to @claude-flow/shared". Adds files, touches
 only barrels.
 
-### Phase B2: Storage Adapter (3 days, additive)
+#### Phase B2: Storage Adapter (3 days, additive)
 
 **Goal**: `IStorage` interface alongside existing `IMemoryBackend`.
 
@@ -87,7 +98,7 @@ rvf-backend.ts, sqlite-backend.ts, types.ts (HybridBackend stays — upstream pl
 `StorageAdapter`. New code uses `IStorage`. Old code uses `IMemoryBackend`. Both work.
 **Upstream PR**: Yes — "Add IStorage slim interface as additive layer over IMemoryBackend"
 
-### Phase B3: Embedding Pipeline (1 week, additive)
+#### Phase B3: Embedding Pipeline (1 week, additive)
 
 **Goal**: Single `EmbeddingPipeline` interceptor with dimension validation.
 
@@ -111,7 +122,7 @@ try {
 existing 6-implementation fallback chain runs unchanged.
 **Upstream PR**: Yes — "Add EmbeddingPipeline singleton with canonical cosineSimilarity()"
 
-### Phase B4: Registry Bridge + AgentDBService Shim (1 week, both forks)
+#### Phase B4: Registry Bridge + AgentDBService Shim (1 week, both forks)
 
 **Goal**: Single controller access point. AgentDBService delegated to ControllerRegistry.
 
@@ -132,7 +143,7 @@ commit in 6 weeks; our fork has 30+ commits touching 88 files). The shim must be
 NOW while the window is open. This is the highest-value Track B item per upstream creator.
 **Upstream PR**: Partial — RegistryBridge is a convenience layer upstream might accept
 
-### Phase B5: Unified Data Flow (1 week, additive)
+#### Phase B5: Unified Data Flow (1 week, additive)
 
 **Goal**: New MCP tool entry point using unified path, old path preserved as fallback.
 
@@ -145,6 +156,49 @@ NOW while the window is open. This is the highest-value Track B item per upstrea
 fallback), memory-initializer.ts (sql.js fallback stays)
 **How it works**: Router checks `RegistryBridge.ready`. If ready → new unified path. If not →
 old memory-tools.ts path. Runtime fork, not compile-time deletion.
+
+### Consequences
+
+The net impact comparison (additive Track B vs the original deletion plan):
+
+| Metric | Original Plan | Revised Plan |
+|--------|--------------|-------------|
+| Lines deleted | ~9,555 | 0 |
+| New files | ~8 | 11 |
+| New lines | ~1,360 | ~1,200 |
+| Existing files modified | 20+ | 6 (barrel exports + 1 guard) |
+| Merge conflict risk | Very high | Near zero |
+| Upstream PR viable | No | Yes (5 candidates) |
+
+What changed from the original plan:
+
+| Original | Revised | Why |
+|----------|---------|-----|
+| Delete HybridBackend | Keep it | Upstream plans to revive it as production default |
+| Delete memory-bridge.ts | Keep it (add router alongside) | Encapsulates edge-case handling, ruflo very active |
+| Delete sql.js fallback | Keep it | Intentional for edge environments (Vercel, Docker minimal) |
+| Split controller-registry.ts | Don't split | Highest merge conflict file in the repo |
+| Delete AgentDBService | Add shim alongside | Preserves getInstance() API, merge-safe |
+| Modify 8+ existing files | Create 11 new files, patch 6 lines in barrels | Additive-only = merge-safe |
+
+* Good, because zero lines are deleted — merge conflict risk drops from very high to near zero.
+* Good, because 5 upstream PR candidates become viable (none were viable under the original deletion plan).
+* Good, because Track A's 4 correctness fixes land with 31 tests and zero structural changes.
+* Good, because the additive layers preserve the 7-level init ordering, HnswLite fallback, WAL write path, and all controllers unchanged internally.
+* Bad, because 11 new files and ~1,200 new lines add surface area alongside the code they intercept (old paths remain as fallback rather than being removed).
+* Neutral, because the consolidation is achieved by runtime interception (early-return guards), not compile-time deletion — both old and new paths coexist.
+
+### Confirmation
+
+Test strategy — 6 new test files per phase: `resolve-config-contract.test.mjs` (B1), `istorage-contract.test.mjs` (B2), `embedding-pipeline-contract.test.mjs` (B3), `single-registry-contract.test.mjs` (B4), `storage-tools-router.test.mjs` (B5), and `acceptance-adr0076-checks.sh` (all phases).
+
+Performance regression budget:
+
+| Operation | Budget | Trigger |
+|-----------|--------|---------|
+| `store()` p99 | <5ms at 1000 entries | >10ms |
+| `search()` k=10, p99 | <20ms at 1000 entries | >2x baseline |
+| `embed()` p99 | <50ms | >100ms |
 
 ## Dependency DAG (Revised)
 
@@ -171,28 +225,6 @@ B1 and B2 can start concurrently. B5 requires B2+B3+B4.
 | B4: AgentDBService shim | ruvnet/agentic-flow | High — aligns with upstream roadmap |
 | hybridSearch Level 1→3 | ruvnet/ruflo | High — dependency ordering bug |
 
-## What Changed From the Original Plan
-
-| Original | Revised | Why |
-|----------|---------|-----|
-| Delete HybridBackend | Keep it | Upstream plans to revive it as production default |
-| Delete memory-bridge.ts | Keep it (add router alongside) | Encapsulates edge-case handling, ruflo very active |
-| Delete sql.js fallback | Keep it | Intentional for edge environments (Vercel, Docker minimal) |
-| Split controller-registry.ts | Don't split | Highest merge conflict file in the repo |
-| Delete AgentDBService | Add shim alongside | Preserves getInstance() API, merge-safe |
-| Modify 8+ existing files | Create 11 new files, patch 6 lines in barrels | Additive-only = merge-safe |
-
-## Net Impact (Revised)
-
-| Metric | Original Plan | Revised Plan |
-|--------|--------------|-------------|
-| Lines deleted | ~9,555 | 0 |
-| New files | ~8 | 11 |
-| New lines | ~1,360 | ~1,200 |
-| Existing files modified | 20+ | 6 (barrel exports + 1 guard) |
-| Merge conflict risk | Very high | Near zero |
-| Upstream PR viable | No | Yes (5 candidates) |
-
 ## Recommendation
 
 1. **Track A**: DONE ✓
@@ -201,23 +233,6 @@ B1 and B2 can start concurrently. B5 requires B2+B3+B4.
 4. **B2 (Storage adapter)**: After B1 — enables B5
 5. **B3 (Embedding pipeline)**: After B1 — validates dimensions at every embed call
 6. **B5 (Data flow router)**: Last — requires B2+B3+B4, least urgent
-
-## Test Strategy
-
-### New tests per phase: 6 files
-- `resolve-config-contract.test.mjs` (B1)
-- `istorage-contract.test.mjs` (B2)
-- `embedding-pipeline-contract.test.mjs` (B3)
-- `single-registry-contract.test.mjs` (B4)
-- `storage-tools-router.test.mjs` (B5)
-- `acceptance-adr0076-checks.sh` (all phases)
-
-### Performance regression budget
-| Operation | Budget | Trigger |
-|-----------|--------|---------|
-| `store()` p99 | <5ms at 1000 entries | >10ms |
-| `search()` k=10, p99 | <20ms at 1000 entries | >2x baseline |
-| `embed()` p99 | <50ms | >100ms |
 
 ## Additional Findings from Second Hive Council
 
@@ -262,3 +277,7 @@ handlers: `const unified = await getUnifiedMemory(); if (unified) return unified
 Falls through to existing `getMemoryFunctions()` path when registry unavailable. Fixes the
 `bridgeSearchEntries` empty-result fallthrough bug (Scenario C) where bridge returns `[]`
 and sql.js fallback sees different data.
+
+## More Information
+
+Original status: "Track A Implemented, Track B Completed (via ADR-0077 + ADR-0085)." Recorded 2026-04-06; revised 2026-04-06 (upstream-compatible constraint applied); completed 2026-04-13 (ADR-0085 deleted the bridge, eliminated the sidecar, and closed all gaps). This ADR depends on ADR-0075 (assessment), ADR-0073 (storage upgrade), and ADR-0069 F1 (controller delegation); detailed phase tracking is in ADR-0076a, and Track B was carried out via ADR-0077 and ADR-0085.

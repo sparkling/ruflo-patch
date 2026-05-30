@@ -1,21 +1,41 @@
-# ADR-0060: Fork Patch Hygiene
+---
+status: accepted
+date: 2026-04-04
+tags: [fork, patch, hygiene, governance]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: **Implemented — ongoing governance (2026-05-03)**. Rules established 2026-04-04; codified in CLAUDE.md and fork-related memory entries (`feedback-patches-in-fork.md`, `feedback-trunk-only-fork-development.md`). No further changes pending.
-- **Date**: 2026-04-04
-- **Deciders**: ruflo-patch maintainers
-- **Methodology**: 5-expert hive audit (ruflo, ruvector, agentic-flow specialists)
+# Fork Patch Hygiene
 
-## Context
+## Context and Problem Statement
 
 During ADR-0059 implementation, acceptance testing revealed that several fork patches were fixing bugs introduced by prior fork patches — not upstream bugs. A systematic audit of all fork-only commits identified 10 fix-on-fix patterns, 5 upstream-already-fixed cases, and 7 stale patches across 2 forks.
 
-## Decision
+## Considered Options
 
-Establish rules to prevent fix-on-fix accumulation and maintain fork hygiene.
+* Establish rules to prevent fix-on-fix accumulation and maintain fork hygiene (chosen).
 
-## Audit Findings
+(No alternatives were recorded.)
 
-### Fix-on-Fix Patterns (revert both, use upstream)
+## Decision Outcome
+
+Chosen option: "Establish rules to prevent fix-on-fix accumulation and maintain fork hygiene", because a systematic audit found that many fork patches were fixing problems introduced by prior fork patches rather than genuine upstream bugs.
+
+### Consequences
+
+* Good, because checking upstream before patching prevents redundant fork patches that upstream has already addressed.
+* Good, because the no-fix-on-fix rule stops the accumulation of patches that exist only to repair problems introduced by prior fork patches.
+* Good, because preferring upstream code where it works keeps fork divergence bounded and merge-conflict risk low.
+* Good, because minimizing contamination (targeted edits over full rewrites) keeps diffs small and mergeable.
+* Good, because deleting revert-pairs removes noise commits from PRs and clean branches.
+* Bad, because the stale-patch files (controller-registry.ts +500 lines, memory-bridge.ts +300 lines, claudemd-generator.ts rewrite, AgentDB.ts core rewrite) remain a standing merge-conflict liability until governed by the later intercept pattern.
+* Neutral, because the rules are a standing governance policy rather than a one-time code change, so they require ongoing enforcement against future fork work.
+
+### Audit Findings
+
+#### Fix-on-Fix Patterns (revert both, use upstream)
 
 | # | Repo | Commits | Pattern | Action |
 |---|------|---------|---------|--------|
@@ -25,14 +45,14 @@ Establish rules to prevent fix-on-fix accumulation and maintain fork hygiene.
 | 4 | agentic-flow | ADR-0052 → `fc03655` | LLMRouter dotenv: fork added import → fork had to fix crash | Reverted to upstream (upstream never had dotenv import) |
 | 5 | agentic-flow | Fork barrel rewrite → duplicate export fix | index.ts: fork broke exports → fix own break | Reverted to upstream barrel |
 
-### Upstream-Already-Fixed
+#### Upstream-Already-Fixed
 
 | # | Repo | What | Action |
 |---|------|------|--------|
 | 1 | ruflo | config-adapter.ts cacheSize 100K | Already reverted by portable defaults commit |
 | 2 | agentic-flow | EnhancedEmbeddingService export path | Reverted to upstream path |
 
-### Stale Patches (upstream diverged)
+#### Stale Patches (upstream diverged)
 
 | # | Repo | File | Risk |
 |---|------|------|------|
@@ -44,33 +64,33 @@ Establish rules to prevent fix-on-fix accumulation and maintain fork hygiene.
 | 6 | agentic-flow | AttentionService.ts deleted | Fork replaced with LegacyAttentionAdapter |
 | 7 | agentic-flow | 100+ new files | Intentional feature additions, not stale |
 
-### Legitimate Patches (keep)
+#### Legitimate Patches (keep)
 
 ~43 patches across both forks that fix real upstream bugs or add necessary features. See ADR-0059 Appendix A for the subset relevant to ADR-0059.
 
-## Rules (Going Forward)
+### Rules (Going Forward)
 
-### Rule 1: Check upstream before patching
+#### Rule 1: Check upstream before patching
 
 Before modifying any fork file, `git diff origin/main -- <file>` to see the current upstream state. If upstream has already changed the code you're about to patch, consider whether the upstream change makes your patch unnecessary.
 
-### Rule 2: No fix-on-fix
+#### Rule 2: No fix-on-fix
 
 If a patch is needed to fix a problem introduced by a prior fork patch, the prior patch is wrong. Revert it and find the correct approach, or use the upstream code.
 
-### Rule 3: Use upstream when possible
+#### Rule 3: Use upstream when possible
 
 If the upstream version of a file works correctly, use it. Don't maintain fork patches that diverge from upstream for marginal improvements.
 
-### Rule 4: Minimize contamination
+#### Rule 4: Minimize contamination
 
 When patching a file that has upstream changes, make targeted edits (not full rewrites). This keeps the diff small and mergeable.
 
-### Rule 5: Revert-pairs = delete both
+#### Rule 5: Revert-pairs = delete both
 
 If the git history shows `fix X` followed by `revert fix X`, both commits are noise. Exclude them from PRs and clean branches.
 
-## Actions Taken
+### Actions Taken
 
 | Action | Status |
 |--------|--------|
@@ -83,12 +103,9 @@ If the git history shows `fix X` followed by `revert fix X`, both commits are no
 | Created clean PR ruvnet/ruflo#1528 (1 commit, 6 files) | Done |
 | Closed ruvnet/agentic-flow#139 + #140 (bug didn't exist upstream) | Done |
 
-## Related ADRs
+### Confirmation
 
-- **ADR-0059**: RVF Native Storage Backend — triggered this audit
-- **ADR-0052**: Embedding Dimension Standardization — source of several fix-on-fix patterns
-
-## Status Update 2026-04-21
+Status Update 2026-04-21:
 
 **Still active.** This is a standing hygiene policy, not a point-in-time decision, and its five rules remain enforceable against current practice. Evidence that the policy is still driving behaviour as of ADR-0094 closure today:
 
@@ -111,3 +128,9 @@ If the git history shows `fix X` followed by `revert fix X`, both commits are no
 3. Rule numbers are referenced implicitly elsewhere; any future rule additions should extend (Rule 6+) rather than renumber.
 
 Keep this ADR Active and continue citing it for fork-change decisions.
+
+## More Information
+
+Original status: "Implemented — ongoing governance (2026-05-03). Rules established 2026-04-04; codified in CLAUDE.md and fork-related memory entries (`feedback-patches-in-fork.md`, `feedback-trunk-only-fork-development.md`). No further changes pending." Deciders: ruflo-patch maintainers. Methodology: 5-expert hive audit (ruflo, ruvector, agentic-flow specialists).
+
+This decision relates to the following ADRs: ADR-0059 (RVF Native Storage Backend — triggered this audit) and ADR-0052 (Embedding Dimension Standardization — source of several fix-on-fix patterns).

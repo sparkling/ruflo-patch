@@ -1,12 +1,13 @@
-# ADR-0112: Independent stores by feature surface (not "cross-store")
+---
+status: superseded
+date: 2026-04-30
+tags: [storage, rvf, agentdb, fail-loud]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: **Superseded by ADR-0180** (2026-05-14). Originally Implemented 2026-04-30. All 7 §Done criteria items closed. Phases 1–6 complete. Phase 1 (quick wins) flipped 9/9 named failures green via the `_e2e_isolate` project-root anchor + `routePatternOp` silent-fallback removal. Phase 2 closed 5/5 tracks (RVF + AgentDB-backend + controller-registry + memory-router + MCP handlers). Phase 3 added 22 unit-level fail-loud invariant tests + 8 acceptance tests (4 partition-holds + 4 AgentDB read-tool round-trip). Phase 4 lint script wired into `npm run preflight` cascade (zero unannotated SF1/SF3/SF4/SF6 violations across 7 partition-relevant fork files; 32 legitimate sites annotated as design patterns). Phase 5 ADR-0086 §Debt 15 cross-references ADR-0112. Phase 6 acceptance verified: 540/553 baseline → 560/560 (8 new tests + 9 named tests now passing; 0 regressions).
-- **Date**: 2026-04-30
-- **Deciders**: Henrik Pettersen
-- **Methodology**: 8-agent silent-fallthrough audit swarm (slices 1–8) + ADR-0086 §Debt 15 review
-- **Depends on**: ADR-0073 (RVF storage upgrade), ADR-0080 (storage consolidation verdict), ADR-0086 (Layer 1 single storage abstraction — Debt 15 ACCEPTED TRADE-OFF), ADR-0082 (test integrity, no fallbacks), ADR-0090 (acceptance suite coverage audit)
-- **Superseded by**: ADR-0180 (Memory Archivist — type-enforced coordination layer above MCP dispatch)
-- **Closes**: terminology drift surfaced during ADR-0111 W1.8 problem-collection pass
+# Independent stores by feature surface (not "cross-store")
 
 ## Superseded by ADR-0180 (2026-05-14)
 
@@ -19,7 +20,7 @@ is not at substrate. ADR-0112's independent-stores discipline is preserved WITHI
 archivist's per-store handlers; what changes is that a type-enforced coordination layer
 now exists above them. See ADR-0180 §Decision Outcome + §Pros and Cons.
 
-## Context
+## Context and Problem Statement
 
 During the ADR-0111 W4 prep `npm run test:acceptance` smoke (2026-04-30), 9 acceptance failures surfaced: 8 `adr0090-b5-*` controller-roundtrip failures (`.swarm/memory.db not created after successful store call — silent in-memory fallback, ADR-0082`) and 1 `t3-2-concurrent` failure (`no .rvf file written by any of 6 concurrent stores`).
 
@@ -137,7 +138,15 @@ The t3-2 failure was **per-store silent-fallthrough inside RVF's WAL/persist coo
 
 Neither is a coordination failure between the two stores. The fixes are per-store, not cross-store.
 
-## Decision
+## Considered Options
+
+* Drop the "cross-store" / "dual-store invariant" framing and codify "two independent stores, feature-aligned", reaffirming ADR-0086 §Debt 15 (chosen).
+
+(No alternatives were recorded — this ADR is a terminology correction and a reaffirmation of the already-accepted ADR-0086 §Debt 15 trade-off.)
+
+## Decision Outcome
+
+Chosen option: "Two independent stores, feature-aligned — drop the cross-store framing", because the 8-agent audit and ADR-0086 §Debt 15 confirm there is no dual-store coordination contract: each MCP tool writes to exactly one store determined by its feature domain, the two workloads (RVF hot-path vector search vs AgentDB relational neural-controllers) genuinely require different storage primitives, and unifying would catastrophically regress one path or the other.
 
 **Drop the "cross-store" / "dual-store invariant" framing across the codebase, ADRs, and test harness.** Replace with **"two independent stores, feature-aligned"**:
 
@@ -147,44 +156,46 @@ Neither is a coordination failure between the two stores. The fixes are per-stor
 
 ADR-0086 §Debt 15 is **REAFFIRMED** (not reversed). The dual-backend trade-off remains accepted: we will not unify storage; we will not rewrite AgentDB's controller persistence; we will not push neural-controller schemas onto RVF.
 
-## Consequences
+### Consequences
 
-### Positive
+#### Positive
 
-- Future audits don't waste time hunting a coordination invariant that doesn't exist.
-- Test design is clearer: each test asserts one store; no "verify both" superset checks.
-- Silent-fallthrough fixes can proceed per-store independently. Slices 1–8 of the W1.8 audit produce per-store findings; this ADR confirms they don't need cross-coupling.
-- ADR-0086 §Debt 15 accepted trade-off has explicit cross-reference.
+* Good, because future audits don't waste time hunting a coordination invariant that doesn't exist.
+* Good, because test design is clearer: each test asserts one store; no "verify both" superset checks.
+* Good, because silent-fallthrough fixes can proceed per-store independently. Slices 1–8 of the W1.8 audit produce per-store findings; this ADR confirms they don't need cross-coupling.
+* Good, because ADR-0086 §Debt 15 accepted trade-off has explicit cross-reference.
 
-### Negative
+#### Negative
 
-- Users debugging a tool's persistence must know which store it targets. Mitigation: per-tool documentation in MCP tool descriptions + acceptance test names that surface the target store.
-- Loss of an attractive "single source of truth" mental model. Accepted: the actual architecture has two sources of truth for two feature surfaces, and that's fine.
+* Bad, because users debugging a tool's persistence must know which store it targets. Mitigation: per-tool documentation in MCP tool descriptions + acceptance test names that surface the target store.
+* Bad, because of the loss of an attractive "single source of truth" mental model. Accepted: the actual architecture has two sources of truth for two feature surfaces, and that's fine.
 
-### Neutral
+#### Neutral
 
-- No code changes from this ADR alone. It's terminology + reaffirmation.
-- No new test infrastructure. Existing acceptance tests already target a single store each (`adr0090-b5-*` → `.swarm/memory.db`; `t3-2-concurrent` → `.swarm/memory.rvf`); they were never coordinated checks.
+* Neutral, because there are no code changes from this ADR alone. It's terminology + reaffirmation.
+* Neutral, because there is no new test infrastructure. Existing acceptance tests already target a single store each (`adr0090-b5-*` → `.swarm/memory.db`; `t3-2-concurrent` → `.swarm/memory.rvf`); they were never coordinated checks.
 
-## Required follow-up work
+### Confirmation
+
+#### Required follow-up work
 
 The "two independent stores" framing is correct architecturally but **becomes meaningful only when each store has its own fail-loud contract**. ADR-0082 establishes the no-silent-fallbacks policy in the abstract; ADR-0090 added acceptance tests that detect silent-fallback violations; ADR-0111 W1.8 collected the fix work. This ADR MANDATES that the fix work happens — the per-store framing is incoherent without it.
 
-### Mandate (binding on ADR-0111 W1.8 program)
+##### Mandate (binding on ADR-0111 W1.8 program)
 
 1. **Each store MUST satisfy ADR-0082's no-silent-fallback contract independently — for BOTH read and write paths.**
-   
+
    **Write path** (store / update / delete / persist):
    - RVF: no silent in-memory degradation; persistence failures propagate as fatal errors. The write MUST reach disk before success is returned.
    - AgentDB SQLite: no silent in-memory degradation; controller construction failures propagate as fatal errors; controller `.store()` calls that don't reach disk MUST throw, not return success.
-   
+
    **Read path** (get / query / search / count / list):
-   - Cache hits returning OK only when the cache is authoritative (e.g., write-through cache that's guaranteed-coherent with the store). 
+   - Cache hits returning OK only when the cache is authoritative (e.g., write-through cache that's guaranteed-coherent with the store).
    - Cache misses MUST consult the underlying store — not silently return `null` / empty / stale.
    - A read that returns "no results" when the data IS in the store but the query path silently bypassed it is the same antipattern as a write that reports success without writing.
    - Conditional `if (this.<backend>)` bypass on reads is forbidden — same rule as writes.
    - `count()` / `listNamespaces()` / `getStats()` etc. MUST reflect store state, not in-memory cache that may diverge from the store.
-   
+
    **Both contracts apply at the method level**, not just at init time (W1.5/W1.6 closed init-time; W1.8 closes method-time, both read and write).
 
 2. **The 9 failing acceptance tests MUST flip green** (or convert to honest hard-fail with a tracked port-required action — not skip_accepted) as part of W1.8 execution:
@@ -198,7 +209,7 @@ The "two independent stores" framing is correct architecturally but **becomes me
 
 5. **No coordination contract.** A write succeeding in one store does NOT imply or require a write in the other. Tests asserting "both stores must contain X after operation Y" are wrong by construction — Y targets exactly one store.
 
-### Done criteria for ADR-0112
+##### Done criteria for ADR-0112
 
 ADR-0112 closes (moves from `Accepted` to `Implemented`) when:
 
@@ -317,13 +328,8 @@ Phase 2 changes core persistence paths in `agentdb-backend.ts`, `rvf-backend.ts`
 - Future ADR amendments referencing storage architecture should cite ADR-0112 alongside ADR-0086 §Debt 15 to anchor the framing.
 - Any future architectural decision that proposes coupling RVF and AgentDB SQLite (e.g., synchronous mirror writes, cross-store transactions) MUST explicitly reverse this ADR and ADR-0086 §Debt 15 — not silently introduce coupling.
 
-## Cross-references
+## More Information
 
-- ADR-0073 — RVF storage upgrade (RvfBackend introduction)
-- ADR-0080 — Storage consolidation verdict (single CRUD path through router → RvfBackend)
-- ADR-0086 §Debt 15 — ControllerRegistry dual-backend ACCEPTED TRADE-OFF (the original decision this ADR reaffirms)
-- ADR-0082 — Test integrity, no fallbacks (per-store fail-loud contract)
-- ADR-0090 — Acceptance suite coverage audit (the test inventory partitioned by store)
-- ADR-0111 — Upstream merge program (W1.8 silent-fallthrough audit that surfaced the terminology drift)
-- Memory `project-rvf-primary.md` — RVF primary, sqlite fallback only (applies to the RVF store; orthogonal to AgentDB SQLite which is its own primary)
-- Memory `feedback-no-value-judgements-on-features.md` — wire all features; preserves AgentDB controllers as-is
+Status: superseded by ADR-0180 (2026-05-14). Originally Implemented 2026-04-30. All 7 §Done criteria items closed. Phases 1–6 complete. Phase 1 (quick wins) flipped 9/9 named failures green via the `_e2e_isolate` project-root anchor + `routePatternOp` silent-fallback removal. Phase 2 closed 5/5 tracks (RVF + AgentDB-backend + controller-registry + memory-router + MCP handlers). Phase 3 added 22 unit-level fail-loud invariant tests + 8 acceptance tests (4 partition-holds + 4 AgentDB read-tool round-trip). Phase 4 lint script wired into `npm run preflight` cascade (zero unannotated SF1/SF3/SF4/SF6 violations across 7 partition-relevant fork files; 32 legitimate sites annotated as design patterns). Phase 5 ADR-0086 §Debt 15 cross-references ADR-0112. Phase 6 acceptance verified: 540/553 baseline → 560/560 (8 new tests + 9 named tests now passing; 0 regressions). Dated 2026-04-30. Decided by Henrik Pettersen. Methodology: 8-agent silent-fallthrough audit swarm (slices 1–8) + ADR-0086 §Debt 15 review. This ADR is superseded by ADR-0180 (Memory Archivist — type-enforced coordination layer above MCP dispatch); it closes terminology drift surfaced during ADR-0111 W1.8 problem-collection.
+
+The original record cross-referenced these related decisions: ADR-0073 (RVF storage upgrade — RvfBackend introduction); ADR-0080 (storage consolidation verdict — single CRUD path through router → RvfBackend); ADR-0086 §Debt 15 (ControllerRegistry dual-backend ACCEPTED TRADE-OFF, the original decision this ADR reaffirms); ADR-0082 (test integrity, no fallbacks — per-store fail-loud contract); ADR-0090 (acceptance suite coverage audit — the test inventory partitioned by store); ADR-0111 (upstream merge program — W1.8 silent-fallthrough audit that surfaced the terminology drift); memory `project-rvf-primary.md` (RVF primary, sqlite fallback only); and memory `feedback-no-value-judgements-on-features.md` (wire all features; preserves AgentDB controllers as-is). This ADR depends on ADR-0073, ADR-0080, ADR-0086, ADR-0082, and ADR-0090.

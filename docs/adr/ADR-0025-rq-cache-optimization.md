@@ -1,16 +1,13 @@
-# ADR-0025: RQ Test Cache Optimization
+---
+status: accepted
+date: 2026-03-08
+tags: [testing, cache, pipeline, performance]
+supersedes: []
+depends-on: [ADR-0023, ADR-0024]
+implements: []
+---
 
-- **Status**: Accepted
-- **Date**: 2026-03-08
-- **Deciders**: ruflo-patch maintainers
-- **Methodology**: SPARC + MADR
-
-## Decision Drivers
-
-- RQ-1 takes ~57s due to cold npm cache on every run
-- `npm cache clean --force` destroys external dep caches unnecessarily
-- Fresh `NPM_CONFIG_CACHE` tmpdir forces re-download of all transitive deps
-- Incremental build detection (ADR-0023 Decision 10) already tracks changed packages but cache clearing ignores it
+# RQ Test Cache Optimization
 
 ## Context and Problem Statement
 
@@ -50,7 +47,14 @@ After:
 6. cache persists for next run
 ```
 
-### Considered Options
+## Decision Drivers
+
+- RQ-1 takes ~57s due to cold npm cache on every run
+- `npm cache clean --force` destroys external dep caches unnecessarily
+- Fresh `NPM_CONFIG_CACHE` tmpdir forces re-download of all transitive deps
+- Incremental build detection (ADR-0023 Decision 10) already tracks changed packages but cache clearing ignores it
+
+## Considered Options
 
 **Option A: Global `~/.npm` cache with selective clearing**
 - Use the standard `~/.npm` cache instead of a fresh tmpdir
@@ -70,7 +74,9 @@ After:
 - Pro: Minimal change
 - Con: Still creates cold cache every run, limited speedup
 
-## Decision
+## Decision Outcome
+
+Chosen option: "Option B: Persistent `/tmp/ruflo-rq-npxcache` directory", because it isolates the cache from stale real-npm metadata (avoiding 77s resolution hangs) while persisting external deps across RQ runs and leveraging the existing `CHANGED_PACKAGES` tracking from ADR-0023.
 
 ### Architecture (SPARC-A)
 
@@ -97,25 +103,21 @@ Cache clearing mirrors the existing Verdaccio selective-clear pattern (lines 95-
 
 RQ-13 (`check_latest_resolves`) detects RQ context via `NPM_CONFIG_CACHE` being set. In Layer 3, `test-rq.sh` exports it pointing to the stable cache. In Layer 4 (acceptance, real npm), it's unset, so a throwaway cache is created to avoid stale dist-tag entries.
 
-## Consequences
+### Consequences
 
-### Completion (SPARC-C)
+#### Completion (SPARC-C)
 
-**Positive**:
-- Subsequent RQ runs drop from ~90s+ to ~30-40s (external deps cached)
-- Incremental builds even faster — only changed package metadata re-fetched
-- No more `npm cache clean --force` polluting the global cache
-- Consistent with incremental build philosophy from ADR-0023
+* Good, because subsequent RQ runs drop from ~90s+ to ~30-40s (external deps cached)
+* Good, because incremental builds even faster — only changed package metadata re-fetched
+* Good, because no more `npm cache clean --force` polluting the global cache
+* Good, because consistent with incremental build philosophy from ADR-0023
+* Bad, because first run after `npm cache clean` is same speed as before
+* Bad, because orphaned content blobs in `_cacache/content-v2/` accumulate (harmless, npm garbage collects)
+* Neutral, because `_npx/` clearing is always full-scope for `@sparkleideas` — no incremental optimization there (but it's cheap)
+* Neutral, because RQ timeout stays at 180s (increased from 120s for RQ-14)
 
-**Negative**:
-- First run after `npm cache clean` is same speed as before
-- Orphaned content blobs in `_cacache/content-v2/` accumulate (harmless, npm garbage collects)
+## More Information
 
-**Neutral**:
-- `_npx/` clearing is always full-scope for `@sparkleideas` — no incremental optimization there (but it's cheap)
-- RQ timeout stays at 180s (increased from 120s for RQ-14)
+This decision relates to ADR-0023 (6-layer testing model, incremental build detection — Decision 10) and ADR-0024 (patch deployment model, `test-rq.sh` as standalone RQ runner).
 
-## Relates To
-
-- **ADR-0023**: 6-layer testing model, incremental build detection (Decision 10)
-- **ADR-0024**: Patch deployment model, `test-rq.sh` as standalone RQ runner
+This record originally used the SPARC + MADR methodology, with section headings (Specification / Pseudocode / Architecture / Refinement / Completion) remapped to the canonical MADR sections during the ADR-0271 migration, preserving all content. Original status: "Accepted".

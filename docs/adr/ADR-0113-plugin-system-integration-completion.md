@@ -1,13 +1,15 @@
-# ADR-0113: Plugin system integration completion (post-ADR-0111 W4)
+---
+status: accepted
+date: 2026-05-01
+tags: [plugins, marketplace, pipeline, sandbox]
+supersedes: []
+depends-on: [ADR-0111]
+implements: []
+---
 
-- **Status**: Implemented (2026-05-02). All 6 fixes landed including Fix 6.5; Phase A (Fix 6 + 2 + 5) on 2026-05-01, Phase B (Fix 3) + Phase C (Fix 4) + Phase D (Fix 1) + Phase D++ (Fix 6.5) on 2026-05-02. Forks/ruflo `main` at `64491a274` pushed to public `sparkling/ruflo`. Fix 6.5(a) — top-level `package.json` rename — explicitly NOT applied due to a structural collision with patch repo's `@sparkleideas/ruflo` (documented in §Done).
-- **Date**: 2026-05-01
-- **Deciders**: Henrik Pettersen
-- **Methodology**: 14-agent specialized audit swarm (`swarm-1777663583250-1fqsl3`, hierarchical-mesh, read-only) following the public marketplace pitch that surfaced the question "is the plugin system actually integrated?"
-- **Depends on**: ADR-0111 (upstream merge program, W4 step 4 merged 92 commits into `forks/ruflo` at `f6fcb76c6`)
-- **Closes**: integration gaps surfaced post-W4 acceptance gate
+# Plugin system integration completion (post-ADR-0111 W4)
 
-## Context
+## Context and Problem Statement
 
 ADR-0111's W4 merged upstream's 92-commit window into `forks/ruflo` `main`. That window included substantial plugin-system additions: `81418649c` (19-plugin marketplace), `f3cc99d8b` (CRIT-02 plugin sandboxing), `1976c57cc`+5 (federation plugin), `8b8127d75`+5 (IoT Cognitum), `26f3230da` (12 missing plugin registrations), `1405eab66` (10 slash-command renames + Opus 4.7 default), `643ed0024` (RuFlo branding rebrand), `7ed18b833`+`a47c96fad` (npm-wrapped plugins).
 
@@ -15,9 +17,9 @@ ADR-0111's risk register (R10) flagged the namespace-gate codemod question, ADR-
 
 Post-W4 acceptance was 146/147 GREEN against `@sparkleideas/cli@3.5.58-patch.317`. Following the public marketing narrative ("install marketplace, install core plugins, use Claude Code normally"), a 14-agent audit swarm verified end-to-end whether the published distribution actually delivers that experience. The verdict is **no, not yet** — multiple integration steps that the ADR-0111 plan deferred or missed remain open. This ADR catalogs them and decides the fixes.
 
-## Audit findings (14-agent swarm, 2026-05-01)
+### Audit findings (14-agent swarm, 2026-05-01)
 
-### Critical (would-break-users)
+#### Critical (would-break-users)
 
 1. **Plugin sandbox CRIT-02 was not merged.** Upstream commit `f3cc99d8b` (vm isolation + 8-permission capability gating + `PluginPermissions` interface + namespace-based trust gate) is not on `forks/ruflo` `main` after the W4 merge. `v3/@claude-flow/shared/src/plugin-sandbox.ts` does not exist. `plugin-interface.ts` has no `PluginPermissions` field. `plugin-loader.ts` calls `plugin.initialize(context)` directly with full host context (line 324). Community plugins execute in-process with full Node access. Zero defense in depth.
 
@@ -33,7 +35,7 @@ Post-W4 acceptance was 146/147 GREEN against `@sparkleideas/cli@3.5.58-patch.317
 
 7. **Marketplace identity points at upstream.** `.claude-plugin/marketplace.json` has `name: "ruflo"`, `owner: { name: "ruvnet" }`, plugin entries with relative `source: ./plugins/<name>` (no scope-rename). User typing `/plugin marketplace add ruvnet/ruflo` resolves to upstream's manifest, hardcoded to `@claude-flow/cli`. Distribution incoherent for sparkling.
 
-### High (would-confuse-users)
+#### High (would-confuse-users)
 
 8. **`c1eb37d53` issue-#1604 memory-path fix regressed by W4 take-ours.** `memory-tools.ts:19` reverted to `MEMORY_DIR = '.claude-flow/memory'`. Lost the `.swarm/memory.db` alignment that c1eb37d53 introduced.
 
@@ -43,11 +45,11 @@ Post-W4 acceptance was 146/147 GREEN against `@sparkleideas/cli@3.5.58-patch.317
 
 11. **`hooks.ts:4137` still hardcodes `'Opus 4.6 (1M context)'`.** All other Opus 4.7 default sites correct (settings-generator + statusline-generator). Single stale reference.
 
-### Low (cosmetic)
+#### Low (cosmetic)
 
 12. **Top-level `package.json` `name` is still `"claude-flow"`** (proxy package). Bin self-id labels in `cli.js:38` + `mcp-server.js:26` log `[claude-flow-mcp]` — cosmetic but confusing in user logs.
 
-### Architectural
+#### Architectural
 
 13. **Pipeline package allowlists are hardcoded and don't auto-discover.** This is the meta-pattern behind findings 4, 5, and the earlier `ruvector-learning-wasm` smoke-test bug. Corrected inventory (post-hive 2026-05-01 — Code Analyzer + Researcher):
     - `scripts/publish.mjs:25-74` — **the actual source of truth.** `tests/pipeline/publish-order.test.mjs:15` imports `LEVELS` from here, NOT from `publish-levels.json`. The audit missed this entirely.
@@ -58,7 +60,15 @@ Post-W4 acceptance was 146/147 GREEN against `@sparkleideas/cli@3.5.58-patch.317
     - `scripts/run-fork-version.sh` — **does not enumerate** (audit was wrong). Delegates to `fork-version.mjs` which walks the fork tree dynamically. Already auto-discovery; serves as the proof-of-concept for Fix 3.
     Net: **5 real lists** (not 4-5), with `scripts/publish.mjs` being the highest-leverage one. Every new fork package requires updating 4 of them. The W4 merge added 2 plugin packages (federation, iot-cognitum) and missed all 4 — because the lists are not auto-derived from the fork tree.
 
-## Decision
+## Considered Options
+
+* **Six independent fixes, prioritized by user impact (chosen)** — backport the plugin sandbox, extend codemod to `.md`, auto-discover pipeline allowlists, fix marketplace identity via the existing `sparkling/ruflo` fork, wire the federation + IoT plugins through the pipeline, and apply targeted regression fixes.
+
+(No alternatives were recorded — the audit surfaced concrete gaps and the decision is the program of fixes that closes them.)
+
+## Decision Outcome
+
+Chosen option: "Six independent fixes, prioritized by user impact", because a user installing `@sparkleideas/cli` and following any plugin's install instructions must stay inside the sparkling distribution (pinned `-patch.N` versions, no fall-through to public-npm upstream), and the audit identified exactly these six closable integration gaps.
 
 Six independent fixes, prioritized by user impact:
 
@@ -141,26 +151,63 @@ Mirror ADR-078 + ADR-079 specs from `forks/ruflo/v3/implementation/adrs/` into `
 - **6.4** Plugin READMEs `ruflo-browser/README.md:21`, `ruflo-loop-workers/README.md:14`: update slash-command refs to renamed names.
 - **6.5** Top-level `package.json` `name`: `"claude-flow"` → `"ruflo"` (matches the wrapper bin). Bin self-id labels in `cli.js:38` + `mcp-server.js:26`: `[claude-flow-mcp]` → `[ruflo-mcp]`.
 
-## Consequences
+### Consequences
 
-### Positive
+#### Positive
 
-- Distribution coherence: a user installing `@sparkleideas/cli` and following any plugin's install instructions stays inside the sparkling distribution, gets pinned `-patch.N` versions, doesn't fall through to public-npm upstream.
-- Plugin sandbox provides defense-in-depth **for trusted-but-buggy plugins** — guardrail against drive-by misuse (accidental `process.exit(1)`, `globalThis` mutation, `require.cache` hot-patching). **NOT a security boundary against malicious code** (Node's `vm` module is documented to not be a V8 security boundary; well-known escapes via `this.constructor.constructor('return process')()` and prototype-chain walks). Reframe per Security Architect — this distinction must be in user-facing documentation so `trustLevel: 'community'` is not assumed safe to run unattended.
-- Federation + IoT plugins reach users (currently the merge claims them as features but they're invisible).
-- Pipeline allowlists self-update on fork tree changes — no recurrence of the `ruvector-learning-wasm` / federation / IoT pattern.
-- Branding consistency reduces user confusion ("which CLI am I supposed to install?").
+* Good, because distribution coherence: a user installing `@sparkleideas/cli` and following any plugin's install instructions stays inside the sparkling distribution, gets pinned `-patch.N` versions, doesn't fall through to public-npm upstream.
+* Good, because plugin sandbox provides defense-in-depth **for trusted-but-buggy plugins** — guardrail against drive-by misuse (accidental `process.exit(1)`, `globalThis` mutation, `require.cache` hot-patching). **NOT a security boundary against malicious code** (Node's `vm` module is documented to not be a V8 security boundary; well-known escapes via `this.constructor.constructor('return process')()` and prototype-chain walks). Reframe per Security Architect — this distinction must be in user-facing documentation so `trustLevel: 'community'` is not assumed safe to run unattended.
+* Good, because federation + IoT plugins reach users (currently the merge claims them as features but they're invisible).
+* Good, because pipeline allowlists self-update on fork tree changes — no recurrence of the `ruvector-learning-wasm` / federation / IoT pattern.
+* Good, because branding consistency reduces user confusion ("which CLI am I supposed to install?").
 
-### Negative
+#### Negative
 
-- Codemod processing `.md` files increases pipeline scope; `.md` files are not currently version-controlled for codemod test coverage like `.ts/.json` are. Adds test surface.
-- Auto-discovering allowlists couples the pipeline to fork tree shape — if a fork experiments with package layouts, the pipeline could pick up unintended packages. Mitigation: a dry-run mode that lists discovered packages for review before publish.
-- Codemod's `.md` scope expansion means future upstream merges re-introduce `@claude-flow/cli@latest` markdown refs that codemod must re-apply on every cycle; the codemod test (Fix 2 addition) locks this contract. Trade-off: lose byte-identical fork-tree match against upstream `plugins/` + `.claude-plugin/`, but that's an intentional rebrand divergence. No new repo created — uses existing public `sparkling/ruflo` fork (reverses ADR-0111's Option B "5th repo" recommendation; the simpler approach is acceptable since the fork is already public).
-- Backporting `f3cc99d8b` may surface conflicts against W4 take-ours decisions on `plugin-interface.ts` and `plugin-loader.ts`. Hand-merge required.
+* Bad, because codemod processing `.md` files increases pipeline scope; `.md` files are not currently version-controlled for codemod test coverage like `.ts/.json` are. Adds test surface.
+* Bad, because auto-discovering allowlists couples the pipeline to fork tree shape — if a fork experiments with package layouts, the pipeline could pick up unintended packages. Mitigation: a dry-run mode that lists discovered packages for review before publish.
+* Bad, because codemod's `.md` scope expansion means future upstream merges re-introduce `@claude-flow/cli@latest` markdown refs that codemod must re-apply on every cycle; the codemod test (Fix 2 addition) locks this contract. Trade-off: lose byte-identical fork-tree match against upstream `plugins/` + `.claude-plugin/`, but that's an intentional rebrand divergence. No new repo created — uses existing public `sparkling/ruflo` fork (reverses ADR-0111's Option B "5th repo" recommendation; the simpler approach is acceptable since the fork is already public).
+* Bad, because backporting `f3cc99d8b` may surface conflicts against W4 take-ours decisions on `plugin-interface.ts` and `plugin-loader.ts`. Hand-merge required.
 
-### Neutral
+#### Neutral
 
-- The plugin system remains additive on top of `init` (does not replace it). User flow stays: `npm install -g @sparkleideas/cli` → `ruflo init` → `/plugin marketplace add sparkling/ruflo-marketplace` → `/plugin install ruflo-core@ruflo`. The marketing pitch is incomplete (omits the init step) but the architecture is sound.
+* Neutral, because the plugin system remains additive on top of `init` (does not replace it). User flow stays: `npm install -g @sparkleideas/cli` → `ruflo init` → `/plugin marketplace add sparkling/ruflo-marketplace` → `/plugin install ruflo-core@ruflo`. The marketing pitch is incomplete (omits the init step) but the architecture is sound.
+
+### Confirmation
+
+#### §Done
+
+§Done items revised post-hive 2026-05-01: each item now names a measurable acceptance signal (test function, grep target, or registry assertion). Items 6.4 and 6.5 tightened from "updated" to specific grep targets per Production Validator review.
+
+- [x] **Fix 1** (landed 2026-05-02 Phase D; pushed to public `sparkling/ruflo`): `f3cc99d8b` cherry-picked onto `forks/ruflo` `main` as commit `6c325ba6f`, pushed to `git@github.com:sparkling/ruflo.git`. `git ls-remote sparkling main` returns `6c325ba6f1219aa09a1aa48c65ffc853e049ed0e` (= local main). Acceptance signals:
+  - (a) `find forks/ruflo -name plugin-sandbox.ts` → `./v3/@claude-flow/shared/src/plugin-sandbox.ts` ✓
+  - (b) `grep -c "PluginPermissions" forks/ruflo/v3/@claude-flow/shared/src/plugin-interface.ts` → 2 ✓
+  - (c) `check_adr0113_w4g_plugin_sandbox_capability_deny` (NEW) drives fixture at `tests/fixtures/plugin-escape-attempt/index.mjs`. Fixture exits 0 only when ALL of these hold: vm-sandbox blocks `eval`, `new Function`, `process.exit`, `require('child_process')`, `this.constructor.constructor('return process')()`, and `global.process.exit`; capability gate denies undeclared `services.get('fs')` (returns undefined), `services.register()` throws, env config keys stripped without `env` permission; with `filesystem: true` permission, `services.get('fs')` returns the underlying service. Sanity: `runInSandbox('1+2') === 3`. Pre-flight: published `@sparkleideas/shared` dist must contain `SandboxedPluginRunner`. Result: TBD (running).
+  - (d) Trust-routing — verified by code inspection at `plugin-loader.ts:339-352`: fork-source check `plugin.name.startsWith('@claude-flow/')` is rewritten to `'@sparkleideas/'` by codemod Pass 1 (SCOPED_RE) at build time. Plugin with `name: '@sparkleideas/test-plugin'` + `trustLevel: 'official'` keeps full context; `community/foo` + `trustLevel: 'official'` is demoted to `'unverified'` and routed through `createRestrictedContext()`. Fixture covers this via `runner.createRestrictedContext(baseContext, {}, 'community/escape-attempt')` which exercises the same code path.
+  - Hand-merge note: HIGH-05 env-snapshot lines (`snapshotProtectedEnv()`, `protectedSnapshot`, `fullEnvBefore`) that came in the same upstream hunk were dropped — they reference symbols not imported on our W4 HEAD (HIGH-05 is a separate upstream commit not part of this cherry-pick). Comment in the merged source explains.
+  - **Push status:** PUSHED 2026-05-02 to `git@github.com:sparkling/ruflo.git` after explicit user confirmation. Post-push network check (`RUFLO_MARKETPLACE_NETWORK_TESTS=1`): PASS, `sparkling/ruflo main = local main = 6c325ba6`.
+- [ ] **Fix 2**: `.md` in `scripts/codemod.mjs:58` `ALLOWED_EXTENSIONS`; `mcp__claude-flow__[a-zA-Z0-9_]` → `mcp__ruflo__$1` rewrite (broader than initial `[a-z]` per Code Analyzer). Acceptance: 5 cases in `tests/pipeline/codemod.test.mjs`: (1) `npx -y @claude-flow/cli@latest swarm` → `npx -y @sparkleideas/cli@latest swarm`; (2) `mcp__claude-flow__memory_store` → `mcp__ruflo__memory_store`; (3) **negative**: `[claude-flow-mcp]` log tag survives unchanged; (4) **negative**: `node_modules/**/*.md` not touched; (5) code-fence content rewrites identical to prose. Plus acceptance: `grep -r "@claude-flow/" /tmp/ruflo-build/plugins/**/*.md | wc -l` == 0.
+- [x] **Fix 3** (landed 2026-05-02 Phase B): pipeline allowlists auto-derived from `FORK_DIRS[@]`. Acceptance signals:
+  - (a) `tests/pipeline/preflight-package-coverage.test.mjs` walks fork tree (private:true skip + path-fragment exclusions + depth cap 5) and asserts discovered set ⊆ `scripts/publish.mjs` LEVELS ∪ WONT_PUBLISH ∪ WONT_PUBLISH_PATTERNS. ✓
+  - (b) Synthetic-fixture sub-suite drops `@claude-flow/synthetic-new-package-from-test` into a temp tree, runs the discover+coverage check via child node, asserts exit 1 with GAP: report; inverse clean-fixture asserts exit 0. ✓
+  - (c) `npm run discover-packages` (new npm alias) → `node scripts/preflight.mjs --discover-dry-run` lists discovered packages with in-LEVELS / MISSING / WONT_PUBLISH / not-in-fork sections. ✓
+  - Bonus: deleted drifted `FALLBACK_LEVELS` from `scripts/publish.mjs` (subsumes step 25); `config/publish-levels.json` is now the single canonical source, fail-loud on read/schema error per `feedback-no-fallbacks`.
+- [x] **Fix 4** (landed 2026-05-02 Phase C; pushed to public `sparkling/ruflo`): `marketplace.json` `owner.name` rewritten from `"ruvnet"` to `"sparkling"`; codemod-rewritten content on fork `main` (commit `b24e46829`) pushed to `git@github.com:sparkling/ruflo.git`. `git ls-remote sparkling main` returns `b24e46829a53332965bcd5df0ee28f1ff5cfe761` (= local main). Acceptance signals:
+  - (a) `tests/pipeline/marketplace-manifest.test.mjs` (NEW, 7 tests) asserts `owner.name === "sparkling"`, `name === "ruflo"`, scoped paths `./plugins/<name>` intact, manifest contains zero `@claude-flow/`; plus 3 contract tests scanning `forks/ruflo/{plugins,.claude-plugin}/**/*.md` for residual `@claude-flow/` or `mcp__claude-flow__` refs. ✓
+  - (b) `check_adr0113_marketplace_owner_sparkling` (NEW, every-run) greps fork manifest via `node`-driven JSON parse. ✓
+  - (c) `check_adr0113_marketplace_remote_sparkling` (NEW, gated by `RUFLO_MARKETPLACE_NETWORK_TESTS=1`) does `git ls-remote sparkling main` and asserts SHA matches local fork HEAD on `main`. Default behavior: SKIP (since CI doesn't have SSH credentials for the public sparkling org). Pre-push, this check correctly reports `local b24e46829 ≠ sparkling fe6b9211`; post-push it must flip to PASS. ✓ (verified standalone)
+  - (d) README updated with `/plugin marketplace add sparkling/ruflo` install path; prerequisite "ruflo init first" note per §Status note. ✓
+  - Codemod regex hardened: `mcp__claude-flow__([a-zA-Z0-9_]+|\*)` now also matches the literal-asterisk glob form ("`mcp__claude-flow__*`") used in plugin docs (Phase C surfaced one such occurrence the original regex missed).
+  - **Push status:** PUSHED 2026-05-02 to `git@github.com:sparkling/ruflo.git` after explicit user confirmation. Post-push network check (`RUFLO_MARKETPLACE_NETWORK_TESTS=1`): PASS, `sparkling/ruflo main = local main = b24e4682`.
+- [ ] **Fix 5**: federation + iot plugins reach Verdaccio with `-patch.N` pin. Acceptance: (a) `npm view @sparkleideas/plugin-agent-federation@latest version --registry=http://localhost:4873` returns a version; same for `plugin-iot-cognitum`; (b) `check_adr0113_ruflo_federation_bin` does both `command -v ruflo-federation` AND `ruflo-federation --version` (via direct `timeout`, not `_run_and_kill`); same pattern for `check_adr0113_cognitum_iot_bin`; (c) ADR-078/079 mirrored into `ruflo-patch/docs/adr/`.
+- [ ] **Fix 6.1** (revised target): `executor.ts` + `claudemd-generator.ts` `@claude-flow/cli@latest` → `@sparkleideas/cli@latest` (12 sites). Acceptance: `grep -rn "@claude-flow/cli@latest" forks/ruflo/v3/@claude-flow/cli/src/` returns 0 matches; `grep -rn "@sparkleideas/cli@latest" <same>` returns 12. Plus acceptance check `check_adr0113_executor_uses_sparkleideas_cli`.
+- [x] ~~**Fix 6.2**~~: ALREADY LANDED in `cf6595a2c` (verified 2026-05-01). Strike from active checklist.
+- [ ] **Fix 6.3**: `hooks.ts:4137` `'Opus 4.6 (1M context)'` → `'Opus 4.7 (1M context)'`. Acceptance: `grep -c "Opus 4.6" forks/ruflo/v3/@claude-flow/cli/src/hooks.ts` == 0; `check_adr0113_no_opus_46_strings` greps `node_modules/@sparkleideas/**/dist/**` from init'd project.
+- [ ] **Fix 6.4**: Plugin READMEs `ruflo-browser/README.md:21`, `ruflo-loop-workers/README.md:14` updated. Acceptance: `grep -E '/(browser|memory)\b' forks/ruflo/plugins/ruflo-browser/README.md` returns 0 matches; `grep -E '/ruflo-(browser|memory)\b' <same>` returns ≥1.
+- [x] **Fix 6.5** (landed 2026-05-02 Phase D++; pushed to public `sparkling/ruflo`): fork commit `64491a274` pushed; `git ls-remote sparkling main` returns `64491a274d2bceaf259f4e5cf80ec4b90b3e8d77` (= local main). Acceptance signals:
+  - (a) **NOT applied with rationale.** Renaming fork top-level `package.json` `name: "claude-flow"` → `"ruflo"` collides with patch repo's `@sparkleideas/ruflo` (codemod's `UNSCOPED_MAP['ruflo']` already maps to that). The two-package hierarchy is intentional: patch repo's `@sparkleideas/ruflo` is the user-facing wrapper; fork's `@sparkleideas/claude-flow` (after codemod) is the inner proxy. Audit Finding 12(a) — "cosmetic but confusing" — does not justify the structural collision.
+  - (b) ✓ `grep -c "claude-flow-mcp"` in `v3/@claude-flow/cli/bin/cli.js`, `bin/mcp-server.js`, `src/mcp-server.ts` → 0 (was 1 + 7 + 14). Rebranded log tags `[claude-flow-mcp]` → `[ruflo-mcp]` (20 substitutions); pid/log file paths `claude-flow-mcp.{pid,log}` → `ruflo-mcp.{pid,log}` (2 substitutions).
+  - (c) ✓ `check_adr0113_proxy_bin_selfid_ruflo_mcp` (NEW): spawns published `ruflo-mcp` bin from harness `node_modules/.bin/`, pipes empty stdin to trigger startup logs, captures stderr (stdout is the MCP protocol stream), asserts `[ruflo-mcp]` ≥ 1 occurrence and `[claude-flow-mcp]` == 0. Uses direct `_timeout 5s` per `feedback-run-and-kill-exit-code`. Result: PASS 286ms.
+  - Post-push network check (`RUFLO_MARKETPLACE_NETWORK_TESTS=1`) `check_adr0113_marketplace_remote_sparkling`: PASS, `sparkling/ruflo main = local main = 64491a27`.
 
 ## Status note: plugin system vs init command
 
@@ -300,41 +347,6 @@ Concrete step-by-step execution mapped to the four phases. Each step lists the t
 - Migration plan if the distribution model changes (closed-world Verdaccio → public-npm publish): out of scope; revisit Cross-cutting prerequisites if that happens
 - Plugin uninstall idempotency tests (Devil's Advocate gap-catch): tracked as separate follow-up, not blocking ADR-0113
 - ADR-0111 R10 follow-up beyond what's covered by Fix 1 (W4 letter G acceptance test): if R10 has additional artifacts, file separately
-
-## §Done
-
-§Done items revised post-hive 2026-05-01: each item now names a measurable acceptance signal (test function, grep target, or registry assertion). Items 6.4 and 6.5 tightened from "updated" to specific grep targets per Production Validator review.
-
-- [x] **Fix 1** (landed 2026-05-02 Phase D; pushed to public `sparkling/ruflo`): `f3cc99d8b` cherry-picked onto `forks/ruflo` `main` as commit `6c325ba6f`, pushed to `git@github.com:sparkling/ruflo.git`. `git ls-remote sparkling main` returns `6c325ba6f1219aa09a1aa48c65ffc853e049ed0e` (= local main). Acceptance signals:
-  - (a) `find forks/ruflo -name plugin-sandbox.ts` → `./v3/@claude-flow/shared/src/plugin-sandbox.ts` ✓
-  - (b) `grep -c "PluginPermissions" forks/ruflo/v3/@claude-flow/shared/src/plugin-interface.ts` → 2 ✓
-  - (c) `check_adr0113_w4g_plugin_sandbox_capability_deny` (NEW) drives fixture at `tests/fixtures/plugin-escape-attempt/index.mjs`. Fixture exits 0 only when ALL of these hold: vm-sandbox blocks `eval`, `new Function`, `process.exit`, `require('child_process')`, `this.constructor.constructor('return process')()`, and `global.process.exit`; capability gate denies undeclared `services.get('fs')` (returns undefined), `services.register()` throws, env config keys stripped without `env` permission; with `filesystem: true` permission, `services.get('fs')` returns the underlying service. Sanity: `runInSandbox('1+2') === 3`. Pre-flight: published `@sparkleideas/shared` dist must contain `SandboxedPluginRunner`. Result: TBD (running).
-  - (d) Trust-routing — verified by code inspection at `plugin-loader.ts:339-352`: fork-source check `plugin.name.startsWith('@claude-flow/')` is rewritten to `'@sparkleideas/'` by codemod Pass 1 (SCOPED_RE) at build time. Plugin with `name: '@sparkleideas/test-plugin'` + `trustLevel: 'official'` keeps full context; `community/foo` + `trustLevel: 'official'` is demoted to `'unverified'` and routed through `createRestrictedContext()`. Fixture covers this via `runner.createRestrictedContext(baseContext, {}, 'community/escape-attempt')` which exercises the same code path.
-  - Hand-merge note: HIGH-05 env-snapshot lines (`snapshotProtectedEnv()`, `protectedSnapshot`, `fullEnvBefore`) that came in the same upstream hunk were dropped — they reference symbols not imported on our W4 HEAD (HIGH-05 is a separate upstream commit not part of this cherry-pick). Comment in the merged source explains.
-  - **Push status:** PUSHED 2026-05-02 to `git@github.com:sparkling/ruflo.git` after explicit user confirmation. Post-push network check (`RUFLO_MARKETPLACE_NETWORK_TESTS=1`): PASS, `sparkling/ruflo main = local main = 6c325ba6`.
-- [ ] **Fix 2**: `.md` in `scripts/codemod.mjs:58` `ALLOWED_EXTENSIONS`; `mcp__claude-flow__[a-zA-Z0-9_]` → `mcp__ruflo__$1` rewrite (broader than initial `[a-z]` per Code Analyzer). Acceptance: 5 cases in `tests/pipeline/codemod.test.mjs`: (1) `npx -y @claude-flow/cli@latest swarm` → `npx -y @sparkleideas/cli@latest swarm`; (2) `mcp__claude-flow__memory_store` → `mcp__ruflo__memory_store`; (3) **negative**: `[claude-flow-mcp]` log tag survives unchanged; (4) **negative**: `node_modules/**/*.md` not touched; (5) code-fence content rewrites identical to prose. Plus acceptance: `grep -r "@claude-flow/" /tmp/ruflo-build/plugins/**/*.md | wc -l` == 0.
-- [x] **Fix 3** (landed 2026-05-02 Phase B): pipeline allowlists auto-derived from `FORK_DIRS[@]`. Acceptance signals:
-  - (a) `tests/pipeline/preflight-package-coverage.test.mjs` walks fork tree (private:true skip + path-fragment exclusions + depth cap 5) and asserts discovered set ⊆ `scripts/publish.mjs` LEVELS ∪ WONT_PUBLISH ∪ WONT_PUBLISH_PATTERNS. ✓
-  - (b) Synthetic-fixture sub-suite drops `@claude-flow/synthetic-new-package-from-test` into a temp tree, runs the discover+coverage check via child node, asserts exit 1 with GAP: report; inverse clean-fixture asserts exit 0. ✓
-  - (c) `npm run discover-packages` (new npm alias) → `node scripts/preflight.mjs --discover-dry-run` lists discovered packages with in-LEVELS / MISSING / WONT_PUBLISH / not-in-fork sections. ✓
-  - Bonus: deleted drifted `FALLBACK_LEVELS` from `scripts/publish.mjs` (subsumes step 25); `config/publish-levels.json` is now the single canonical source, fail-loud on read/schema error per `feedback-no-fallbacks`.
-- [x] **Fix 4** (landed 2026-05-02 Phase C; pushed to public `sparkling/ruflo`): `marketplace.json` `owner.name` rewritten from `"ruvnet"` to `"sparkling"`; codemod-rewritten content on fork `main` (commit `b24e46829`) pushed to `git@github.com:sparkling/ruflo.git`. `git ls-remote sparkling main` returns `b24e46829a53332965bcd5df0ee28f1ff5cfe761` (= local main). Acceptance signals:
-  - (a) `tests/pipeline/marketplace-manifest.test.mjs` (NEW, 7 tests) asserts `owner.name === "sparkling"`, `name === "ruflo"`, scoped paths `./plugins/<name>` intact, manifest contains zero `@claude-flow/`; plus 3 contract tests scanning `forks/ruflo/{plugins,.claude-plugin}/**/*.md` for residual `@claude-flow/` or `mcp__claude-flow__` refs. ✓
-  - (b) `check_adr0113_marketplace_owner_sparkling` (NEW, every-run) greps fork manifest via `node`-driven JSON parse. ✓
-  - (c) `check_adr0113_marketplace_remote_sparkling` (NEW, gated by `RUFLO_MARKETPLACE_NETWORK_TESTS=1`) does `git ls-remote sparkling main` and asserts SHA matches local fork HEAD on `main`. Default behavior: SKIP (since CI doesn't have SSH credentials for the public sparkling org). Pre-push, this check correctly reports `local b24e46829 ≠ sparkling fe6b9211`; post-push it must flip to PASS. ✓ (verified standalone)
-  - (d) README updated with `/plugin marketplace add sparkling/ruflo` install path; prerequisite "ruflo init first" note per §Status note. ✓
-  - Codemod regex hardened: `mcp__claude-flow__([a-zA-Z0-9_]+|\*)` now also matches the literal-asterisk glob form ("`mcp__claude-flow__*`") used in plugin docs (Phase C surfaced one such occurrence the original regex missed).
-  - **Push status:** PUSHED 2026-05-02 to `git@github.com:sparkling/ruflo.git` after explicit user confirmation. Post-push network check (`RUFLO_MARKETPLACE_NETWORK_TESTS=1`): PASS, `sparkling/ruflo main = local main = b24e4682`.
-- [ ] **Fix 5**: federation + iot plugins reach Verdaccio with `-patch.N` pin. Acceptance: (a) `npm view @sparkleideas/plugin-agent-federation@latest version --registry=http://localhost:4873` returns a version; same for `plugin-iot-cognitum`; (b) `check_adr0113_ruflo_federation_bin` does both `command -v ruflo-federation` AND `ruflo-federation --version` (via direct `timeout`, not `_run_and_kill`); same pattern for `check_adr0113_cognitum_iot_bin`; (c) ADR-078/079 mirrored into `ruflo-patch/docs/adr/`.
-- [ ] **Fix 6.1** (revised target): `executor.ts` + `claudemd-generator.ts` `@claude-flow/cli@latest` → `@sparkleideas/cli@latest` (12 sites). Acceptance: `grep -rn "@claude-flow/cli@latest" forks/ruflo/v3/@claude-flow/cli/src/` returns 0 matches; `grep -rn "@sparkleideas/cli@latest" <same>` returns 12. Plus acceptance check `check_adr0113_executor_uses_sparkleideas_cli`.
-- [x] ~~**Fix 6.2**~~: ALREADY LANDED in `cf6595a2c` (verified 2026-05-01). Strike from active checklist.
-- [ ] **Fix 6.3**: `hooks.ts:4137` `'Opus 4.6 (1M context)'` → `'Opus 4.7 (1M context)'`. Acceptance: `grep -c "Opus 4.6" forks/ruflo/v3/@claude-flow/cli/src/hooks.ts` == 0; `check_adr0113_no_opus_46_strings` greps `node_modules/@sparkleideas/**/dist/**` from init'd project.
-- [ ] **Fix 6.4**: Plugin READMEs `ruflo-browser/README.md:21`, `ruflo-loop-workers/README.md:14` updated. Acceptance: `grep -E '/(browser|memory)\b' forks/ruflo/plugins/ruflo-browser/README.md` returns 0 matches; `grep -E '/ruflo-(browser|memory)\b' <same>` returns ≥1.
-- [x] **Fix 6.5** (landed 2026-05-02 Phase D++; pushed to public `sparkling/ruflo`): fork commit `64491a274` pushed; `git ls-remote sparkling main` returns `64491a274d2bceaf259f4e5cf80ec4b90b3e8d77` (= local main). Acceptance signals:
-  - (a) **NOT applied with rationale.** Renaming fork top-level `package.json` `name: "claude-flow"` → `"ruflo"` collides with patch repo's `@sparkleideas/ruflo` (codemod's `UNSCOPED_MAP['ruflo']` already maps to that). The two-package hierarchy is intentional: patch repo's `@sparkleideas/ruflo` is the user-facing wrapper; fork's `@sparkleideas/claude-flow` (after codemod) is the inner proxy. Audit Finding 12(a) — "cosmetic but confusing" — does not justify the structural collision.
-  - (b) ✓ `grep -c "claude-flow-mcp"` in `v3/@claude-flow/cli/bin/cli.js`, `bin/mcp-server.js`, `src/mcp-server.ts` → 0 (was 1 + 7 + 14). Rebranded log tags `[claude-flow-mcp]` → `[ruflo-mcp]` (20 substitutions); pid/log file paths `claude-flow-mcp.{pid,log}` → `ruflo-mcp.{pid,log}` (2 substitutions).
-  - (c) ✓ `check_adr0113_proxy_bin_selfid_ruflo_mcp` (NEW): spawns published `ruflo-mcp` bin from harness `node_modules/.bin/`, pipes empty stdin to trigger startup logs, captures stderr (stdout is the MCP protocol stream), asserts `[ruflo-mcp]` ≥ 1 occurrence and `[claude-flow-mcp]` == 0. Uses direct `_timeout 5s` per `feedback-run-and-kill-exit-code`. Result: PASS 286ms.
-  - Post-push network check (`RUFLO_MARKETPLACE_NETWORK_TESTS=1`) `check_adr0113_marketplace_remote_sparkling`: PASS, `sparkling/ruflo main = local main = 64491a27`.
 
 ## Revision history
 
@@ -862,3 +874,9 @@ and `[claude-flow-mcp]` == 0. Uses direct `_timeout 5s` per
 Fix 6.5 (cosmetic bin self-id) closed; only Fix 6.5(a) — the
 package.json top-level rename — deliberately deferred with
 documented structural rationale.
+
+## More Information
+
+Original status: Implemented (2026-05-02). All 6 fixes landed including Fix 6.5; Phase A (Fix 6 + 2 + 5) on 2026-05-01, Phase B (Fix 3) + Phase C (Fix 4) + Phase D (Fix 1) + Phase D++ (Fix 6.5) on 2026-05-02. Forks/ruflo `main` at `64491a274` pushed to public `sparkling/ruflo`. Fix 6.5(a) — top-level `package.json` rename — explicitly NOT applied due to a structural collision with patch repo's `@sparkleideas/ruflo` (documented in §Done).
+
+The decider was Henrik Pettersen. Methodology: 14-agent specialized audit swarm (`swarm-1777663583250-1fqsl3`, hierarchical-mesh, read-only) following the public marketplace pitch that surfaced the question "is the plugin system actually integrated?". This ADR depends on ADR-0111 (upstream merge program, W4 step 4 merged 92 commits into `forks/ruflo` at `f6fcb76c6`) and closes integration gaps surfaced post-W4 acceptance gate. ADR-078 and ADR-079 specs are mirrored into the patch repo as `ADR-0078a-agent-llm-federation-plugin.md` and `ADR-0079a-iot-cognitum-plugin.md`.

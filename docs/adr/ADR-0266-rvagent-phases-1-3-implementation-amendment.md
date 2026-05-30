@@ -1,17 +1,15 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-28
-implemented: 2026-05-28
-tags: [upstream-sync, rvagent-wasm, ADR-129, implementation-amendment]
+tags: [rvagent-wasm, implementation-amendment]
 supersedes: []
 depends-on: [ADR-0254, ADR-0256, ADR-0258, ADR-0259]
-implements: [ADR-129]
+implements: []
 ---
 
 # ADR-129 Phases 1-3 implementation amendment
 
-## Context
+## Context and Problem Statement
 
 [[ADR-0254]] dispositioned upstream ADR-129 (`feat(rvagent): #ADR-129 full rvagent integration` — upstream commit `47a7825b0`) as `pick-partial`. Phase 4 (plugin-bridge helpers) landed via [[ADR-0256]] commit `818091545`. Phases 1-3 were gated on three design questions, two of which are now resolved:
 
@@ -30,7 +28,15 @@ Track B of the post-ADR-0261 upstream-merge completion plan (`docs/plans/2026-05
 * **No upstream donate-back** per `[[feedback-no-upstream-donate-backs]]` — the persistence-threading + allowlist divergence stays fork-side.
 * **Smoke wiring per ADR-0265 §L1-L4** — the lessons from prior implementation cycles apply (PARALLEL_DIR isolation, `_check_*` helper naming, shared-temp pattern if needed).
 
+## Considered Options
+
+* **Implement ADR-129 Phases 1-3 per the ADR-0258 + ADR-0259 specs (chosen)** — sequence the implementation deliverable using the per-tool wrapping spec (ADR-0258) and the allowlist contract (ADR-0259) as the council outputs; bundle the trivial `loadRvf` typo fix.
+
+(No alternatives were recorded — the load-bearing decisions were pre-decided in the two design ADRs; this amendment is the implementation sequencing.)
+
 ## Decision Outcome
+
+Chosen option: "implement per ADR-0258 + ADR-0259 specs", because those two design ADRs ARE the council outputs enumerating the per-line wrapping rules and the per-tool allowlist contract; this amendment only sequences the file edits and smoke surface.
 
 **Accepted: implement per ADR-0258 + ADR-0259 specs.** Status flips `completed: false → true` when:
 
@@ -39,6 +45,12 @@ Track B of the post-ADR-0261 upstream-merge completion plan (`docs/plans/2026-05
 3. `loadRvf` signature typo fix at `optional-modules.d.ts:295` lands.
 4. 5 smokes wire-into the canonical harness via `lib/acceptance-adr0266-checks.sh` per `[[feedback-always-wire-tests-into-cicd]]`.
 5. INTEGRATION-LEDGER row 239 disposition flips from `pick-partial` to `reimplemented-via-adr-0266` (Phases 1-3 portion).
+
+### Consequences
+
+* Good, because the load-bearing decisions are pre-decided in ADR-0258 + ADR-0259, so this ADR only lists the files to edit and the smoke surface — a mechanical, low-risk land.
+* Good, because the scope is concentrated in one file (`wasm-agent-tools.ts`, ~300 LOC of new handlers), with limited cross-package surface versus ADR-0261 / ADR-0265.
+* Neutral, because the persistence-threading + allowlist divergence stays fork-side per `[[feedback-no-upstream-donate-backs]]`; no upstream donate-back.
 
 ## Implementation plan
 
@@ -131,7 +143,9 @@ No new guards needed. The handlers live in `forks/ruflo/v3/@claude-flow/cli/src/
 | `SAFE_MCP_TOOLS` list drifts from actual fork tool registry over time | Phase 5 smoke #5 (Allowlist verification) is the standing gate. Run on every release; if any name fails to resolve, fork-update the allowlist in this ADR's amendment chain. |
 | `wasm_gallery_categories` may or may not exist depending on Phase 3 land status | Per ADR-0259, land Phase 3 + the allowlist entry in the same commit batch (preferred). Smoke #5 has the loud-fail safety net if the rule is violated. |
 
-## Cross-references
+## More Information
+
+Original status: accepted and implemented 2026-05-28 (`completed: true`). This ADR implements the vision of upstream ADR-129; ADR-129 is an upstream design doc, not a fork-corpus ADR, so it is referenced in prose rather than via the `implements` frontmatter slot.
 
 - Upstream PR `47a7825b0` — `feat(rvagent): #ADR-129 — full rvagent integration (4 phases) (#2123)`
 - [[ADR-0254]] — disposition + 3 gates

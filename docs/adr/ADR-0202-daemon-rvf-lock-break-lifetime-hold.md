@@ -1,12 +1,9 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-19
-accepted-on: 2026-05-20
-implemented-on: 2026-05-21
-tags: [daemon, rvf, archivist, hooks, locking, swarm-reviewed]
+tags: [daemon, rvf, archivist, locking]
 supersedes: []
-depends-on: [0201]
+depends-on: [ADR-0201]
 implements: []
 ---
 
@@ -280,6 +277,8 @@ advocate), applying [[feedback-remediation-adr-preflight]]. **Decision
 * Bad, because hook handlers running outside the daemon's lifetime (before `daemon start`, after `daemon stop`, on Windows where the daemon may not exist) need a different code path anyway — making the IPC path conditional, which is exactly the dual-path complexity ADR-0088 removed.
 
 ## More Information
+
+Lifecycle dates from the original record: proposed 2026-05-19, accepted 2026-05-20, implemented 2026-05-21. This ADR was swarm-reviewed.
 
 Related audit findings (all in `docs/audits/2026-05-19-soundness-audit/`):
 

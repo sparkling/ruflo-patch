@@ -1,17 +1,17 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-09
-implemented: 2026-05-18
-methodology: [SPARC, MADR, runbook]
-decision-makers: [Henrik Pettersen]
-tags: [upstream-sync, forks, daemon, security, ruflo, agentic-flow, ruvector, v2-archive, runbook]
-related: [0012, 0027, 0079, 0086, 0088, 0094, 0101, 0143, 0156, 0160, 0161, 0186]
-audience: ai-executor
-state_schema: 1
+tags: [upstream-sync, forks, daemon, runbook]
+supersedes: []
+depends-on: []
+implements: []
 ---
 
-# ADR-0162: Upstream fork sync — May 2026 (288 commits, daemon-priority)
+# Upstream fork sync — May 2026 (288 commits, daemon-priority)
+
+## Context and Problem Statement
+
+This is a runbook (companion execution-plan record) for the May 2026 upstream fork sync — 288 commits across five forks, daemon-priority. It tracks the batched cherry-pick / re-target / skip plan, per-batch verification, decision gates, and the post-batch publish/sanity sequence; the "Why" lives in `## Background` at the end.
 
 > **AI executor**: this is a runbook. Execute top-to-bottom. Each batch has Pre-conditions → Commands → Verification → Failure-modes → Resumability. Maintain state in `.claude-flow/data/sync-2026-05-09.yaml` per the schema below. If any verification fails, halt and surface — do not improvise. "Why" lives in `## Background` at the end; you do not need it to execute.
 
@@ -1018,6 +1018,8 @@ Pre-existing fork debt (out of scope; track separately): 9 standalone WASM crate
 ---
 
 ## More information
+
+Original metadata: Methodology SPARC + MADR + runbook; audience `ai-executor`; `state_schema: 1`; marked `completed: true` and `implemented: 2026-05-18`. This runbook was recorded as related to ADR-0012, ADR-0027, ADR-0079, ADR-0086, ADR-0088, ADR-0094, ADR-0101, ADR-0143, ADR-0156, ADR-0160, ADR-0161, and ADR-0186 (which takes over the unlanded work).
 
 - Inventory: `docs/plans/upstream-sync-2026-05-09.md`
 - Per-batch verified analyses:

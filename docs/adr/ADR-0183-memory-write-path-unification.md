@@ -1,8 +1,7 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-17
-tags: [memory, archivist, runtime-activation, write-path, complete]
+tags: [memory, archivist, write-path]
 supersedes: []
 depends-on: [ADR-0180, ADR-0181]
 implements: []

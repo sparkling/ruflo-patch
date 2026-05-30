@@ -1,16 +1,15 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-24
-tags: [mcp, schema, validation, types, dedupe, audit-followup, ct-h]
+tags: [mcp, schema, validation, types]
 supersedes: []
-depends-on: [0201, 0224, 0233]
+depends-on: [ADR-0201, ADR-0224, ADR-0233]
 implements: []
 ---
 
 # Schema-vs-handler truth + type dedupe (CT-H close-out)
 
-## Context
+## Context and Problem Statement
 
 [[ADR-0233]] §CT-H ("Schemas lie about what handlers enforce") gathered four
 distinct symptoms of the same root pattern — the MCP `inputSchema`
@@ -153,7 +152,7 @@ Per [[ADR-0201]] §"Remediation-ADR pre-flight checklist":
    - **No sibling ADR addresses the type-duplication clusters**
      (`MemoryType` / `AgentType` / `MCPTool` / `optional-modules`).
 
-## Considered options
+## Considered Options
 
 ### Option A — Generate handler-validation FROM `inputSchema` (single source of truth at the MCP boundary)
 
@@ -254,7 +253,9 @@ Cons (D1/D2): does not address F-14-003 (Zod-bypass) or the
 type-duplication clusters at all. Those are deferred to either
 [[ADR-0233]]'s lower-priority CT items or to future work.
 
-## Decision
+## Decision Outcome
+
+Chosen option: "Option D1 (schema relaxes to match handler, upstream-aligned)", because it closes the F-14-001 schema/handler asymmetry in an upstream-aligned way that future syncs won't reintroduce.
 
 **Chosen: Option D1 (schema relaxes to match handler, upstream-aligned)
 + Option B (arch-test guard against future drift) + targeted
@@ -388,7 +389,7 @@ Out of scope (deferred per pre-flight #2 and audit severity):
    exact shape (schema declares required, handler defaults rather
    than rejects).
 
-## Consequences
+### Consequences
 
 - Good, because the user-visible F-14-001 asymmetry closes. Permissive
   and strict MCP clients dispatch `memory_store` calls to the same

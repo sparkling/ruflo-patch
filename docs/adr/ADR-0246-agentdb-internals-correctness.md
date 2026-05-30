@@ -1,16 +1,15 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-24
-tags: [agentdb, rvf, hnsw, archivist, soundness, audit-followup, CT-M]
+tags: [agentdb, rvf, hnsw, archivist]
 supersedes: []
-depends-on: [0073, 0080, 0201, 0227, 0233]
+depends-on: [ADR-0073, ADR-0080, ADR-0201, ADR-0227, ADR-0233]
 implements: []
 ---
 
 # AgentDB internals correctness (CT-M — 3 CRITICAL data-integrity)
 
-## Context
+## Context and Problem Statement
 
 [[ADR-0233]] consolidated 165 findings from the 2026-05-24 second-pass audit into 10 cross-cutting themes (CT-A through CT-J) plus 5 new CTs (CT-K through CT-O) identified by the post-ADR-0233 coverage-matrix walk at `/tmp/coverage-matrix.md`. **CT-M is the most consequential of the new CTs**: the slice-03 audit (`docs/audits/2026-05-24-second-pass-audit/03-agentdb-internals.md`) returned 9 findings — **3 CRITICAL, 4 WARNING, 2 NOTE** — that the ADR-0233 headline list omitted and that no existing CT-A..J ADR covers. [[ADR-0239]] (CT-F) handles dead-code in this area only; the live-code correctness gaps are the CT-M scope.
 
@@ -62,7 +61,9 @@ All three CRITICAL cites verified at exact line numbers by reading the live sour
 * **B. Split into two ADRs**: AgentDB substrate-correctness (F-03-001/002 + ADR-0073 alignment) vs HNSW-derivation enforcement (F-03-003/005). Two PRs, narrower review surface.
 * **C. Behaviour-test-first**: write tests that capture the `2cos − 1` offset and the invariant-after-commit bug, then fix to pass (matches `[[feedback-trace-before-hypothesis]]`). Per-finding fix shape inherits from A.
 
-## Decision
+## Decision Outcome
+
+Chosen option: "C + A hybrid", because behaviour-test-first on the three CRITICALs plus a per-finding fix table for the rest keeps the shared defect family in one ADR without the sibling-overlap risk of splitting.
 
 **Chosen: C + A hybrid.** Behaviour-test-first for the 3 CRITICAL (one source-shape guard + one runtime test per CRITICAL, written and red before fixing); then per-finding fix table for the rest. Single ADR — not split — per [[ADR-0233]] Decision ("theme-batched remediation ADRs … carve along bug-class seams") and pre-flight check 4 ("no sibling-ADR overlap"); splitting into 0246a/0246b would re-create the overlap risk the theme batching is meant to eliminate.
 
@@ -100,27 +101,19 @@ Per `[[feedback-trace-before-hypothesis]]` and the ADR-0073 amendment workflow:
 * NOTEs last (F-03-008 closes with F-03-002 fix; F-03-009 is documentation).
 * No deferrals other than F-03-002 path (b) fallback if path (a) overruns one ADR cycle.
 
-## Consequences
+### Consequences
 
-### Positive
-
-* **Three silent-correctness vectors closed.** RVF metric mismatch on reopen, archivist invariants-after-commit, factory HNSW divergence.
-* **Charter ↔ runtime re-aligned.** F-03-002 path (a) makes `MODULE.md:45` true at runtime, not aspirational. Closes the `feedback-best-effort-must-rethrow-fatals` shape ADR-0233 §03 calls out under "Charter / code drift".
-* **F-03-001 closure unblocks meaningful F-03-005 fix.** Both are "wrong static defaults" — fixing the metric reprobe pattern naturally extends to `indexStats()`.
-* **ADR-0073's named follow-up discharged.** "Should get the same treatment if any agentdb-native search consumer thresholds on absolute cosine" — done.
-* **Plugin-author seam is honest.** F-03-003 fix makes `createBackend('hnswlib', {dimension: 768})` deterministically produce canonical 23/100/50.
-
-### Negative
-
-* **F-03-002 path (a) requires real transactional substrate semantics.** FS-JSON `.tmp`-then-rename is straightforward; RVF `freeze()` + rollback is non-trivial and currently `freeze()` is called nowhere in the dispatch path. If this is judged too large for one ADR cycle, path (b) (amend charter to honest "post-write checks") is the honest fallback — but it weakens the audit-replay guarantee.
-* **Three byte-identical-with-upstream files diverge.** `RvfBackend.ts`, `factory.ts`, `HNSWLibBackend.ts` all currently match `ruvnet/agentdb` exactly. Three new `INTEGRATION-LEDGER.md` rows; divergence-marker comments at each edit site naming this ADR. Per `[[feedback-update-integration-ledger]]`, this is the cost of fork-only fixes.
-* **F-03-006 throws on sync `remove()` callers** — caller-visible behaviour change. Any sync-remove caller is already broken (fire-and-forget returns `true` unconditionally), so the throw replaces a silent lie with a loud failure — but it WILL break callers that didn't notice the lie.
-* **F-03-003 fix is at the factory layer only.** Direct `new HNSWLibBackend(config)` constructor callers still hit the static defaults. Accepted as a documented seam (factory is the public surface); fully closing this would require deleting the static defaults from the constructor, breaking the standalone-test-fixture seam.
-
-### Neutral
-
-* **F-03-007 carries closure dependency on CT-A.** Cross-CT dependency, but the dependency direction is clear (CT-A lands first, CT-M re-flags satisfied).
-* **No upstream donate-back per `[[feedback-no-upstream-donate-backs]]`** — fork-only fixes stay fork-only. The merge tax is accepted.
+* Good, because **Three silent-correctness vectors closed.** RVF metric mismatch on reopen, archivist invariants-after-commit, factory HNSW divergence.
+* Good, because **Charter ↔ runtime re-aligned.** F-03-002 path (a) makes `MODULE.md:45` true at runtime, not aspirational. Closes the `feedback-best-effort-must-rethrow-fatals` shape ADR-0233 §03 calls out under "Charter / code drift".
+* Good, because **F-03-001 closure unblocks meaningful F-03-005 fix.** Both are "wrong static defaults" — fixing the metric reprobe pattern naturally extends to `indexStats()`.
+* Good, because **ADR-0073's named follow-up discharged.** "Should get the same treatment if any agentdb-native search consumer thresholds on absolute cosine" — done.
+* Good, because **Plugin-author seam is honest.** F-03-003 fix makes `createBackend('hnswlib', {dimension: 768})` deterministically produce canonical 23/100/50.
+* Bad, because **F-03-002 path (a) requires real transactional substrate semantics.** FS-JSON `.tmp`-then-rename is straightforward; RVF `freeze()` + rollback is non-trivial and currently `freeze()` is called nowhere in the dispatch path. If this is judged too large for one ADR cycle, path (b) (amend charter to honest "post-write checks") is the honest fallback — but it weakens the audit-replay guarantee.
+* Bad, because **Three byte-identical-with-upstream files diverge.** `RvfBackend.ts`, `factory.ts`, `HNSWLibBackend.ts` all currently match `ruvnet/agentdb` exactly. Three new `INTEGRATION-LEDGER.md` rows; divergence-marker comments at each edit site naming this ADR. Per `[[feedback-update-integration-ledger]]`, this is the cost of fork-only fixes.
+* Bad, because **F-03-006 throws on sync `remove()` callers** — caller-visible behaviour change. Any sync-remove caller is already broken (fire-and-forget returns `true` unconditionally), so the throw replaces a silent lie with a loud failure — but it WILL break callers that didn't notice the lie.
+* Bad, because **F-03-003 fix is at the factory layer only.** Direct `new HNSWLibBackend(config)` constructor callers still hit the static defaults. Accepted as a documented seam (factory is the public surface); fully closing this would require deleting the static defaults from the constructor, breaking the standalone-test-fixture seam.
+* Neutral, because **F-03-007 carries closure dependency on CT-A.** Cross-CT dependency, but the dependency direction is clear (CT-A lands first, CT-M re-flags satisfied).
+* Neutral, because **No upstream donate-back per `[[feedback-no-upstream-donate-backs]]`** — fork-only fixes stay fork-only. The merge tax is accepted.
 
 ## Sites
 

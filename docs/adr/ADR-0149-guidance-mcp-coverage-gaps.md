@@ -1,29 +1,15 @@
-# ADR-0149: Guidance MCP coverage gaps — `guidance_*` is significantly out of sync with actual MCP/plugin surface
+---
+status: accepted
+date: 2026-05-06
+tags: [guidance, mcp, audit, drift]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-> **[IMPLEMENTED 2026-05-29 → see [[ADR-0270]]]** Landed at `@sparkleideas/*`
-> patch.372 (forks/ruflo `66e28c7fd`). **Phase 2 done:** the guidance
-> `CAPABILITY_CATALOG` was reconciled to **0 phantoms** against the 317 real
-> registered tool names (source of truth = `mcp-client.ts` `TOOL_REGISTRY`, not
-> the stale `mcp-surface-manifest.json`): name-format fixes
-> (`hooks_pre_task`→`hooks_pre-task`, `hive_mind_*`→`hive-mind_*`), wrong-name
-> peers (`agent_stop`→`agent_terminate`, `swarm_terminate`→`swarm_shutdown`, …),
-> verified-absent fabrications dropped, fabricated `security_*` remapped to real
-> `aidefence_*`, and 6 zero-coverage areas added (agentdb, task, aidefence,
-> workflows, observability, knowledge-graph). **Phase 3's durable piece shipped:**
-> a drift-test (`v3/@claude-flow/cli/__tests__/adr0149-guidance-coverage.test.ts`,
-> 29/29, negative-control verified) asserts catalog ⊆ registry — making the
-> phantom class non-regressible. **Deferred:** Phase 3's full runtime
-> auto-generation (the drift-test makes the hand-curated catalog self-policing,
-> so auto-gen is low marginal value — cf this ADR's Alternative C). `federation`
-> and `rvf` were added with `tools:[]` (no MCP tool prefix exists for them).
-> Original proposal status below.
-- **Status**: Proposed (severity quantified 2026-05-06 via 15-agent ADR-0152 swarm)
-- **Date**: 2026-05-06
-- **Deciders**: Henrik Pettersen
-- **Related**: ADR-0148 (skill ↔ MCP tool surface audit — Category D split-off), ADR-0152 (3-way reality/USERGUIDE/guidance drift audit — quantifies guidance hallucination rate), ADR-0117 (mcp__ruflo__ namespace), ADR-0136 (claudemd-generator plugin/skill discovery)
-- **Scope**: All `guidance_*` MCP tools — `guidance_capabilities`, `guidance_recommend`, `guidance_workflow`, `guidance_quickref`, `guidance_discover`. Their data files / hardcoded indexes / prompt templates that drive what the AI is told about ruflo's surface.
+# Guidance MCP coverage gaps — `guidance_*` is significantly out of sync with actual MCP/plugin surface
 
-## Context
+## Context and Problem Statement
 
 ADR-0148's S5 stripe (3 agents probing `guidance_*` for 16 categories) found that the guidance system is the AI's primary self-discovery surface — when an AI is asked "what can ruflo do for X?" or "which tool should I use to Y?", these tools answer.
 
@@ -56,7 +42,7 @@ But the guidance index is **frozen** at an early ruflo state. The audit found:
 - `guidance_recommend` patterns are sparse: only "use neural" matched (intelligence-learning); 5 others returned generic fallback
 - Largest blind spots: **observability has zero surface**, **RVF has zero surface**, **ruvllm-inference area has empty agents/skills/commands arrays** and surfaces only 6 of 9 actual `mcp__ruflo__ruvllm_*` tools
 
-## Severity (quantified by ADR-0152 swarm 2026-05-06)
+### Severity (quantified by ADR-0152 swarm 2026-05-06)
 
 C14 (one of 15 ADR-0152 agents) probed `guidance_capabilities` across all 16 hardcoded areas + cross-referenced every recommended tool/skill name against the live MCP server registry (284 tools) and on-disk skill set (119 skills). Concrete numbers:
 
@@ -75,13 +61,22 @@ ADR-0152 also confirmed the missing-areas problem (originally hypothesized by S5
 
 The 14% phantom rate is significant: an AI calling `guidance_recommend` and trusting the response will issue `MCP tool not found` errors ~1 time in 7. ADR-0148 catalogued the same phantoms downstream as missing handlers; this ADR catalogues them upstream as misleading guidance.
 
-## The contract this breaks
+### The contract this breaks
 
 When an AI calls `mcp__ruflo__guidance_capabilities { category: 'aidefence' }` and receives `Unknown area: aidefence`, the AI's natural fallback is "this category doesn't exist; don't suggest it." But aidefence DOES exist, with 6 working MCP tools. The guidance system is **actively misleading** the AI away from real capabilities.
 
 Same for the wrong tool names in `recommend()`: an AI told to call `hive_mind_propose` will hit "MCP tool not found" — the same failure class ADR-0148 catalogues. Guidance is generating new instances of the same gap type.
 
-## Decision
+## Considered Options
+
+* **Three-phase fix to align the guidance index with reality: inventory data sources, add 14 missing areas, then auto-discovery (chosen).**
+* **Alternative A — Just delete `guidance_*` tools (rejected)** — AI's primary self-discovery surface. Removing leaves a worse hole — AI defaults to generic-LLM training-data assumptions about what ruflo can do, which are even more wrong than today's misaligned guidance.
+* **Alternative B — Replace guidance with documentation links (rejected)** — each `guidance_*` call returns "see USERGUIDE.md §X". Rejected: USERGUIDE is 7,557 lines; AI fetching 7K lines per discovery query is wasteful. Curated guidance is the right shape; just needs to be accurate.
+* **Alternative C — Hand-curated fix-once, no Phase 3 (rejected)** — just do Phase 2 and call it done. Rejected: drift will recur every time a new MCP tool ships (which happens monthly per fork pace). Phase 3 (auto-discovery) is the durable fix.
+
+## Decision Outcome
+
+Chosen option: "Three-phase fix to align the guidance index with reality", because the guidance system is the AI's primary self-discovery surface and a 14% phantom rate actively misleads it away from real capabilities — so the index must be reconciled to reality and (durably) kept in sync.
 
 **Three-phase fix** to align the guidance index with reality, gated:
 
@@ -135,7 +130,11 @@ At MCP server start:
 
 This eliminates the drift class entirely. Acceptance: after adding/removing any MCP tool, `guidance_*` reflects the change without a manual data-file edit.
 
-## Acceptance criteria
+### Consequences
+
+* Neutral, because Phase 3's full runtime auto-generation is deferred — the drift-test makes the hand-curated catalog self-policing, so auto-gen is low marginal value (cf. Alternative C).
+
+### Confirmation
 
 - [ ] Phase 1: data sources catalogued in `/tmp/adr-0149-findings/data-sources.md`
 - [ ] Phase 2: every category that has a corresponding plugin OR MCP tool prefix has a guidance area
@@ -152,25 +151,21 @@ This eliminates the drift class entirely. Acceptance: after adding/removing any 
 
 3. **AI adoption inertia** — even after fixes ship, sessions cached on the old guidance state may keep recommending wrong tool names. Mitigation: documented "guidance reload after MCP restart" — same as plugin reload.
 
-## Considered alternatives
-
-### Alternative A — Just delete `guidance_*` tools
-
-Rejected: AI's primary self-discovery surface. Removing leaves a worse hole — AI defaults to generic-LLM training-data assumptions about what ruflo can do, which are even more wrong than today's misaligned guidance.
-
-### Alternative B — Replace guidance with documentation links
-
-Each `guidance_*` call returns "see USERGUIDE.md §X". Rejected: USERGUIDE is 7,557 lines; AI fetching 7K lines per discovery query is wasteful. Curated guidance is the right shape; just needs to be accurate.
-
-### Alternative C — Hand-curated fix-once, no Phase 3
-
-Just do Phase 2 and call it done. Rejected: drift will recur every time a new MCP tool ships (which happens monthly per fork pace). Phase 3 (auto-discovery) is the durable fix.
-
 ## Implementation log
 
 (empty — pending Phase 1 inventory)
 
-## References
+## More Information
+
+Implementation note: **[IMPLEMENTED 2026-05-29 → see [[ADR-0270]]]** Landed at `@sparkleideas/*` patch.372 (forks/ruflo `66e28c7fd`). **Phase 2 done:** the guidance `CAPABILITY_CATALOG` was reconciled to **0 phantoms** against the 317 real registered tool names (source of truth = `mcp-client.ts` `TOOL_REGISTRY`, not the stale `mcp-surface-manifest.json`): name-format fixes (`hooks_pre_task`→`hooks_pre-task`, `hive_mind_*`→`hive-mind_*`), wrong-name peers (`agent_stop`→`agent_terminate`, `swarm_terminate`→`swarm_shutdown`, …), verified-absent fabrications dropped, fabricated `security_*` remapped to real `aidefence_*`, and 6 zero-coverage areas added (agentdb, task, aidefence, workflows, observability, knowledge-graph). **Phase 3's durable piece shipped:** a drift-test (`v3/@claude-flow/cli/__tests__/adr0149-guidance-coverage.test.ts`, 29/29, negative-control verified) asserts catalog ⊆ registry — making the phantom class non-regressible. **Deferred:** Phase 3's full runtime auto-generation (the drift-test makes the hand-curated catalog self-policing, so auto-gen is low marginal value — cf this ADR's Alternative C). `federation` and `rvf` were added with `tools:[]` (no MCP tool prefix exists for them).
+
+Original status: Proposed (severity quantified 2026-05-06 via 15-agent ADR-0152 swarm).
+
+This ADR relates to ADR-0148 (skill ↔ MCP tool surface audit — Category D split-off; parent ADR), ADR-0152 (3-way reality/USERGUIDE/guidance drift audit — quantifies guidance hallucination rate), ADR-0117 (mcp__ruflo__ namespace — source of underscore-vs-dash issues), and ADR-0136 (claudemd-generator plugin/skill discovery — broader context for AI self-discovery).
+
+Scope: All `guidance_*` MCP tools — `guidance_capabilities`, `guidance_recommend`, `guidance_workflow`, `guidance_quickref`, `guidance_discover`. Their data files / hardcoded indexes / prompt templates that drive what the AI is told about ruflo's surface.
+
+References:
 
 - ADR-0148 §"Findings — Category D" (parent ADR; this is the split-off)
 - ADR-0136 (claudemd-generator plugin/skill discovery — broader context for AI self-discovery)

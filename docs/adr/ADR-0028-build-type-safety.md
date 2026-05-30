@@ -1,10 +1,15 @@
-# ADR-0028: Build Type Safety — Eliminating noCheck Fallback
+---
+status: accepted
+date: 2026-03-08
+tags: [build, typescript, pipeline]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-## Status
+# Build Type Safety — Eliminating noCheck Fallback
 
-Accepted
-
-## Context
+## Context and Problem Statement
 
 ### Problem Statement (Specification)
 
@@ -34,9 +39,19 @@ This caused:
 | Upstream type bugs | TS2554, TS2339, etc. | shared, security, browser, performance, providers | Zod v4 API changes, casing mismatches |
 | Packages outside build path | — | 17 packages | `v3/plugins/*` and `cross-repo/*` not in build loop |
 
-## Decision (Pseudocode → Architecture)
+## Considered Options
 
-### Algorithm
+* **Standalone per-package build with preserved rootDir, test-file exclusion, sibling path mapping, and toolchain @types (chosen)** — strip composite/references, fix rootDir handling, exclude tests, map siblings, add @types and stubs, and reserve `--noCheck` only for genuine upstream code bugs while logging all errors.
+
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "Standalone per-package build with preserved rootDir, test-file exclusion, sibling path mapping, and toolchain @types", because it produces working `dist/` output for 38 of 41 packages, surfaces 100% of build errors (vs swallowing them), and restricts the lossy `--noCheck` fallback to the small set of packages with genuine upstream type bugs.
+
+### Decision (Pseudocode → Architecture)
+
+#### Algorithm
 
 ```
 FOR each package with tsconfig.json:
@@ -51,7 +66,7 @@ FOR each package with tsconfig.json:
   9. LOG errors instead of /dev/null
 ```
 
-### Architecture
+#### Architecture
 
 ```
 /tmp/ruflo-tsc-toolchain/
@@ -74,7 +89,7 @@ tsconfig.build.json (generated per-package):
   exclude: ["**/*.test.ts", "**/*.spec.ts", "**/__tests__/**"]
 ```
 
-### Build Coverage (expanded)
+#### Build Coverage (expanded)
 
 ```
 v3/@claude-flow/*              21 packages (main build groups 0-4)
@@ -82,7 +97,7 @@ v3/plugins/*                   13 packages (plugin packages)
 cross-repo/agentic-flow/       agentdb, agentdb-onnx, agentic-flow root
 ```
 
-### Fork Patch: SG-004
+#### Fork Patch: SG-004
 
 Cross-package relative imports in `cli/src/infrastructure/in-memory-repositories.ts`:
 
@@ -96,9 +111,11 @@ import { Agent } from './_swarm-types/agent.js';
 
 Four swarm type files copied into `cli/src/infrastructure/_swarm-types/`.
 
-## Consequences (Refinement → Completion)
+### Consequences
 
-### Results
+(Refinement → Completion)
+
+#### Results
 
 | Metric | Before | After |
 |--------|--------|-------|
@@ -108,7 +125,7 @@ Four swarm type files copied into `cli/src/infrastructure/_swarm-types/`.
 | Build errors visible | 0% (swallowed) | 100% (logged) |
 | Pipeline total time | 14+ min | ~114s |
 
-### Remaining Items (noCheck still needed)
+#### Remaining Items (noCheck still needed)
 
 5 packages still require `--noCheck` due to upstream type bugs:
 
@@ -122,22 +139,26 @@ Four swarm type files copied into `cli/src/infrastructure/_swarm-types/`.
 
 These are upstream code bugs — fixing them requires fork patches against the ruflo or agentic-flow repos.
 
-### Remaining Acceptance Failures
+#### Remaining Acceptance Failures
 
 | Test | Issue | Fix |
 |------|-------|-----|
 | T07 MCP config | `cli init` doesn't create `.mcp.json` | Upstream CLI init command |
 | T08 ruflo init --full | npx subprocess timeout in background | Increase timeout or use local binary |
 
-### Risks
+#### Risks
 
 - `--noCheck` fallback masks real type errors in the 5 affected packages
 - Type stubs for optional modules (`agentic-flow/embeddings`) may drift from actual API
 - `@types` packages in tsc toolchain need periodic updates
 
-### Follow-up
+#### Follow-up
 
 - Fork patches for Zod v4 compat (shared, security, browser)
 - Fork patch for `@ruvector/attention` casing (performance)
 - Add `downlevelIteration: true` to providers tsconfig
 - Remove `--noCheck` fallback once all upstream bugs are patched
+
+## More Information
+
+This record originally used SPARC-style section labels (Specification / Pseudocode / Architecture / Refinement / Completion), remapped to the canonical MADR sections during the ADR-0271 migration, preserving all content. Original status: "Accepted".

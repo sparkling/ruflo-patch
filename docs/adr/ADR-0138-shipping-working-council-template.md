@@ -1,14 +1,21 @@
-# ADR-0138: Ship a working council-session template by default — what's left to do, grounded in iter9 vs HM-repo working-version comparison
+---
+status: accepted
+date: 2026-05-04
+tags: [hive-mind, council, template, init]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: **[RECONCILED 2026-05-29 → DELIVERED; see [[ADR-0270]]]** This ADR's deliverable — a default council-session template projects can rely on without inventing their own ONT-0021 — shipped 2026-05-29 as [[ADR-0140]] Piece 2: `templates/generic-council-protocol.md` (the default dialectic methodology) + `templates/worker-contract.md` (the per-expert spawn contract), in both the editorial `.claude/skills/hive-mind-advanced/` and the `plugins/ruflo-hive-mind/skills/hive-mind-advanced/` delivery surfaces. Original status preserved below. — Proposed (2026-05-04). Concrete gap analysis comparing iter9's empirical output (literal `npx hive-mind spawn --claude --non-interactive` from inside an existing claude session) against the HM repo's pre-regression Sessions 22-39 production sessions. Identifies exactly what queen-prompt scaffolding ruflo must ship to produce HM-quality output without requiring projects to invent their own ONT-0021.
-- **Date**: 2026-05-04
-- **Deciders**: Henrik Pettersen
-- **Related**: ADR-0114 §Done U5 (council protocol delivery gap), ADR-0136 (claudemd generator content audit — same delivery-gap class), ADR-0067 §4.2 (the TOOL PREFERENCE regression that broke the hive 2026-03-25 → 2026-04-29), ADR-0104 (queen orchestration), ADR-0131 (worker failure protocol — already shipped), ADR-0132 (sub-queen failure escalation — already shipped), ADR-0125 (queen disposition — already shipped)
-- **Scope**: The queen-prompt template at `forks/ruflo/v3/@claude-flow/cli/src/commands/hive-mind.ts` lines 394 (`renderHiveMindHeader`) + 617/656/698 (per-queen-type renderers). Specifically the protocol-content gap that prevents fresh-init projects from producing council-format output
+# Ship a working council-session template by default — what's left to do, grounded in iter9 vs HM-repo working-version comparison
 
-## Context — three independent reference points
+## Context and Problem Statement
 
-### 1. The HM repo (pre-regression production, 250+ working sessions)
+This ADR is a concrete gap analysis comparing iter9's empirical output (literal `npx hive-mind spawn --claude --non-interactive` from inside an existing claude session) against the HM repo's pre-regression Sessions 22-39 production sessions. It identifies exactly what queen-prompt scaffolding ruflo must ship to produce HM-quality output without requiring projects to invent their own ONT-0021.
+
+### Three independent reference points
+
+#### 1. The HM repo (pre-regression production, 250+ working sessions)
 
 `/Users/henrik/source/hm/semantic-modelling/` ran 250+ council sessions between 2026-03-11 (Session 22, ONT-0021 added) and ~2026-04-23 (first regression-remediation memory rule added) using `ruflo hive-mind spawn --claude` against ruflo CLI. Sample artifact: `docs/ontology/odr/council/session-39-ont-0034-implementation.md` — 5 questions, 9 standing experts + Knublauch (extended panel), Kendall as DA, full ONT-0021 8-section format with explicit inter-expert discussion turns and DA withdrawal mechanic.
 
@@ -24,7 +31,7 @@ The mechanism (per ADR-0114 Lens 10 + memory `reference-hive-pre-regression-patt
 
 The protocol came **entirely from project files** (ONT-0021 + project CLAUDE.md). The ruflo queen prompt was substrate-only the entire working window.
 
-### 2. The pre-regression ruflo source (cloned for inspection)
+#### 2. The pre-regression ruflo source (cloned for inspection)
 
 Cloned 2026-05-04 to `/Users/henrik/source/workingCouncil/`:
 
@@ -43,7 +50,7 @@ Inspection of `workingCouncil/ruflo/v3/@claude-flow/cli/src/commands/hive-mind.t
 
 Today's queen prompt (post-`fe18fddb7`) is structurally similar (~240 lines) — adds worker contract, failure protocols, queen-type disposition (ADR-0125/0131/0132), but **still zero protocol scaffolding**. The protocol-delivery gap has existed the entire time; HM only worked because HM supplied its own ONT-0021.
 
-### 3. iter9 — the literal canonical CLI command from inside an existing claude session
+#### 3. iter9 — the literal canonical CLI command from inside an existing claude session
 
 Empirical run 2026-05-04, one-shot test of `npx hive-mind spawn --claude --non-interactive` from inside an active Claude Code session. Stream-json output captured at `~/.claude/projects/-Users-henrik-source-ruflo-patch/.../tool-results/b4c7hpci3.txt` (157KB).
 
@@ -87,17 +94,17 @@ timeout 120 npx @sparkleideas/cli@latest hive-mind spawn -n 3 \
 
 iter9 produced 3/8 ONT-0021 sections clean, 3/8 partial, 2/8 missing. **The mechanism worked but the protocol-content scaffolding is missing**: queen invented charged-labels instead of named experts, skipped inter-expert discussion section, did not assign explicit DA role.
 
-## The gap
+### The gap
 
 ruflo's queen prompt has never carried protocol-content scaffolding. HM's working sessions worked because HM's project CLAUDE.md anchored "convene council per ONT-0021" and ONT-0021 supplied the named panel + protocol. Fresh-init projects (no ONT-0021) get **substrate-only behaviour**: queen invents some council-shaped output (per iter9), but invents Worker A/B/C labels with charges instead of named experts, and skips the inter-expert discussion + DA-withdrawal sections.
 
 This is exactly the gap ADR-0114 §Done U5 identified ("ship a council protocol skill / embed protocol in queen prompt template / make hive-mind spawn --claude shell out with a Queen prompt that follows the protocol"). U5 is still open; iter9 confirms the empirical shape of what's missing.
 
-## Full 12-stage flow — reverse-engineered from `workingCouncil/` checkout
+### Full 12-stage flow — reverse-engineered from `workingCouncil/` checkout
 
 These are the stages a working pre-regression council session went through. Each stage is grounded in the cloned source + HM's project files + Session 39's output structure + memory rules.
 
-### Stage 1 — User invocation
+#### Stage 1 — User invocation
 
 ```bash
 npx ruflo hive-mind spawn "<question>" \
@@ -106,7 +113,7 @@ npx ruflo hive-mind spawn "<question>" \
   --claude
 ```
 
-### Stage 2 — ruflo CLI generates queen prompt (substrate-only, verbatim from `workingCouncil/ruflo/v3/@claude-flow/cli/src/commands/hive-mind.ts:79-168`)
+#### Stage 2 — ruflo CLI generates queen prompt (substrate-only, verbatim from `workingCouncil/ruflo/v3/@claude-flow/cli/src/commands/hive-mind.ts:79-168`)
 
 ```
 🧠 HIVE MIND COLLECTIVE INTELLIGENCE SYSTEM
@@ -194,11 +201,11 @@ Start by checking the current hive status and then proceed with the objective.
 
 **Verified zero references in the queen prompt** to: named experts, panel, Devil's Advocate, discussion, withdrawal, vote format, council, ONT-0021, transcript. **All protocol content comes from project files at later stages.**
 
-### Stage 3 — ruflo CLI forks `claude` subprocess
+#### Stage 3 — ruflo CLI forks `claude` subprocess
 
 `child_process.spawn('claude', [...flags, queenPrompt], { stdio: 'inherit' })` at line 950. Subprocess takes over user terminal via stdio:'inherit'. Pre-regression: no `--non-interactive` flag (added later); flag added to support nested invocation from inside existing claude session, validated iter9.
 
-### Stage 4 — Spawned `claude` starts up
+#### Stage 4 — Spawned `claude` starts up
 
 Inherits TTY. queenPrompt is initial user message. Loads:
 - HM's `CLAUDE.md` (anchors: *"Write council transcript to `docs/ontology/odr/council/` if council convened"* — `/Users/henrik/source/hm/semantic-modelling/CLAUDE.md` line 191)
@@ -206,7 +213,7 @@ Inherits TTY. queenPrompt is initial user message. Loads:
 - Auto-memory files
 - 148+ intelligence patterns (per iter9 startup observation)
 
-### Stage 5 — Queen reads ONT-0021 (THE GAP IN FRESH-INIT)
+#### Stage 5 — Queen reads ONT-0021 (THE GAP IN FRESH-INIT)
 
 Queen prompt's "🎯 YOUR OBJECTIVE" + queen-type=strategic + CLAUDE.md's "convene council if convened" → queen recognizes this as a council session and reads:
 
@@ -238,7 +245,7 @@ ONT-0021 supplies (verbatim from §Rules):
 
 **This is what fresh-init projects don't have.** The protocol is entirely project-supplied.
 
-### Stage 6 — Queen selects panel for THIS question (THE GAP IN FRESH-INIT)
+#### Stage 6 — Queen selects panel for THIS question (THE GAP IN FRESH-INIT)
 
 Queen reads question, picks composition from ONT-0021 panel:
 - Standing 9-expert if general ontology question
@@ -250,7 +257,7 @@ Queen reads question, picks composition from ONT-0021 panel:
 
 In iter9 (no ONT-0021), queen invented "Worker A/B/C with steel-man charges (PERSIST/ISOLATE/HYBRID)" — generic role labels, not named experts. **Direct violation of ONT-0021 Session Protocol rule 1.**
 
-### Stage 7 — Queen spawns panellists via Task/Agent tool — parallel one-shot
+#### Stage 7 — Queen spawns panellists via Task/Agent tool — parallel one-shot
 
 All N panellists spawned in **one message** (per memory rule `feedback_hive_queen_must_wait_for_all_panellists.md` — roster locked at spawn time, no late-additions). The literal prompts were recovered from HM Claude Code session transcripts at `~/.claude/projects/-Users-henrik-source-hm-semantic-modelling/5eb0fe0d-49f4-476e-8c59-21d8b1f7d2a3.jsonl` (4 Task tool calls: Allemang, Cagle, Baker, and Hejlsberg-as-DA, council on `generated/` folder organization). The empirical template is **simpler and more pragmatic** than the ONT-0021-citation-heavy reconstruction in earlier drafts of this ADR. Empirical shape:
 
@@ -317,7 +324,7 @@ honest about complexity. Propose the simplest viable scheme.
 - DA charge is **"find flaws, over-engineering, hidden complexity"**, not "steel-man the contrarian view". The DA prompt also includes pointed challenge questions with concrete numbers.
 - "You will NOT see other panellists' outputs" is **implicit** via file separation, not stated in the prompt.
 
-### Stage 8 — Panellists run independently
+#### Stage 8 — Panellists run independently
 
 Each panellist is a sub-agent invocation (Task/Agent tool, run_in_background:true). One-shot:
 - Read question
@@ -335,7 +342,7 @@ should also be Violation. A malformed ISO code is not a warning — it's
 bad data."
 ```
 
-### Stage 9 — Queen WAITS for all panellists
+#### Stage 9 — Queen WAITS for all panellists
 
 Per `feedback_hive_queen_must_wait_for_all_panellists.md` (verbatim rules):
 
@@ -352,7 +359,7 @@ Procedure:
 5. Treat impatience as a flag (do NOT start "with what we have")
 6. Hung panellist: retry, document as user-approved gap, OR keep waiting — never silently drop
 
-### Stage 10 — Queen composes Session-N transcript (8 sections, THE GAP IN FRESH-INIT)
+#### Stage 10 — Queen composes Session-N transcript (8 sections, THE GAP IN FRESH-INIT)
 
 Format (from Session 39 + ONT-0021 §Session Protocol rule 5):
 
@@ -424,7 +431,7 @@ Format (from Session 39 + ONT-0021 §Session Protocol rule 5):
 
 **Critical**: every claim attributed to a panellist traces to that panellist's actual verdict text. Inter-expert discussion turns are written by queen using verbatim/near-verbatim phrases from each panellist's position — composition over real content, not fabrication.
 
-### Stage 11 — Queen writes transcript file (THE GAP IN FRESH-INIT)
+#### Stage 11 — Queen writes transcript file (THE GAP IN FRESH-INIT)
 
 Per HM CLAUDE.md line 191: `docs/ontology/odr/council/session-<N>-<topic>.md`. Committed to git.
 
@@ -433,13 +440,11 @@ Cross-references:
 - ODR file's Links section gets a relative path to the transcript
 - ONT-0021 §Track Record table gets a new row
 
-### Stage 12 — Subprocess exits
+#### Stage 12 — Subprocess exits
 
 User saw the transcript stream out via stdio:'inherit'. Subprocess exits 0. Queen state persisted in `.hive-mind/sessions/<id>/`. The hive remains in `hive-mind sessions list` for future audit/resume.
 
----
-
-## Stage-by-stage iter9 vs working-pre-regression comparison
+### Stage-by-stage iter9 vs working-pre-regression comparison
 
 | Stage | HM working pre-regression | iter9 (ruflo-patch project) | Gap class |
 |---|---|---|---|
@@ -458,11 +463,19 @@ User saw the transcript stream out via stdio:'inherit'. Subprocess exits 0. Quee
 
 **4 content gaps (stages 5, 6, 10, 11) — all in the queen prompt template.** Mechanism (stages 1-4, 7-9, 12) is identical and works in both. The fix is content-only: embed the protocol scaffolding in `renderHiveMindHeader()` so stages 5-6-10-11 happen by default.
 
-## Decision
+## Considered Options
+
+* **Ship a council-protocol scaffold in ruflo's queen prompt template (chosen)** — embed default panel + protocol + 8-section transcript format + panellist/DA templates so fresh-init projects produce HM-quality output without inventing their own methodology file.
+
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "Ship a council-protocol scaffold in ruflo's queen prompt template", because the runtime mechanism is confirmed to work (workingCouncil state at `0590bf29c`, today's state, and iter9's empirical run all confirm it) — it's the absence of protocol-content guidance in the queen prompt that produces the gap. The scaffold is **content**, not code mechanics.
 
 Ship a council-protocol scaffold in ruflo's queen prompt template so fresh-init projects produce HM-quality ONT-0021-shaped output without requiring the project to invent its own methodology file. The scaffold is **content**, not code mechanics — the runtime (workingCouncil/ruflo state at `0590bf29c`, today's state, and iter9's empirical run) all confirm the mechanism works; it's the absence of protocol-content guidance in the queen prompt that produces the gap.
 
-## What ships in the patched queen prompt template
+### What ships in the patched queen prompt template
 
 Add a new section to `renderHiveMindHeader()` (between MCP TOOLS and HIVE MIND EXECUTION PROTOCOL) — call it **COUNCIL PROTOCOL (when this hive is convened as a council)**:
 
@@ -568,7 +581,15 @@ DA TEMPLATE (use this exact shape — empirically grounded in HM session
 
 This is ~85 lines of addition to the queen prompt (50-line protocol + 35-line templates). Token cost is bounded; benefit is HM-quality output by default. The templates are **verbatim shape from HM session 5eb0fe0d** — frame-as-parenthetical, file-as-deliverable, perspective-specific focus per expert.
 
-## Acceptance criteria
+### Consequences
+
+* Good, because once shipped, the gap ADR-0114 §Done U5 identified closes — fresh `ruflo init` projects can run `hive-mind spawn --claude --non-interactive` and get Session-39-shape output. ADR-0136's "Plugin Installation Rule" framing extends naturally to "Council Convening Rule".
+* Bad, because the 50-line prompt overhead applies to every hive-mind spawn, even non-council uses. Mitigation: section is gated by "If the objective involves a design decision..." condition; queens can skip it for routine multi-agent work. Token cost: ~250 tokens per spawn — acceptable per `feedback-no-value-judgements-on-features` (default to WIRE).
+* Bad, because named-panel domain mismatch — "Allemang/Hendler/Kendall" works for ontology/data but not for, say, frontend UI design. Mitigation: panel selection guidance is suggestive, not prescriptive; queen picks an appropriate panel for the question. Project override (criterion 5) lets projects ship their own panels.
+* Bad, because composition-over-real-content discipline can get violated (queen fabricates peer claims). Mitigation: criterion 6 (no-fabrication audit) is a hard test gate. Per memory `reference-hive-pre-regression-pattern.md`, this is the same risk HM mitigated via project review of every council transcript.
+* Neutral, because a regression like ADR-0067 §4.2 could happen again. Mitigation: the COUNCIL PROTOCOL section is content, not a tool-preference rule. It doesn't forbid Task tool or any other primitive; it just adds positive guidance on shape. Less likely to be removed than the ADR-0067 negative-rule that was reverted in fe18fddb7.
+
+### Confirmation
 
 A patched queen prompt template ships when ALL hold:
 
@@ -719,3 +740,11 @@ Once shipped, the gap ADR-0114 §Done U5 identified closes. Fresh `ruflo init` p
   - **Criterion 7 split into 7a (parent) + 7b (subagent)**: parent permission inheritance works (`--dangerously-skip-permissions` propagates to queen subprocess), but **subagent sandbox** uses exact-path matching for allowed dirs instead of tree-prefix matching, blocking subagent writes/mkdir even into project subdirs. iter10 reproduced verbatim.
   - **Criterion 8 added**: non-interactive subprocess (`claude -p --output-format stream-json --verbose`) has internal turn/budget caps that terminate the queen before subagent Tasks complete. iter11 reproduced — queen spawned 3 of 5 named experts sequentially, subprocess exited before any returned. Fix options: pipe `--effort high` or `--max-budget-usd <N>` through `spawnClaudeCodeInstance`'s `claudeArgs`.
   - **Phased rollout reorganized**: 3 layers (runtime fixes → prompt content → acceptance gates) with runtime fixes BEFORE prompt-content shipping. Prompt-content alone is insufficient; runtime constraints must be addressed first.
+
+## More Information
+
+Original status: **[RECONCILED 2026-05-29 → DELIVERED; see [[ADR-0270]]]** This ADR's deliverable — a default council-session template projects can rely on without inventing their own ONT-0021 — shipped 2026-05-29 as [[ADR-0140]] Piece 2: `templates/generic-council-protocol.md` (the default dialectic methodology) + `templates/worker-contract.md` (the per-expert spawn contract), in both the editorial `.claude/skills/hive-mind-advanced/` and the `plugins/ruflo-hive-mind/skills/hive-mind-advanced/` delivery surfaces. Original status preserved below. — Proposed (2026-05-04). Concrete gap analysis comparing iter9's empirical output (literal `npx hive-mind spawn --claude --non-interactive` from inside an existing claude session) against the HM repo's pre-regression Sessions 22-39 production sessions. Identifies exactly what queen-prompt scaffolding ruflo must ship to produce HM-quality output without requiring projects to invent their own ONT-0021.
+
+This ADR relates to ADR-0114 §Done U5 (council protocol delivery gap), ADR-0136 (claudemd generator content audit — same delivery-gap class), ADR-0067 §4.2 (the TOOL PREFERENCE regression that broke the hive 2026-03-25 → 2026-04-29), ADR-0104 (queen orchestration), ADR-0131 (worker failure protocol — already shipped), ADR-0132 (sub-queen failure escalation — already shipped), and ADR-0125 (queen disposition — already shipped).
+
+Scope: The queen-prompt template at `forks/ruflo/v3/@claude-flow/cli/src/commands/hive-mind.ts` lines 394 (`renderHiveMindHeader`) + 617/656/698 (per-queen-type renderers). Specifically the protocol-content gap that prevents fresh-init projects from producing council-format output.

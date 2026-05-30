@@ -1,8 +1,7 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-19
-tags: [audit, soundness, completeness, hooks, controllers, mcp, daemon, skills, runtime-validation]
+tags: [audit, soundness, completeness, runtime-validation]
 supersedes: []
 depends-on: []
 implements: []

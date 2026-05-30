@@ -1,16 +1,13 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-10
-closed-on: 2026-05-10
-methodology: [scoped-rework, evidence-grading]
-decision-makers: [Henrik Pettersen]
-tags: [rvf, storage-unification, session-persistence, refactor, technical-debt]
-related: [0095, 0153, 0154, 0162, 0163]
-audience: ai-executor
+tags: [rvf, storage-unification, session-persistence, refactor]
+supersedes: []
+depends-on: []
+implements: []
 ---
 
-# ADR-0164: Close ADR-0154 deferred follow-ups via vectorless-ingest gate fix (Option δ+)
+# Close ADR-0154 deferred follow-ups via vectorless-ingest gate fix (Option δ+)
 
 > **Headline (post-council, 2026-05-10):** the canonical plan is **Option δ+** — close the JS+Rust ingest gates so vectorless entries land in native META_SEGs (which are wired and decoded at HEAD), then atomically delete `.meta`. The original session_save/restore rework framing is **superseded** (audit + council overturned it). The current plan is documented below; the original Option A plan is preserved at the bottom under `## Superseded approaches` for traceability. Full audit trail in `## Amendments`.
 
@@ -130,6 +127,8 @@ ADR-0163 closed (read-side regression fix lands, 674/674)?
 (This supersedes the original sequencing tree's "STOP. Do not start Phase A. Address ADR-0163 first." which was calibrated to a data-loss premise that ADR-0163's amendment withdrew.)
 
 ## More information
+
+Original metadata: Methodology scoped-rework + evidence-grading; audience `ai-executor`; marked `completed: true` with `closed-on: 2026-05-10`. This decision was recorded as related to ADR-0095, ADR-0153, ADR-0154, ADR-0162, and ADR-0163.
 
 * **Original ADRs referenced**:
   - ADR-0095 (RVF inter-process convergence) — d11–d14 invariants preserved untouched (caveat: native-side d11 mapping flagged for audit)

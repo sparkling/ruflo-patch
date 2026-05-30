@@ -1,10 +1,15 @@
-# ADR-0017: Inherited Semver Conflict Resolution
+---
+status: accepted
+date: 2026-03-05
+tags: [semver, dependencies, build, patch]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-## Status
+# Inherited Semver Conflict Resolution
 
-Implemented
-
-## Context
+## Context and Problem Statement
 
 ### Specification (SPARC-S)
 
@@ -41,7 +46,17 @@ DURING build, after codemod but before pnpm install:
   pnpm install   # now resolves cleanly
 ```
 
-## Decision
+## Considered Options
+
+* **Patch the version ranges during the build, treating them as build-time fixes applied alongside the codemod and enhancement patches (chosen).**
+* **Accept the breakage and let npm warn or fail** -- Rejected. Users would encounter install failures or runtime crashes on first use. This directly contradicts the goal of ruflo as a working drop-in replacement. Upstream has lived with these conflicts because the root `claude-flow` package bundles its own dist files and never triggers the conflicting resolution paths at install time. Our build actually resolves the full dependency tree, so the conflicts surface.
+* **Ignore and hope npm deduplication resolves it** -- Rejected. npm deduplication works by hoisting compatible versions. These ranges are mathematically incompatible -- no single version of `@ruvector/ruvllm` satisfies both `^0.2.3` and `>=2.5.1`, and no single version of `agentdb` satisfies both `2.0.0-alpha.3.7` (exact) and `>=3.0.0-alpha.10`. Deduplication cannot resolve what arithmetic cannot.
+* **Pin exact versions using pnpm `overrides` in the workspace root** -- Considered but rejected as primary approach. pnpm overrides work at install time but do not fix the published `package.json` files. When a user installs `ruflo`, their package manager sees the original (broken) ranges in the transitive dependencies. The fix must be in the published source, not in our build-time workspace configuration. However, pnpm overrides may be used as a belt-and-suspenders backup during the build itself.
+* **Remove the conflicting dependencies entirely** -- Rejected. `agentdb` is a core dependency of the memory system. `@ruvector/ruvllm` is used by `agentic-flow` for LLM routing. Removing them would break functionality.
+
+## Decision Outcome
+
+Chosen option: "Patch the version ranges during the build", because fixing the ranges in the published source (not just build-time workspace config) is the only way users can `npm install ruflo` without resolution failures, and it follows the existing `patch/` infrastructure with sentinel verification.
 
 ### Architecture (SPARC-A)
 
@@ -55,32 +70,15 @@ These patches are applied during the build after the scope-rename codemod but be
 
 The specific version numbers in the patches (`^2.5.1`, `^3.0.0-alpha.10`) must be updated when upstream publishes new major versions of these packages. The build script should detect when the patched range no longer matches any published version and fail with a diagnostic message.
 
-### Considered Alternatives
+### Consequences
 
-1. **Accept the breakage and let npm warn or fail** -- Rejected. Users would encounter install failures or runtime crashes on first use. This directly contradicts the goal of ruflo as a working drop-in replacement. Upstream has lived with these conflicts because the root `claude-flow` package bundles its own dist files and never triggers the conflicting resolution paths at install time. Our build actually resolves the full dependency tree, so the conflicts surface.
-
-2. **Ignore and hope npm deduplication resolves it** -- Rejected. npm deduplication works by hoisting compatible versions. These ranges are mathematically incompatible -- no single version of `@ruvector/ruvllm` satisfies both `^0.2.3` and `>=2.5.1`, and no single version of `agentdb` satisfies both `2.0.0-alpha.3.7` (exact) and `>=3.0.0-alpha.10`. Deduplication cannot resolve what arithmetic cannot.
-
-3. **Pin exact versions using pnpm `overrides` in the workspace root** -- Considered but rejected as primary approach. pnpm overrides work at install time but do not fix the published `package.json` files. When a user installs `ruflo`, their package manager sees the original (broken) ranges in the transitive dependencies. The fix must be in the published source, not in our build-time workspace configuration. However, pnpm overrides may be used as a belt-and-suspenders backup during the build itself.
-
-4. **Remove the conflicting dependencies entirely** -- Rejected. `agentdb` is a core dependency of the memory system. `@ruvector/ruvllm` is used by `agentic-flow` for LLM routing. Removing them would break functionality.
-
-## Consequences
-
-### Refinement (SPARC-R)
-
-**Positive:**
-
-- Users can `npm install ruflo` without encountering semver resolution failures
-- The fix is minimal -- changing version range strings in `package.json` files, not modifying application logic
-- The patches follow the existing `patch/` infrastructure, so they benefit from sentinel verification and idempotency checks
-- When upstream eventually fixes their own version ranges, the patches become no-ops (the codemod rewrites the file, the patch finds its target string is already correct, and skips)
-
-**Negative:**
-
-- The patched version ranges (`^2.5.1`, `^3.0.0-alpha.10`) are point-in-time values that may become stale as upstream packages publish new major versions
-- If `@ruvector/ruvllm` publishes `3.0.0`, the `^2.5.1` range would not match it and would need updating
-- We are making dependency range decisions on behalf of upstream, which could introduce runtime incompatibilities if the newer versions have breaking API changes that upstream code does not handle
+* Good, because users can `npm install ruflo` without encountering semver resolution failures.
+* Good, because the fix is minimal -- changing version range strings in `package.json` files, not modifying application logic.
+* Good, because the patches follow the existing `patch/` infrastructure, so they benefit from sentinel verification and idempotency checks.
+* Good, because when upstream eventually fixes their own version ranges, the patches become no-ops (the codemod rewrites the file, the patch finds its target string is already correct, and skips).
+* Bad, because the patched version ranges (`^2.5.1`, `^3.0.0-alpha.10`) are point-in-time values that may become stale as upstream packages publish new major versions.
+* Bad, because if `@ruvector/ruvllm` publishes `3.0.0`, the `^2.5.1` range would not match it and would need updating.
+* Bad, because we are making dependency range decisions on behalf of upstream, which could introduce runtime incompatibilities if the newer versions have breaking API changes that upstream code does not handle.
 
 **Edge cases:**
 
@@ -88,9 +86,9 @@ The specific version numbers in the patches (`^2.5.1`, `^3.0.0-alpha.10`) must b
 - If `agentdb` publishes `4.0.0-alpha.1`, the `^3.0.0-alpha.10` range would not match. The build would fail at `pnpm install` with a clear error, prompting a patch update
 - The `agentic-flow@3.0.0-alpha.1` version downgraded `agentdb` to `^1.4.3`. If our build uses the `3.0.0-alpha.1` source, the patch target string differs. The patch must target whichever version of `agentic-flow` is in the upstream HEAD at build time
 
-### Completion (SPARC-C)
+### Confirmation
 
-Acceptance criteria:
+Completion (SPARC-C) — acceptance criteria:
 
 - [ ] Patch for `@ruvector/ruvllm` range exists in `patch/` and transforms `^0.2.3` to a range matching the current npm latest
 - [ ] Patch for `agentdb` range in `@claude-flow/memory` exists in `patch/` and transforms the pin to a range matching the current npm latest

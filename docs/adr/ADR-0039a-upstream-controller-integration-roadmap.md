@@ -1,22 +1,15 @@
-# ADR-0039: Upstream AgentDB Controller Integration Roadmap
+---
+status: superseded
+date: 2026-03-15
+tags: [agentdb, controllers, roadmap, attention]
+supersedes: []
+depends-on: [ADR-0027, ADR-0030, ADR-0033, ADR-0038]
+implements: []
+---
 
-## Status
+# Upstream AgentDB Controller Integration Roadmap
 
-Superseded by ADR-0040 through ADR-0047
-
-## Date
-
-2026-03-15
-
-## Deciders
-
-sparkling team
-
-## Methodology
-
-SPARC (Specification, Pseudocode, Architecture, Refinement, Completion) + MADR
-
-## Context
+## Context and Problem Statement
 
 ADR-0033 completed activation of 27 of 28 AgentDB v3 controllers (FederatedSession remains blocked). A comprehensive swarm-assisted audit of the upstream `agentic-flow/packages/agentdb/src/` codebase found **31 additional classes** that could serve as standalone controllers but are not yet integrated.
 
@@ -50,7 +43,7 @@ Three concurrent analysis tracks:
 2. **Upstream Scanner agent** — found 115+ exported classes in agentdb source, identified 31 new candidates
 3. **Direct source analysis** — read controller-registry.ts (1148 lines), memory-bridge.ts (2000+ lines), all MCP tool files, agentdb barrel exports, and schema SQL files
 
-### Decision Drivers
+## Decision Drivers
 
 1. The 27 wired controllers leave significant upstream capability untapped
 2. The **Attention Controller Suite** (5 classes) would transform retrieval from vector-only to attention-weighted
@@ -59,9 +52,24 @@ Three concurrent analysis tracks:
 5. **QuantizedVectorStore** offers 4-32x memory reduction for large stores
 6. **CircuitBreaker** and **RateLimiter** address production reliability gaps
 
-## Decision: Specification (SPARC-S)
+## Considered Options
 
-### Data Storage Architecture (Current)
+The decision space is a catalogue of 31 candidate controllers, several of which are interchangeable alternatives. The genuinely interchangeable groups considered were:
+
+* **Attention re-rankers (A1, A2, A3)** — all three re-rank search results after vector search; any single one adds value, they stack, and A5 complements (not replaces) them.
+* **Quantization (B7, B8 — alternatives within B9)** — B9 wraps both; one method is picked per store; mutually exclusive within a single QuantizedVectorStore instance.
+* **Filtering (B5 vs B10)** — same user-facing concept, different backends; B5 works on SQLite and in-memory, B10 only on RVF. Chosen: B5; B10 stays internal.
+* **SONA vs LearningBridge (A8 upgrades existing #3)** — A8 is the real implementation of what learningBridge approximates; A8 is created internally by A6 (not wired separately).
+
+The per-candidate verdicts (wire / via-composite / defer / drop) are recorded in the Pros and Cons of the Options section below.
+
+## Decision Outcome
+
+Chosen option: "A composition-aware integration roadmap — wire 18 top-level controllers in ControllerRegistry, let 8 sub-components be created by their parent composites (A6, B9), defer 3 (A4, B10, C1-C4), and drop 1 (A10)", because respecting composition prevents duplicate instances and lifecycle conflicts, delivers 50 controllers from 18 new registry entries, and cuts the integration effort from 115h to ~70h while a Phase 0 first fixes the broken ADR-0033 wiring.
+
+### Specification (SPARC-S)
+
+#### Data Storage Architecture (Current)
 
 All 27 controllers use a layered storage model:
 
@@ -97,11 +105,11 @@ SQLite Database (.swarm/memory.db or :memory:)
 - **ReasoningBank** (2): `reasoning_patterns`, `pattern_embeddings`
 - **RVF** (2): `rvf_meta`, `rvf_vectors`
 
-### Interchangeability and Relationships
+#### Interchangeability and Relationships
 
 Some controllers are alternatives to each other; most are complementary at different pipeline stages.
 
-#### Interchangeable Groups (pick one or combine)
+##### Interchangeable Groups (pick one or combine)
 
 **Attention Re-rankers (A1, A2, A3)** — All three re-rank search results after vector search. Any single one adds value. They're designed to stack (different perspectives), but A3 (MultiHead) subsumes A1 (Self) in theory. A5 provides advanced mechanisms (Flash, MoE, GraphRoPE, Hyperbolic) that complement A1-A3 at different pipeline stages — A5 is NOT a replacement for A1-A3.
 
@@ -123,13 +131,13 @@ Some controllers are alternatives to each other; most are complementary at diffe
 
 **SONA vs LearningBridge (A8 upgrades existing #3)** — A8 is the real implementation of what learningBridge approximates. Micro-LoRA in <1ms vs basic confidence decay. A8 is created internally by A6 (SelfLearningRvfBackend) — not wired separately. When A6 is integrated (Phase 11), SONA replaces learningBridge's role automatically.
 
-#### Everything Else Is Complementary (different pipeline stages)
+##### Everything Else Is Complementary (different pipeline stages)
 
 The remaining controllers each do something unique that no other controller does. They operate at different stages of the memory pipeline and do not overlap.
 
-### What These Processors Give Us
+#### What These Processors Give Us
 
-#### 1. Search results get dramatically better (Phase 8-9)
+##### 1. Search results get dramatically better (Phase 8-9)
 
 **Without** (current): Query → vector cosine similarity → ranked by distance → return top-K.
 
@@ -137,7 +145,7 @@ The remaining controllers each do something unique that no other controller does
 
 Example: Search "authentication patterns." Currently returns 10 results scattered randomly by cosine distance. With attention, the system notices JWT and session management memories reference each other (high self-attention), groups the coherent cluster, and ranks it above isolated results. Cross-attention further boosts results that align across both "patterns" and "incidents" namespaces.
 
-#### 2. The system gets smarter over time without retraining (Phase 11-14)
+##### 2. The system gets smarter over time without retraining (Phase 11-14)
 
 **Without** (current): Every session starts cold. No learning. Static routing.
 
@@ -148,37 +156,37 @@ Example: Search "authentication patterns." Currently returns 10 results scattere
 - **TemporalCompressor** (B2) compresses old, rarely-accessed memories (up to 96% at binary tier) while keeping hot memories at full precision.
 - **IndexHealthMonitor** (B3) detects degradation and recommends rebalancing before users notice.
 
-#### 3. Memory goes 4-32x further (Phase 13)
+##### 3. Memory goes 4-32x further (Phase 13)
 
 **Without**: 768-dim embedding = 3KB (Float32). 100K memories = 300MB for embeddings alone.
 
 **With**: Scalar 8-bit: 100K = 75MB (4x). Product quantization: 100K = ~10-37MB (8-32x). Difference between "agent OOMs after 3 days" and "agent runs indefinitely."
 
-#### 4. One failure doesn't break everything (Phase 7)
+##### 4. One failure doesn't break everything (Phase 7)
 
 **Without**: memory-bridge.js import fails → MemoryGraph throws → memory_store errors → memory_search errors → entire memory system unusable.
 
 **With**: CircuitBreaker isolates the failing controller after 5 errors. Other controllers keep working. Auto-retries after 60s. RateLimiter caps runaway ops (100 inserts/sec). ResourceTracker warns at 80% memory, hard-stops at 16GB.
 
-#### 5. Multi-provider embeddings with automatic fallback (Phase 10)
+##### 5. Multi-provider embeddings with automatic fallback (Phase 10)
 
 **Without**: Hardcoded Xenova/all-MiniLM-L6-v2 (384-dim). Fails → hash fallback (near-useless).
 
 **With** (A9): Xenova → OpenAI → Cohere → hash. LRU cache (100K). Batch semaphore (10 concurrent). Auto dimension alignment.
 
-#### 6. Production observability (Phase 16)
+##### 6. Production observability (Phase 16)
 
 **Without**: Console.log or nothing.
 
 **With**: OpenTelemetry spans (D1) for Grafana/Prometheus. Per-mechanism attention metrics (D2). SOC2/HIPAA-ready security audit journal (D3).
 
-#### 7. Agents learn from each other (Phase 12)
+##### 7. Agents learn from each other (Phase 12)
 
 **Without**: Each session is isolated. Knowledge dies at session end.
 
 **With** (A11): Agent 1 learns approach A, Agent 2 learns approach B → Coordinator aggregates with quality weighting → next session starts with collective knowledge.
 
-### Value Summary Per Phase
+#### Value Summary Per Phase
 
 | Phase | One-sentence value |
 |-------|-------------------|
@@ -192,11 +200,11 @@ Example: Search "authentication patterns." Currently returns 10 results scattere
 | **14** | Index stays healthy with passive monitoring and parameter recommendations |
 | **16** | See what's happening in Grafana; tune attention heads |
 
-### 31 New Controller Candidates
+#### 31 New Controller Candidates
 
-Catalogue of all candidates as originally identified. **Verdicts (implement/defer/drop) and composition analysis are in SPARC-R below.** Organized into 4 tiers by value and integration complexity.
+Catalogue of all candidates as originally identified. **Verdicts (implement/defer/drop) and composition analysis are in the Refinement section below.** Organized into 4 tiers by value and integration complexity.
 
-#### Tier A: High-Value (11 controllers)
+##### Tier A: High-Value (11 controllers)
 
 | ID | Class | Source File | Description |
 |----|-------|------------|-------------|
@@ -212,7 +220,7 @@ Catalogue of all candidates as originally identified. **Verdicts (implement/defe
 | A10 | **LLMRouter** | `services/LLMRouter.ts` | Multi-provider LLM routing with RuvLLM support. Selects optimal LLM provider per request based on: task complexity (simple→Haiku, complex→Opus), cost budget (tracks cumulative spend), latency requirements (streaming vs batch), and provider health (circuit breaker per provider). Supports custom routing functions. Would add LLM-aware intelligence to the agent selection cascade. |
 | A11 | **FederatedLearningManager** | `services/federated-learning.ts` | Complete federated learning pipeline with 3 components: **EphemeralLearningAgent** (trains local model on session data, discards after aggregation — privacy-preserving), **FederatedLearningCoordinator** (aggregates local updates into global model using FedAvg with Byzantine tolerance), **Manager** (orchestrates rounds, manages agent lifecycle, handles stragglers). Byzantine fault tolerance via 2-sigma outlier filtering + reputation-weighted trimmed mean. **This is the only path to unblocking FederatedSession (P4-E)** — provides the API that FederatedSessionManager needs. |
 
-#### Tier B: Infrastructure/Optimization (10 controllers)
+##### Tier B: Infrastructure/Optimization (10 controllers)
 
 | ID | Class | Source File | Description |
 |----|-------|------------|-------------|
@@ -227,7 +235,7 @@ Catalogue of all candidates as originally identified. **Verdicts (implement/defe
 | B9 | **QuantizedVectorStore** | `quantization/vector-quantization.ts` | Full quantized vector store combining quantization + HNSW search. Drop-in replacement for vectorBackend at 4-32x reduced memory footprint. Factory functions: `createScalar8BitStore()`, `createScalar4BitStore()`, `createProductQuantizedStore()`. Manages quantization codebooks, handles insertion with automatic quantization, and search with asymmetric distance. |
 | B10 | **FilterBuilder** | `backends/rvf/FilterBuilder.ts` | Fluent DSL-based filter expression builder that compiles to RVF filter expressions. Enables complex queries like `where('namespace').equals('patterns').and('score').gt(0.8).and('tags').contains('security')`. Type-safe, composable, and optimizable. |
 
-#### Tier C: Networking & Sync (4 controllers, deferred)
+##### Tier C: Networking & Sync (4 controllers, deferred)
 
 | ID | Class | Source File | Description |
 |----|-------|------------|-------------|
@@ -236,7 +244,7 @@ Catalogue of all candidates as originally identified. **Verdicts (implement/defe
 | C3 | **SyncCoordinator** | `controllers/SyncCoordinator.ts` | Multi-database synchronization coordinator for distributed agent deployments. Manages conflict resolution via vector clocks (happens-before ordering), merge strategies (LWW — last-writer-wins, CRDT — conflict-free replicated data types, custom resolver functions), and partition tolerance (continues operating during network splits, reconciles on reconnect). Table: `sync_state` for tracking sync progress per peer. |
 | C4 | **RuVectorLearning** | `backends/ruvector/RuVectorLearning.ts` | RuVector native learning capabilities. GNN-based differentiable search where the index itself learns from retrieval patterns — frequently co-accessed vectors are moved closer in the index graph. Learning-rate scheduling prevents overfitting to recent queries. Would make the native RuVector backend self-improving over time. |
 
-#### Tier D: Observability & Security (6 controllers)
+##### Tier D: Observability & Security (6 controllers)
 
 | ID | Class | Source File | Description |
 |----|-------|------------|-------------|
@@ -247,9 +255,9 @@ Catalogue of all candidates as originally identified. **Verdicts (implement/defe
 | D5 | **RateLimiter** | `security/limits.ts` | Token-bucket rate limiter for MCP tool calls. Configurable per tool: tokens per interval, burst size, cooldown period. Prevents abuse of expensive operations (embedding generation, full-text search, batch operations). Returns 429-style responses with retry-after hints. |
 | D6 | **CircuitBreaker** | `security/limits.ts` | Cascading failure protection for controllers. States: CLOSED (normal), OPEN (failing — all calls short-circuit to fallback), HALF-OPEN (testing recovery). Configurable: failure threshold (e.g., 5 consecutive errors), recovery timeout (e.g., 30s), and per-controller fallback functions. Prevents one failing controller (e.g., broken agentdb import) from degrading the entire system. |
 
-## Decision: Pseudocode (SPARC-P)
+### Pseudocode (SPARC-P)
 
-### Integration Pattern (applies to all tiers)
+#### Integration Pattern (applies to all tiers)
 
 **For top-level controllers** (18 wired in ControllerRegistry):
 
@@ -268,7 +276,7 @@ Catalogue of all candidates as originally identified. **Verdicts (implement/defe
 - Bridge functions call the parent's API (e.g., `a6.search()`, `b9.insert()`)
 - MCP tools expose parent-level operations, not sub-component methods directly
 
-### Attention Suite Integration (A1-A3 + A5)
+#### Attention Suite Integration (A1-A3 + A5)
 
 ```
 // controller-registry.ts — Level 2 (after vectorBackend)
@@ -331,7 +339,7 @@ async function bridgeGraphRoPESearch(query, hopDistances) {
 }
 ```
 
-### QuantizedVectorStore Integration (B7-B9)
+#### QuantizedVectorStore Integration (B7-B9)
 
 ```
 // controller-registry.ts — add to Level 2 (alongside vectorBackend)
@@ -353,7 +361,7 @@ async function selectBackend(entryCount) {
 }
 ```
 
-### CircuitBreaker Integration (D6)
+#### CircuitBreaker Integration (D6)
 
 ```
 // controller-registry.ts — wrap all getController calls
@@ -375,9 +383,9 @@ get<T>(name: ControllerName): T | null {
 }
 ```
 
-## Decision: Architecture (SPARC-A)
+### Architecture (SPARC-A)
 
-### Composition-Aware Integration Architecture
+#### Composition-Aware Integration Architecture
 
 The key architectural insight (discovered via wiring audit swarm) is that many controllers are **composites that create sub-components internally**. The integration plan respects this by wiring only top-level entries and letting composites manage their children.
 
@@ -402,13 +410,13 @@ The key architectural insight (discovered via wiring audit swarm) is that many c
 | 6 | 2 | — | 2 |
 | **Total** | **24** | **18** | **42 entries** (+ 8 via composite = **50 controllers**) |
 
-## Decision: Refinement (SPARC-R)
+### Refinement (SPARC-R)
 
-### Deep Analysis Swarm (2026-03-15)
+#### Deep Analysis Swarm (2026-03-15)
 
 A 10-agent analysis swarm (`swarm-1773616158183`) performed per-controller deep analysis: reading full source code, upstream ADRs (050-066), git history, test suites, and cross-referencing all 31 candidates. Each agent cluster covered related controllers for context-aware assessment.
 
-#### SONA Implementation Status — CORRECTION
+##### SONA Implementation Status — CORRECTION
 
 **Previous claim (issue #1243): "SONA wiring non-functional (stub instead of real @ruvector/sona API)"**
 
@@ -425,7 +433,7 @@ The deep-dive agent found a three-layer implementation:
 
 Issue #1243 referred to the *wiring between layers*, not the implementation itself. The SONAOptimizer in the CLI is a complete self-learning routing optimizer with 17 public methods.
 
-#### QUIC Status — CORRECTION
+##### QUIC Status — CORRECTION
 
 **Previous claim: "QUIC was never implemented"**
 
@@ -439,7 +447,7 @@ Issue #1243 referred to the *wiring between layers*, not the implementation itse
 
 Code comments explicitly state: "Actual QUIC implementation would use a library like @fails-components/webtransport. This is a reference implementation showing the interface."
 
-#### AuditLogger — CORRECTION
+##### AuditLogger — CORRECTION
 
 **Previous claim: "Overlaps attestationLog"**
 
@@ -455,11 +463,11 @@ Code comments explicitly state: "Actual QUIC implementation would use a library 
 
 These are orthogonal. Both should exist.
 
-#### Deprecation Status
+##### Deprecation Status
 
 **No controllers are deprecated.** Only 3 database convenience methods (`all`, `get`, `run`) are marked `@deprecated`. All 31 candidate classes are actively maintained.
 
-#### Feature-Gated Controllers
+##### Feature-Gated Controllers
 
 | Class | Gate | Fallback |
 |-------|------|----------|
@@ -470,51 +478,13 @@ These are orthogonal. Both should exist.
 | All quantization | No gate | Always available (pure JS) |
 | All attention controllers (A1-A3) | No gate | Always available (pure JS, 306-494 lines each) |
 
-#### Intentional Duplicates
+##### Intentional Duplicates
 
 | Pair | Purpose |
 |------|---------|
 | `controllers/HNSWIndex.ts` vs `browser/HNSWIndex.ts` | Native hnswlib (150x) vs pure JS (10-20x) for browser |
 | `quantization/vector-quantization.ts` vs `optimizations/Quantization.ts` | **Current standard vs legacy.** Use `quantization/` only. |
 | `SemanticQueryRouter` vs `SemanticRouter` | Query strategy optimization vs intent classification. Different pipeline stages, different outputs. |
-
-### Per-Controller Verdicts (31 controllers)
-
-#### Wire in ControllerRegistry (18 top-level entries)
-
-| ID | Controller | Lines | Type | Agent Finding |
-|----|-----------|:-----:|------|---------------|
-| A1 | **SelfAttentionController** | 306 | Leaf | Pure JS scaled dot-product attention. Standalone class (A4 deferred). Wire as search re-ranker. |
-| A2 | **CrossAttentionController** | 467 | Leaf | Multi-namespace cross-attention. 3 aggregation strategies. Wire for cross-tier queries. |
-| A3 | **MultiHeadAttentionController** | 494 | Leaf | Parallel attention heads. Xavier projections. 4 aggregation modes. Wire as advanced re-ranker. |
-| A5 | **AttentionService** | 1,500+ | Leaf | 4 mechanisms: Flash (correct JS), MoE (correct JS), GraphRoPE (3-bug patch), Hyperbolic (native needed). 1,628 lines tests. 4 MCP tools. |
-| A6 | **SelfLearningRvfBackend** | 487 | **Composite** | Orchestrator — auto-creates A7, A8, B1, B2 + FederatedSessionManager + RvfSolver internally via `initComponents()`. |
-| A9 | **EnhancedEmbeddingService** | 1,435 | Leaf | Multi-provider (Xenova/OpenAI/Cohere). LRU cache (100K). Semaphore batch. API whitelist. |
-| A11 | **FederatedLearningManager** | 436 | Leaf | Pure JS path works. Quality-weighted embedding consolidation. 95% functional without native SONA. |
-| B3 | **IndexHealthMonitor** | 96 | Leaf | Passive latency recording. Multi-factor assessment. HNSW parameter recommendations. 35 tests. |
-| B4 | **NativeAccelerator** | 490 | **Singleton** | Global capability bridge — 11 @ruvector packages, 40+ methods. Used by A6, A5, B2, A7. 80+ tests. |
-| B5 | **MetadataFilter** | 280 | Leaf | Already exported. MongoDB operators. Dual interface: in-memory + SQL. ~75 lines to wire. |
-| B6 | **QueryOptimizer** | 297 | Leaf | LRU query cache (1000 entries, 60s TTL). EXPLAIN plan analysis. Performance suggestions. |
-| B9 | **QuantizedVectorStore** | ~500 | **Composite** | Unified store — auto-creates B7 (Scalar) or B8 (Product) based on config. 3 factory functions. 10M vector cap. |
-| D1 | **TelemetryManager** | 545 | Leaf | OpenTelemetry spans + counters + histograms. OTLP/Prometheus/Console. <1% overhead. |
-| D2 | **AttentionMetricsCollector** | 254 | Leaf | Per-mechanism latency percentiles. Currently orphaned — needs wiring to A1-A3, A5. |
-| D3 | **AuditLogger** | 483 | Leaf | 18 typed security events. File rotation. **Already wired in auth + rate-limit middleware.** Orthogonal to attestationLog. |
-| D4 | **ResourceTracker** | ~75 | Leaf | Memory tracking (16GB ceiling). Query stats (100 samples). Warning at 80%. 16 tests. |
-| D5 | **RateLimiter** | ~70 | Leaf | Token-bucket. 4 instances (insert:100/s, search:1000/s, delete:50/s, batch:10/s). 11 tests. |
-| D6 | **CircuitBreaker** | ~80 | Wrapper | Closed→Open→Half-Open. Wraps all controller calls. 8 tests. |
-
-#### Included via parent composite (8 — do NOT wire separately)
-
-| ID | Controller | Lines | Parent | How it's accessed |
-|----|-----------|:-----:|--------|-------------------|
-| A7 | **ContrastiveTrainer** | 559 | A6 | Internal to A6 learning cycle. InfoNCE + hard negatives (NV-Retriever 2024). |
-| A8 | **SonaLearningBackend** | 357 | A6 | Internal to A6 search path. Micro-LoRA (<1ms), EWC++. CLI also has independent `sona-optimizer.ts`. |
-| B1 | **SemanticQueryRouter** | 456 | A6 | Internal to A6 search path. Routes query strategy → ef selection. ADR-006 sub-component. |
-| B2 | **TemporalCompressor** | 454 | A6 | Internal to A6 tick cycle. 5-tier compression (up to 96%). SolverBandit tier selection. |
-| B7 | **ScalarQuantization** | ~300 | B9 | Created by B9 constructor (scalar config). 8-bit (4x) and 4-bit (8x) compression. 28 tests. |
-| B8 | **ProductQuantizer** | ~500 | B9 | Created by B9 constructor (product config). ADC distance tables. 8-32x compression. |
-| — | **FederatedSessionManager** | — | A6 | Internal to A6. Session lifecycle for federated learning. |
-| — | **RvfSolver** | — | A6 | Internal to A6. Thompson Sampling policy per 18 context buckets. |
 
 #### A5 (AttentionService) Deep Analysis (Swarm `swarm-1773619789371`, 3 agents)
 
@@ -597,7 +567,358 @@ A dedicated agent found that **the MCP layer already has working HTTP + WebSocke
 
 The question is not "wait for QUIC library" but "swap mock with HTTP POST."
 
-#### Defer (3 controllers)
+#### Per-Controller Verdicts (31 controllers)
+
+##### Wire in ControllerRegistry (18 top-level entries)
+
+| ID | Controller | Lines | Type | Agent Finding |
+|----|-----------|:-----:|------|---------------|
+| A1 | **SelfAttentionController** | 306 | Leaf | Pure JS scaled dot-product attention. Standalone class (A4 deferred). Wire as search re-ranker. |
+| A2 | **CrossAttentionController** | 467 | Leaf | Multi-namespace cross-attention. 3 aggregation strategies. Wire for cross-tier queries. |
+| A3 | **MultiHeadAttentionController** | 494 | Leaf | Parallel attention heads. Xavier projections. 4 aggregation modes. Wire as advanced re-ranker. |
+| A5 | **AttentionService** | 1,500+ | Leaf | 4 mechanisms: Flash (correct JS), MoE (correct JS), GraphRoPE (3-bug patch), Hyperbolic (native needed). 1,628 lines tests. 4 MCP tools. |
+| A6 | **SelfLearningRvfBackend** | 487 | **Composite** | Orchestrator — auto-creates A7, A8, B1, B2 + FederatedSessionManager + RvfSolver internally via `initComponents()`. |
+| A9 | **EnhancedEmbeddingService** | 1,435 | Leaf | Multi-provider (Xenova/OpenAI/Cohere). LRU cache (100K). Semaphore batch. API whitelist. |
+| A11 | **FederatedLearningManager** | 436 | Leaf | Pure JS path works. Quality-weighted embedding consolidation. 95% functional without native SONA. |
+| B3 | **IndexHealthMonitor** | 96 | Leaf | Passive latency recording. Multi-factor assessment. HNSW parameter recommendations. 35 tests. |
+| B4 | **NativeAccelerator** | 490 | **Singleton** | Global capability bridge — 11 @ruvector packages, 40+ methods. Used by A6, A5, B2, A7. 80+ tests. |
+| B5 | **MetadataFilter** | 280 | Leaf | Already exported. MongoDB operators. Dual interface: in-memory + SQL. ~75 lines to wire. |
+| B6 | **QueryOptimizer** | 297 | Leaf | LRU query cache (1000 entries, 60s TTL). EXPLAIN plan analysis. Performance suggestions. |
+| B9 | **QuantizedVectorStore** | ~500 | **Composite** | Unified store — auto-creates B7 (Scalar) or B8 (Product) based on config. 3 factory functions. 10M vector cap. |
+| D1 | **TelemetryManager** | 545 | Leaf | OpenTelemetry spans + counters + histograms. OTLP/Prometheus/Console. <1% overhead. |
+| D2 | **AttentionMetricsCollector** | 254 | Leaf | Per-mechanism latency percentiles. Currently orphaned — needs wiring to A1-A3, A5. |
+| D3 | **AuditLogger** | 483 | Leaf | 18 typed security events. File rotation. **Already wired in auth + rate-limit middleware.** Orthogonal to attestationLog. |
+| D4 | **ResourceTracker** | ~75 | Leaf | Memory tracking (16GB ceiling). Query stats (100 samples). Warning at 80%. 16 tests. |
+| D5 | **RateLimiter** | ~70 | Leaf | Token-bucket. 4 instances (insert:100/s, search:1000/s, delete:50/s, batch:10/s). 11 tests. |
+| D6 | **CircuitBreaker** | ~80 | Wrapper | Closed→Open→Half-Open. Wraps all controller calls. 8 tests. |
+
+##### Included via parent composite (8 — do NOT wire separately)
+
+| ID | Controller | Lines | Parent | How it's accessed |
+|----|-----------|:-----:|--------|-------------------|
+| A7 | **ContrastiveTrainer** | 559 | A6 | Internal to A6 learning cycle. InfoNCE + hard negatives (NV-Retriever 2024). |
+| A8 | **SonaLearningBackend** | 357 | A6 | Internal to A6 search path. Micro-LoRA (<1ms), EWC++. CLI also has independent `sona-optimizer.ts`. |
+| B1 | **SemanticQueryRouter** | 456 | A6 | Internal to A6 search path. Routes query strategy → ef selection. ADR-006 sub-component. |
+| B2 | **TemporalCompressor** | 454 | A6 | Internal to A6 tick cycle. 5-tier compression (up to 96%). SolverBandit tier selection. |
+| B7 | **ScalarQuantization** | ~300 | B9 | Created by B9 constructor (scalar config). 8-bit (4x) and 4-bit (8x) compression. 28 tests. |
+| B8 | **ProductQuantizer** | ~500 | B9 | Created by B9 constructor (product config). ADC distance tables. 8-32x compression. |
+| — | **FederatedSessionManager** | — | A6 | Internal to A6. Session lifecycle for federated learning. |
+| — | **RvfSolver** | — | A6 | Internal to A6. Thompson Sampling policy per 18 context buckets. |
+
+#### ADR-0033 Wiring Audit (Swarms `swarm-1773623266694` + follow-up deep audit)
+
+Four agent audits (composition, routing, interchangeability, correctness) found that ADR-0033's "27/28 controllers wired" is **misleading at the bridge/MCP layer**. Of 27 controllers in the registry:
+
+| Category | Count | Controllers |
+|----------|:-----:|-------------|
+| **Correctly wired** | 10 | skills, reflexion, causalGraph (AgentDB singletons), solverBandit, batchOperations, mmrDiversityRanker, contextSynthesizer, tieredCache, learningBridge, memoryGraph, agentMemoryScope |
+| **Degraded (missing embedder)** | 4 | causalRecall, learningSystem, nightlyLearner (required), explainableRecall (optional) |
+| **Not exported from agentdb** | 6 | HierarchicalMemory, MemoryConsolidation, MutationGuard, AttestationLog, GuardedVectorBackend, SemanticRouter |
+| **Wrong getController() name** | 3 | sonaTrajectory, graphAdapter, vectorBackend |
+| **Duplicate instances** | 2 | CausalRecall + NightlyLearner create own internal copies |
+| **Duplicate controller** | 1 | graphTransformer = second CausalMemoryGraph |
+| **Fake wrappers** | 2 | gnnService, rvfOptimizer wrap non-existent functions |
+| **Never called from bridge/MCP** | 16 | 53% of controllers have zero callers |
+
+##### Issue 1: Six controllers reference classes not in agentdb exports (CRITICAL)
+
+Verified against the actual `agentdb/src/index.ts` barrel — these classes are genuinely absent:
+
+| Controller | Registry tries | In agentdb exports? | Runtime behavior |
+|------------|---------------|:---:|-----------------|
+| hierarchicalMemory | `new HM(db, embedder)` | **No** | Falls back to `createTieredMemoryStub()` (in-memory Map, 5K/tier limit) |
+| memoryConsolidation | `new MC(db, hm, embedder)` | **No** | Falls back to `createConsolidationStub()` (no-op) |
+| mutationGuard | `new MG({dimension})` | **No** | Returns null → `guardValidate()` always allows (no security) |
+| attestationLog | `new AL(db)` | **No** | Returns null → `logAttestation()` is no-op (no audit trail) |
+| guardedVectorBackend | `new GVB(vb, guard, log)` | **No** | Returns null (deps mutationGuard+attestationLog already null) |
+| semanticRouter | `new SR()` | **No** (it's in `agentic-flow/src/routing/`, not agentdb) | Returns null → routing falls back to TASK_PATTERNS |
+
+**Impact**: The "proof-gated intelligence" from ADR-0033 Phase 5 (MutationGuard, AttestationLog, GuardedVectorBackend) is entirely non-functional. The security layer, audit trail, and guarded vector backend all silently return null. HierarchicalMemory uses a basic Map stub instead of real tiered storage. SemanticRouter never loads.
+
+**Fix**: Either export these classes from agentdb (agentic-flow fork patch), or remove from the registry and document as non-functional.
+
+##### Issue 2: Four controllers missing required embedder parameter (HIGH)
+
+| Controller | Registry creates | Actual constructor | Missing |
+|------------|-----------------|-------------------|---------|
+| causalRecall | `new CR(db)` | `constructor(db, embedder, vectorBackend?)` | `embedder` (REQUIRED) |
+| learningSystem | `new LS(db)` | `constructor(db, embedder)` | `embedder` (REQUIRED) |
+| nightlyLearner | `new NL(db)` | `constructor(db, embedder, config?)` | `embedder` (REQUIRED) |
+| explainableRecall | `new ER(db)` | `constructor(db, embedder?, config?)` | `embedder` (optional, degrades quality) |
+
+**Impact**: These controllers can't compute vector similarities. LearningSystem's `recommendAlgorithm()` can't embed task descriptions. NightlyLearner can't consolidate episodic memories. CausalRecall can't re-rank by causal proximity.
+
+**Fix**: Pass `this.createEmbeddingService()` (already exists in controller-registry.ts line 1073) as the embedder parameter.
+
+##### Issue 3: Two controllers create duplicate internal instances (HIGH)
+
+**NightlyLearner** constructor creates 3 separate instances:
+- `this.causalGraph = new CausalMemoryGraph(db)` — duplicate of AgentDB's singleton
+- `this.reflexion = new ReflexionMemory(db, embedder)` — duplicate of AgentDB's singleton
+- `this.skillLibrary = new SkillLibrary(db, embedder)` — duplicate of AgentDB's singleton
+
+**CausalRecall** constructor creates 2 separate instances:
+- `this.causalGraph = new CausalMemoryGraph(db)` — duplicate
+- `this.explainableRecall = new ExplainableRecall(db)` — duplicate
+
+**Impact**: Multiple instances write to the same SQLite tables but have separate in-memory state. Data written via AgentDB's singleton won't be seen by NightlyLearner's copy until both read from SQLite. Potential stale reads and inconsistent consolidation.
+
+**Root cause**: Upstream class design — constructors create internal instances instead of accepting injected singletons. NightlyLearner's copies lack vectorBackend, so consolidation uses SQL brute-force (not 150x HNSW). CausalRecall's ExplainableRecall copy lacks embedder, so provenance has no vector search.
+
+**Fix (fork patch, ~26 lines across 3 files)**: Change NightlyLearner and CausalRecall constructors to accept optional pre-created instances, then pass AgentDB singletons from the registry:
+
+```typescript
+// agentic-flow fork: NightlyLearner.ts — accept optional singletons
+constructor(db, embedder, config?, causalGraph?, reflexion?, skills?) {
+  this.causalGraph = causalGraph || new CausalMemoryGraph(db);
+  this.reflexion = reflexion || new ReflexionMemory(db, embedder);
+  this.skillLibrary = skills || new SkillLibrary(db, embedder);
+}
+
+// agentic-flow fork: CausalRecall.ts — accept optional singletons
+constructor(db, embedder, vectorBackend?, config?, causalGraph?, explainableRecall?) {
+  this.causalGraph = causalGraph || new CausalMemoryGraph(db);
+  this.explainableRecall = explainableRecall || new ExplainableRecall(db);
+}
+
+// ruflo fork: controller-registry.ts — pass AgentDB singletons
+case 'nightlyLearner': {
+  const embedder = this.createEmbeddingService();
+  const cg = this.get('causalGraph');
+  const rf = this.get('reflexion');
+  const sk = this.get('skills');
+  return new NL(db, embedder, undefined, cg, rf, sk);
+}
+case 'causalRecall': {
+  const embedder = this.createEmbeddingService();
+  const vb = this.agentdb?.vectorBackend;
+  const cg = this.get('causalGraph');
+  const er = this.get('explainableRecall');
+  return new CR(db, embedder, vb, undefined, cg, er);
+}
+```
+
+This eliminates 5 duplicate instances and ensures NightlyLearner consolidation uses 150x HNSW search (via vectorBackend) instead of SQL brute-force.
+
+##### Issue 4: Three controllers use unsupported getController() names (MEDIUM)
+
+`AgentDB.getController()` only supports 3 name mappings: `'reflexion'|'memory'`, `'skills'`, `'causal'|'causalGraph'`. These names return null:
+
+| Controller | Registry calls | Supported? |
+|------------|---------------|:---:|
+| sonaTrajectory | `agentdb.getController('sonaTrajectory')` | No |
+| graphAdapter | `agentdb.getController('graphAdapter')` | No |
+| vectorBackend | `agentdb.getController('vectorBackend')` | No (it's `agentdb.vectorBackend` property, not a controller) |
+
+**Fix**: Access via property (`agentdb.vectorBackend`) or direct instantiation, not getController().
+
+##### Issue 5: Bridge routing bugs (HIGH)
+
+**BUG-1**: `bridgeSolverBanditSelect()` and `bridgeSolverBanditUpdate()` exist in memory-bridge.ts but are **not in the export list**. Thompson Sampling routing is dead — hooks_route falls through to static TASK_PATTERNS.
+
+**BUG-2**: memory-tools.ts calls `bridgeGetController('mmrDiversity')` but registry defines `mmrDiversityRanker`. Also calls nonexistent `metadataFilter` and `attentionService`. MMR re-ranking silently returns null.
+
+**BUG-3**: graphTransformer creates a second instance of CausalMemoryGraph (same class as causalGraph). Duplicate.
+
+##### Controllers to clean up
+
+| Controller | Action | Reason |
+|------------|--------|--------|
+| graphTransformer | **Remove** | Duplicate CausalMemoryGraph instance |
+| hybridSearch | **Remove** | Stub returning null, never called |
+| federatedSession | **Remove** | Stub returning null, never called |
+| gnnService | **Mark stats-only** | Only `getStats()` called, `differentiableSearch()` wraps non-existent function |
+| rvfOptimizer | **Mark stats-only** | Only `getStats()` called, `optimize()` wraps backend method that may not exist |
+| sonaTrajectory | **Delegate or remove** | getController('sonaTrajectory') returns null — name not supported |
+
+##### Revised existing wiring health
+
+| Status | Count | Impact |
+|--------|:-----:|--------|
+| Correctly wired + called | 10 | Working as intended |
+| Degraded (missing params) | 4 | Reduced functionality (no embeddings) |
+| Silently returning null/stub | 9 | Classes not exported, wrong names, stubs |
+| Dead code / duplicates | 4 | graphTransformer, gnnService, rvfOptimizer, hybridSearch |
+
+**The system appears to work because every controller has graceful degradation** — null returns, try-catch, stub fallbacks. But the "advanced" features (MutationGuard security, AttestationLog audit, HierarchicalMemory tiers, SONA trajectory, GNN search, SemanticRouter, GuardedVectorBackend) are all no-ops in practice.
+
+#### Priority Recommendation (composition-aware)
+
+**Phase 0: Fix existing ADR-0033 wiring + packaging (8h).**
+
+Critical fixes (must-do before any new controllers):
+1. Fix memory-bridge.js import resolution (packaging bug)
+2. Export `bridgeSolverBanditSelect`/`Update` from memory-bridge.ts (BUG-1, ~1 line)
+3. Fix `mmrDiversity` → `mmrDiversityRanker` in memory-tools.ts; remove calls to nonexistent `metadataFilter`/`attentionService` (BUG-2, ~3 lines)
+4. Pass `this.createEmbeddingService()` to causalRecall, learningSystem, nightlyLearner, explainableRecall constructors (Issue 2, ~4 lines each)
+5. Fix vectorBackend access: use `agentdb.vectorBackend` property instead of `agentdb.getController('vectorBackend')` (Issue 4, ~2 lines)
+6. Fix sonaTrajectory + graphAdapter: either access via property or remove from registry (Issue 4, ~10 lines)
+
+Cleanup (reduce noise):
+7. Remove graphTransformer from registry — duplicate CausalMemoryGraph (BUG-3, ~15 lines)
+8. Remove hybridSearch and federatedSession stubs from INIT_LEVELS (~5 lines)
+9. Mark gnnService and rvfOptimizer as stats-only (~2 lines comments)
+
+Duplicate instance fixes (requires agentic-flow fork patch):
+10. Patch NightlyLearner constructor to accept optional pre-created causalGraph, reflexion, skills (~10 lines)
+11. Patch CausalRecall constructor to accept optional pre-created causalGraph, explainableRecall (~10 lines)
+12. In controller-registry.ts, pass AgentDB singletons to NightlyLearner and CausalRecall (~6 lines)
+
+Non-exported classes (requires agentic-flow fork patch or acceptance of stubs):
+13. Either export MutationGuard, AttestationLog, GuardedVectorBackend, HierarchicalMemory, MemoryConsolidation, SemanticRouter from agentdb `index.ts` (agentic-flow fork, ~6 export lines), OR document these as non-functional stubs and reduce the "wired" count from 27 to 21
+
+**Phase 7 (Security Foundation, 7h)**. D4 ResourceTracker + D5 RateLimiter + D6 CircuitBreaker. CircuitBreaker wraps all existing controller calls — would have prevented the memory-bridge.js cascade.
+
+**Phase 8 (Query Infrastructure, 5h)**. B5 MetadataFilter + B6 QueryOptimizer. Both already exported upstream, low integration effort.
+
+**Phase 9 (Attention Suite, 20h)**. A1 SelfAttention + A2 CrossAttention + A3 MultiHeadAttention + A5 (Flash + MoE + GraphRoPE with patch). Wire A1-A3 into search pipeline as re-rankers. A5 adds FlashAttention for consolidation, MoE for expert routing, GraphRoPE for hop-aware recall. Pure JS for all — no native deps.
+
+**Phase 10 (Embeddings + Compliance, 7h)**. A9 EnhancedEmbeddingService + D3 AuditLogger. Multi-provider embeddings replace hand-rolled pipeline. AuditLogger already wired in auth middleware.
+
+**Phase 11 (Self-Learning + Native, 10h)**. A6 SelfLearningRvfBackend + B4 NativeAccelerator + install `@ruvector/attention`. **A6 automatically creates A7, A8, B1, B2 internally** — no separate wiring needed. Installing the native package enables A5 HyperbolicAttention with correct Poincaré math. B4 bridges all @ruvector capabilities as global singleton.
+
+**Phase 12 (Federated Learning, 4h)**. A11 FederatedLearningManager only. A7 (ContrastiveTrainer) is already included via A6.
+
+**Phase 13 (Quantization, 6h)**. B9 QuantizedVectorStore only — **auto-creates B7 (Scalar) or B8 (Product) based on config**. No separate wiring for B7/B8.
+
+**Phase 14 (Index Health, 3h)**. B3 IndexHealthMonitor only. B2 (TemporalCompressor) is already included via A6.
+
+**Phase 16 (Telemetry, 6h)**. D1 TelemetryManager + D2 AttentionMetricsCollector. OpenTelemetry observability + attention-specific metrics.
+
+#### Safeguards (carried from ADR-0033)
+
+All new controller integrations must follow:
+
+1. **try-catch + 2s timeout** on every new bridge call
+2. **Cold-start guard** where applicable (skip reads until sufficient data)
+3. **Max 3 writes per MCP handler** (prevent write amplification)
+4. **Fire-and-forget** for learning/training writes (must not block response)
+5. **CircuitBreaker** wrapping all new controllers (Phase 7 prerequisite)
+6. **NativeAccelerator check** for any controller depending on @ruvector/* packages
+7. **A5 mechanism gating**: Flash, MoE, and GraphRoPE (patched) enabled by default (JS works). HyperbolicAttention enabled only when NativeAccelerator reports `simdAvailable: true`
+8. **No duplicate instances**: Sub-components (A7, A8, B1, B2, B7, B8) are created by their parent composites (A6, B9). Bridge functions access them through the parent's API, never instantiate them separately.
+
+### Completion (SPARC-C)
+
+#### Phasing (composition-aware)
+
+| Phase | ControllerRegistry entries | Included via composite | Effort | Dependencies |
+|-------|--------------------------|----------------------|--------|-------------|
+| **Phase 0** | Fix packaging bug + ADR-0033 wiring (embedder injection, export missing classes, bridge bugs, cleanup) | — | 8h | None |
+| **Phase 7** | D4, D5, D6 | — | 7h | Phase 0 |
+| **Phase 8** | B5, B6 | — | 5h | None |
+| **Phase 9** | A1, A2, A3, A5 (Flash+MoE+GraphRoPE) | — | 20h | Phase 8 |
+| **Phase 10** | A9, D3 | — | 7h | Phase 9 |
+| **Phase 11** | A6, B4, A5 Hyperbolic (native) | A7, A8, B1, B2 (via A6) | 10h | Phase 7 |
+| **Phase 12** | A11 | — | 4h | Phase 11 |
+| **Phase 13** | B9 | B7, B8 (via B9) | 6h | Phase 11 |
+| **Phase 14** | B3 | — | 3h | Phase 11 |
+| **Phase 16** | D1, D2 | — | 6h | Phase 9 |
+| **Total** | **18 entries** | **8 via composite** | **~70h** + 8h Phase 0 | |
+
+#### Dependency Graph
+
+```
+Phase 0 (Fix packaging + ADR-0033 wiring: embedders, exports, bridge bugs, cleanup)
+├─ Phase 7 (Security: CircuitBreaker, RateLimiter, ResourceTracker)
+│  ├─ Phase 11 (A6 [includes A7+A8+B1+B2] + B4 singleton + A5-Hyperbolic)
+│  │  ├─ Phase 12 (A11 FederatedLearning)
+│  │  ├─ Phase 13 (B9 [includes B7+B8])
+│  │  └─ Phase 14 (B3 IndexHealthMonitor)
+│  └─ (independent)
+├─ Phase 8 (Query: MetadataFilter, QueryOptimizer)
+│  └─ Phase 9 (Attention: A1, A2, A3, A5 Flash+MoE+GraphRoPE)
+│     ├─ Phase 10 (A9 Embeddings + D3 AuditLogger)
+│     └─ Phase 16 (D1 Telemetry + D2 AttentionMetrics)
+```
+
+#### Summary
+
+| Metric | Current (ADR-0033) | After Phase 10 | After All Phases |
+|--------|:------------------:|:--------------:|:----------------:|
+| Active controllers (after Phase 0 cleanup) | 24/25 | 38/39 | 50/51 |
+| ControllerRegistry entries | 24 (after removing 3 stale) | 35 | 42 |
+| Via composite (auto-created) | 0 | 0 | 8 |
+| Attention mechanisms | None | 6 (Self, Cross, MultiHead, Flash, MoE, GraphRoPE) | 7 (+ Hyperbolic-native) |
+| Self-learning vector index | No | No | Yes (A6: SONA + Contrastive + Solver + Router + Compressor) |
+| SONA micro-LoRA | No | No | Yes (production Rust engine, inside A6) |
+| Federated learning | Blocked | Blocked | Yes (A11, pure JS path) |
+| Vector quantization | No | No | 4-32x compression (B9 auto-selects B7 or B8) |
+| Circuit breaker protection | No | Yes | Yes |
+| Compliance audit logging | No | Yes (D3) | Yes |
+| OpenTelemetry | No | No | Yes (D1) |
+| Estimated total effort | 52h done | +41h | **+70h** |
+
+#### Success Criteria
+
+| Phase | Metric | Target |
+|-------|--------|--------|
+| Phase 0 | Existing wiring fixed: imports resolve, embedders injected, exports added, bridge bugs fixed | memory_store works; solverBandit reachable in hooks_route; causalRecall/learningSystem/nightlyLearner get embedder; MutationGuard/AttestationLog/GuardedVectorBackend load (not null); graphTransformer removed |
+| Phase 7 | Circuit breaker prevents cascade failures | 0 cascading errors |
+| Phase 9 | Attention-weighted search returns different top-5 than vector-only | >20% result reordering |
+| Phase 9 | FlashAttention consolidation for 10K entries | <2s wall clock, O(n) memory |
+| Phase 9 | GraphRoPE (patched) hop-distance awareness | Closer hops → higher attention weights |
+| Phase 11 | A6.search() invokes router + SONA + solver internally | Non-empty routing decisions from A6.getStats() |
+| Phase 11 | Hyperbolic attention Poincaré distances | Distances satisfy triangle inequality |
+| Phase 13 | 8-bit quantization memory usage | <25% of Float32 baseline |
+| Phase 16 | OpenTelemetry spans exported | Spans visible in collector |
+
+### Consequences
+
+* Good, because Phase 0 fixes 3 existing ADR-0033 bugs and removes 3 stale controllers (graphTransformer duplicate, hybridSearch/federatedSession stubs)
+* Good, because it activates 26 additional upstream capabilities (50 total controllers after cleanup) with only 18 new registry entries (8 via composites)
+* Good, because composition-aware wiring prevents duplicate instances and lifecycle conflicts
+* Good, because A6 is a single registry entry that delivers 6 sub-systems (SONA, Contrastive, SemanticQueryRouter, TemporalCompressor, FederatedSession, Solver)
+* Good, because B9 is a single registry entry that delivers full quantization stack (scalar + product)
+* Good, because 7 attention mechanisms fundamentally improve search quality
+* Good, because SONA micro-LoRA provides real-time adaptation (<1ms per inference)
+* Good, because CircuitBreaker prevents cascading failures
+* Good, because full quantization (4-32x compression) via unified B9 API
+* Good, because compliance audit logging (SOC2/HIPAA) via D3
+* Good, because federated learning unblocked via A11
+* Good, because OpenTelemetry observability via D1
+* Good, because **effort reduced from 115h to 70h** by respecting composition (no duplicate wiring)
+* Bad, because 70 hours of integration work across 10 phases
+* Bad, because sub-components (A7, A8, B1, B2, B7, B8) are only accessible through parent APIs — no direct MCP tool access without bridge functions on the composite
+* Bad, because A6's private fields mean sub-component behavior can only be observed via A6.getStats()
+* Bad, because HyperbolicAttention requires native package (~1.3MB binary dependency)
+* Bad, because GraphRoPE JS fallback requires ~15-line patch
+* Neutral, because (risk) A6's lazy `initComponents()` may silently fail to create sub-components (all try-catch) — need A6.getStats() to verify
+* Neutral, because (risk) B9 config at construction time locks the quantization method — can't switch scalar↔product without re-creating
+* Neutral, because (risk) FlashAttention JS is simplified (not full Tri et al. 2022) — block size tuning needed
+* Neutral, because (risk) QUIC networking deferred but could be made real with ~160 lines (HTTP POST replacing mock)
+* Neutral, because (risk) **Packaging bug** (memory-bridge.js missing from dist) must be fixed before Phases 8+ can validate
+* Neutral, because (risk) **ADR-0033 wiring is significantly broken**: 6 controllers reference non-exported classes (return null/stub), 4 missing required embedder param, 3 bridge routing bugs, 2 duplicate instance creators, 16 of 27 never called from bridge/MCP. Phase 0 (8h) must fix these before adding new controllers.
+* Neutral, because (risk) **Non-exported classes require agentic-flow fork patch**: MutationGuard, AttestationLog, GuardedVectorBackend, HierarchicalMemory, MemoryConsolidation, SemanticRouter must be added to agentdb's `index.ts` exports — otherwise the "security layer" from ADR-0033 Phase 5 remains entirely non-functional
+* Neutral, because (risk) **Duplicate instance problem in NightlyLearner/CausalRecall**: constructors create internal copies of CausalMemoryGraph, ReflexionMemory, SkillLibrary instead of accepting injected singletons. **Mitigated by Phase 0 items 10-12** (fork patch to accept optional pre-created instances, ~26 lines across 3 files).
+
+### Confirmation
+
+#### Validation
+
+After each phase:
+- `agentdb_health` reports new controllers as active
+- `intelligence_stats` shows metrics for new capabilities
+- `npm test` (361+ unit tests) passes
+- `npm run test:verify` (24+ acceptance) passes
+- `tsc --noEmit` passes for both ruflo and agentic-flow forks
+
+#### Testing Strategy
+
+Each phase adds:
+- **L1 unit tests**: Factory creation, null fallback, error paths (8-15 per controller)
+- **L1 integration tests**: Handler→Bridge→Registry→Controller chain (4-8 per phase)
+- **L2 acceptance checks**: MCP tool smoke tests (1-2 per controller)
+
+Estimated test additions: **~160 unit + ~12 acceptance** across all phases.
+
+A5-specific testing: validate FlashAttention JS produces numerically stable results for block sizes 64-512. Validate MoE returns non-uniform expert weights. Validate GraphRoPE (patched) produces higher weights for closer hops. Regression: attention-disabled search returns same results as before.
+
+A6 composition testing: verify A6.search() internally calls router, SONA, solver. Verify A6.getStats() aggregates sub-component stats. Verify A6.destroy() cleans up all sub-components.
+
+## Pros and Cons of the Options
+
+### Defer (3 controllers)
 
 | ID | Controller | Lines | Reason | Revisit Condition |
 |----|-----------|:-----:|--------|-------------------|
@@ -605,7 +926,7 @@ The question is not "wait for QUIC library" but "swap mock with HTTP POST."
 | B10 | **FilterBuilder** | 209 | RVF-specific DSL. MetadataFilter (B5) covers the user-facing need. FilterBuilder remains available internally to RVF backend. | If RVF becomes primary storage backend (ADR-057) |
 | C1-C4 | **QUIC + Sync** | 2,132 | Real sync logic, only transport is mock. Could be made functional with ~160 lines (HTTP POST replacing mock). Defer until multi-machine deployment is a concrete need. | When agents need cross-machine memory sharing |
 
-#### Drop (1 controller)
+### Drop (1 controller)
 
 | ID | Controller | Lines | Reason |
 |----|-----------|:-----:|--------|
@@ -659,338 +980,10 @@ The question is not "wait for QUIC library" but "swap mock with HTTP POST."
 | D (Observability) | D1, D2, D3, D4, D5, D6 | — | — | — | 6 |
 | **Total** | **18 wired** | **8 via composite** | **3 deferred** | **1 dropped** | **31** |
 
-### ADR-0033 Wiring Audit (Swarms `swarm-1773623266694` + follow-up deep audit)
+## More Information
 
-Four agent audits (composition, routing, interchangeability, correctness) found that ADR-0033's "27/28 controllers wired" is **misleading at the bridge/MCP layer**. Of 27 controllers in the registry:
+This roadmap is superseded by ADR-0040 through ADR-0047 (the per-phase remediation and integration ADRs). It builds on ADR-0033 (Complete AgentDB v3 Controller Activation — predecessor, 27/28 wired), ADR-0030 (memory system optimization — embedding dimensions), ADR-0027 (fork migration and version overhaul — patch workflow), and ADR-0038 (cascading pipeline decomposition — test strategy).
 
-| Category | Count | Controllers |
-|----------|:-----:|-------------|
-| **Correctly wired** | 10 | skills, reflexion, causalGraph (AgentDB singletons), solverBandit, batchOperations, mmrDiversityRanker, contextSynthesizer, tieredCache, learningBridge, memoryGraph, agentMemoryScope |
-| **Degraded (missing embedder)** | 4 | causalRecall, learningSystem, nightlyLearner (required), explainableRecall (optional) |
-| **Not exported from agentdb** | 6 | HierarchicalMemory, MemoryConsolidation, MutationGuard, AttestationLog, GuardedVectorBackend, SemanticRouter |
-| **Wrong getController() name** | 3 | sonaTrajectory, graphAdapter, vectorBackend |
-| **Duplicate instances** | 2 | CausalRecall + NightlyLearner create own internal copies |
-| **Duplicate controller** | 1 | graphTransformer = second CausalMemoryGraph |
-| **Fake wrappers** | 2 | gnnService, rvfOptimizer wrap non-existent functions |
-| **Never called from bridge/MCP** | 16 | 53% of controllers have zero callers |
+It also references upstream ADRs: ADR-005 (Self-Learning Pipeline Integration — B2, B3 are Phase 2), ADR-006 (Unified Self-Learning RVF Integration — defines A6 as orchestrator with 6 sub-components), ADR-007 (@ruvector Full Capability Integration — B4 is Phase 1), ADR-010 (RVF Solver v0.1.6 Deep Integration), ADR-028 (39 Attention Mechanism Types; A5 implements 4 of 39), ADR-050 (Self-Learning Intelligence Loop — SONA integration pattern), ADR-053 (Original 6-phase controller plan), ADR-055 (Bug remediation, alpha.9→alpha.10), ADR-057 (RVF Native Storage Backend, proposed), ADR-059/060 (Bug triage — SONA wiring #1243, FederatedSession #1222), ADR-062 (SemanticRouter export, alpha.10), and ADR-066 (HierarchicalMemory/MemoryConsolidation).
 
-#### Issue 1: Six controllers reference classes not in agentdb exports (CRITICAL)
-
-Verified against the actual `agentdb/src/index.ts` barrel — these classes are genuinely absent:
-
-| Controller | Registry tries | In agentdb exports? | Runtime behavior |
-|------------|---------------|:---:|-----------------|
-| hierarchicalMemory | `new HM(db, embedder)` | **No** | Falls back to `createTieredMemoryStub()` (in-memory Map, 5K/tier limit) |
-| memoryConsolidation | `new MC(db, hm, embedder)` | **No** | Falls back to `createConsolidationStub()` (no-op) |
-| mutationGuard | `new MG({dimension})` | **No** | Returns null → `guardValidate()` always allows (no security) |
-| attestationLog | `new AL(db)` | **No** | Returns null → `logAttestation()` is no-op (no audit trail) |
-| guardedVectorBackend | `new GVB(vb, guard, log)` | **No** | Returns null (deps mutationGuard+attestationLog already null) |
-| semanticRouter | `new SR()` | **No** (it's in `agentic-flow/src/routing/`, not agentdb) | Returns null → routing falls back to TASK_PATTERNS |
-
-**Impact**: The "proof-gated intelligence" from ADR-0033 Phase 5 (MutationGuard, AttestationLog, GuardedVectorBackend) is entirely non-functional. The security layer, audit trail, and guarded vector backend all silently return null. HierarchicalMemory uses a basic Map stub instead of real tiered storage. SemanticRouter never loads.
-
-**Fix**: Either export these classes from agentdb (agentic-flow fork patch), or remove from the registry and document as non-functional.
-
-#### Issue 2: Four controllers missing required embedder parameter (HIGH)
-
-| Controller | Registry creates | Actual constructor | Missing |
-|------------|-----------------|-------------------|---------|
-| causalRecall | `new CR(db)` | `constructor(db, embedder, vectorBackend?)` | `embedder` (REQUIRED) |
-| learningSystem | `new LS(db)` | `constructor(db, embedder)` | `embedder` (REQUIRED) |
-| nightlyLearner | `new NL(db)` | `constructor(db, embedder, config?)` | `embedder` (REQUIRED) |
-| explainableRecall | `new ER(db)` | `constructor(db, embedder?, config?)` | `embedder` (optional, degrades quality) |
-
-**Impact**: These controllers can't compute vector similarities. LearningSystem's `recommendAlgorithm()` can't embed task descriptions. NightlyLearner can't consolidate episodic memories. CausalRecall can't re-rank by causal proximity.
-
-**Fix**: Pass `this.createEmbeddingService()` (already exists in controller-registry.ts line 1073) as the embedder parameter.
-
-#### Issue 3: Two controllers create duplicate internal instances (HIGH)
-
-**NightlyLearner** constructor creates 3 separate instances:
-- `this.causalGraph = new CausalMemoryGraph(db)` — duplicate of AgentDB's singleton
-- `this.reflexion = new ReflexionMemory(db, embedder)` — duplicate of AgentDB's singleton
-- `this.skillLibrary = new SkillLibrary(db, embedder)` — duplicate of AgentDB's singleton
-
-**CausalRecall** constructor creates 2 separate instances:
-- `this.causalGraph = new CausalMemoryGraph(db)` — duplicate
-- `this.explainableRecall = new ExplainableRecall(db)` — duplicate
-
-**Impact**: Multiple instances write to the same SQLite tables but have separate in-memory state. Data written via AgentDB's singleton won't be seen by NightlyLearner's copy until both read from SQLite. Potential stale reads and inconsistent consolidation.
-
-**Root cause**: Upstream class design — constructors create internal instances instead of accepting injected singletons. NightlyLearner's copies lack vectorBackend, so consolidation uses SQL brute-force (not 150x HNSW). CausalRecall's ExplainableRecall copy lacks embedder, so provenance has no vector search.
-
-**Fix (fork patch, ~26 lines across 3 files)**: Change NightlyLearner and CausalRecall constructors to accept optional pre-created instances, then pass AgentDB singletons from the registry:
-
-```typescript
-// agentic-flow fork: NightlyLearner.ts — accept optional singletons
-constructor(db, embedder, config?, causalGraph?, reflexion?, skills?) {
-  this.causalGraph = causalGraph || new CausalMemoryGraph(db);
-  this.reflexion = reflexion || new ReflexionMemory(db, embedder);
-  this.skillLibrary = skills || new SkillLibrary(db, embedder);
-}
-
-// agentic-flow fork: CausalRecall.ts — accept optional singletons
-constructor(db, embedder, vectorBackend?, config?, causalGraph?, explainableRecall?) {
-  this.causalGraph = causalGraph || new CausalMemoryGraph(db);
-  this.explainableRecall = explainableRecall || new ExplainableRecall(db);
-}
-
-// ruflo fork: controller-registry.ts — pass AgentDB singletons
-case 'nightlyLearner': {
-  const embedder = this.createEmbeddingService();
-  const cg = this.get('causalGraph');
-  const rf = this.get('reflexion');
-  const sk = this.get('skills');
-  return new NL(db, embedder, undefined, cg, rf, sk);
-}
-case 'causalRecall': {
-  const embedder = this.createEmbeddingService();
-  const vb = this.agentdb?.vectorBackend;
-  const cg = this.get('causalGraph');
-  const er = this.get('explainableRecall');
-  return new CR(db, embedder, vb, undefined, cg, er);
-}
-```
-
-This eliminates 5 duplicate instances and ensures NightlyLearner consolidation uses 150x HNSW search (via vectorBackend) instead of SQL brute-force.
-
-#### Issue 4: Three controllers use unsupported getController() names (MEDIUM)
-
-`AgentDB.getController()` only supports 3 name mappings: `'reflexion'|'memory'`, `'skills'`, `'causal'|'causalGraph'`. These names return null:
-
-| Controller | Registry calls | Supported? |
-|------------|---------------|:---:|
-| sonaTrajectory | `agentdb.getController('sonaTrajectory')` | No |
-| graphAdapter | `agentdb.getController('graphAdapter')` | No |
-| vectorBackend | `agentdb.getController('vectorBackend')` | No (it's `agentdb.vectorBackend` property, not a controller) |
-
-**Fix**: Access via property (`agentdb.vectorBackend`) or direct instantiation, not getController().
-
-#### Issue 5: Bridge routing bugs (HIGH)
-
-**BUG-1**: `bridgeSolverBanditSelect()` and `bridgeSolverBanditUpdate()` exist in memory-bridge.ts but are **not in the export list**. Thompson Sampling routing is dead — hooks_route falls through to static TASK_PATTERNS.
-
-**BUG-2**: memory-tools.ts calls `bridgeGetController('mmrDiversity')` but registry defines `mmrDiversityRanker`. Also calls nonexistent `metadataFilter` and `attentionService`. MMR re-ranking silently returns null.
-
-**BUG-3**: graphTransformer creates a second instance of CausalMemoryGraph (same class as causalGraph). Duplicate.
-
-#### Controllers to clean up
-
-| Controller | Action | Reason |
-|------------|--------|--------|
-| graphTransformer | **Remove** | Duplicate CausalMemoryGraph instance |
-| hybridSearch | **Remove** | Stub returning null, never called |
-| federatedSession | **Remove** | Stub returning null, never called |
-| gnnService | **Mark stats-only** | Only `getStats()` called, `differentiableSearch()` wraps non-existent function |
-| rvfOptimizer | **Mark stats-only** | Only `getStats()` called, `optimize()` wraps backend method that may not exist |
-| sonaTrajectory | **Delegate or remove** | getController('sonaTrajectory') returns null — name not supported |
-
-#### Revised existing wiring health
-
-| Status | Count | Impact |
-|--------|:-----:|--------|
-| Correctly wired + called | 10 | Working as intended |
-| Degraded (missing params) | 4 | Reduced functionality (no embeddings) |
-| Silently returning null/stub | 9 | Classes not exported, wrong names, stubs |
-| Dead code / duplicates | 4 | graphTransformer, gnnService, rvfOptimizer, hybridSearch |
-
-**The system appears to work because every controller has graceful degradation** — null returns, try-catch, stub fallbacks. But the "advanced" features (MutationGuard security, AttestationLog audit, HierarchicalMemory tiers, SONA trajectory, GNN search, SemanticRouter, GuardedVectorBackend) are all no-ops in practice.
-
-### Priority Recommendation (composition-aware)
-
-**Phase 0: Fix existing ADR-0033 wiring + packaging (8h).**
-
-Critical fixes (must-do before any new controllers):
-1. Fix memory-bridge.js import resolution (packaging bug)
-2. Export `bridgeSolverBanditSelect`/`Update` from memory-bridge.ts (BUG-1, ~1 line)
-3. Fix `mmrDiversity` → `mmrDiversityRanker` in memory-tools.ts; remove calls to nonexistent `metadataFilter`/`attentionService` (BUG-2, ~3 lines)
-4. Pass `this.createEmbeddingService()` to causalRecall, learningSystem, nightlyLearner, explainableRecall constructors (Issue 2, ~4 lines each)
-5. Fix vectorBackend access: use `agentdb.vectorBackend` property instead of `agentdb.getController('vectorBackend')` (Issue 4, ~2 lines)
-6. Fix sonaTrajectory + graphAdapter: either access via property or remove from registry (Issue 4, ~10 lines)
-
-Cleanup (reduce noise):
-7. Remove graphTransformer from registry — duplicate CausalMemoryGraph (BUG-3, ~15 lines)
-8. Remove hybridSearch and federatedSession stubs from INIT_LEVELS (~5 lines)
-9. Mark gnnService and rvfOptimizer as stats-only (~2 lines comments)
-
-Duplicate instance fixes (requires agentic-flow fork patch):
-10. Patch NightlyLearner constructor to accept optional pre-created causalGraph, reflexion, skills (~10 lines)
-11. Patch CausalRecall constructor to accept optional pre-created causalGraph, explainableRecall (~10 lines)
-12. In controller-registry.ts, pass AgentDB singletons to NightlyLearner and CausalRecall (~6 lines)
-
-Non-exported classes (requires agentic-flow fork patch or acceptance of stubs):
-13. Either export MutationGuard, AttestationLog, GuardedVectorBackend, HierarchicalMemory, MemoryConsolidation, SemanticRouter from agentdb `index.ts` (agentic-flow fork, ~6 export lines), OR document these as non-functional stubs and reduce the "wired" count from 27 to 21
-
-**Phase 7 (Security Foundation, 7h)**. D4 ResourceTracker + D5 RateLimiter + D6 CircuitBreaker. CircuitBreaker wraps all existing controller calls — would have prevented the memory-bridge.js cascade.
-
-**Phase 8 (Query Infrastructure, 5h)**. B5 MetadataFilter + B6 QueryOptimizer. Both already exported upstream, low integration effort.
-
-**Phase 9 (Attention Suite, 20h)**. A1 SelfAttention + A2 CrossAttention + A3 MultiHeadAttention + A5 (Flash + MoE + GraphRoPE with patch). Wire A1-A3 into search pipeline as re-rankers. A5 adds FlashAttention for consolidation, MoE for expert routing, GraphRoPE for hop-aware recall. Pure JS for all — no native deps.
-
-**Phase 10 (Embeddings + Compliance, 7h)**. A9 EnhancedEmbeddingService + D3 AuditLogger. Multi-provider embeddings replace hand-rolled pipeline. AuditLogger already wired in auth middleware.
-
-**Phase 11 (Self-Learning + Native, 10h)**. A6 SelfLearningRvfBackend + B4 NativeAccelerator + install `@ruvector/attention`. **A6 automatically creates A7, A8, B1, B2 internally** — no separate wiring needed. Installing the native package enables A5 HyperbolicAttention with correct Poincaré math. B4 bridges all @ruvector capabilities as global singleton.
-
-**Phase 12 (Federated Learning, 4h)**. A11 FederatedLearningManager only. A7 (ContrastiveTrainer) is already included via A6.
-
-**Phase 13 (Quantization, 6h)**. B9 QuantizedVectorStore only — **auto-creates B7 (Scalar) or B8 (Product) based on config**. No separate wiring for B7/B8.
-
-**Phase 14 (Index Health, 3h)**. B3 IndexHealthMonitor only. B2 (TemporalCompressor) is already included via A6.
-
-**Phase 16 (Telemetry, 6h)**. D1 TelemetryManager + D2 AttentionMetricsCollector. OpenTelemetry observability + attention-specific metrics.
-
-### Safeguards (carried from ADR-0033)
-
-All new controller integrations must follow:
-
-1. **try-catch + 2s timeout** on every new bridge call
-2. **Cold-start guard** where applicable (skip reads until sufficient data)
-3. **Max 3 writes per MCP handler** (prevent write amplification)
-4. **Fire-and-forget** for learning/training writes (must not block response)
-5. **CircuitBreaker** wrapping all new controllers (Phase 7 prerequisite)
-6. **NativeAccelerator check** for any controller depending on @ruvector/* packages
-7. **A5 mechanism gating**: Flash, MoE, and GraphRoPE (patched) enabled by default (JS works). HyperbolicAttention enabled only when NativeAccelerator reports `simdAvailable: true`
-8. **No duplicate instances**: Sub-components (A7, A8, B1, B2, B7, B8) are created by their parent composites (A6, B9). Bridge functions access them through the parent's API, never instantiate them separately.
-
-### Validation
-
-After each phase:
-- `agentdb_health` reports new controllers as active
-- `intelligence_stats` shows metrics for new capabilities
-- `npm test` (361+ unit tests) passes
-- `npm run test:verify` (24+ acceptance) passes
-- `tsc --noEmit` passes for both ruflo and agentic-flow forks
-
-### Testing Strategy
-
-Each phase adds:
-- **L1 unit tests**: Factory creation, null fallback, error paths (8-15 per controller)
-- **L1 integration tests**: Handler→Bridge→Registry→Controller chain (4-8 per phase)
-- **L2 acceptance checks**: MCP tool smoke tests (1-2 per controller)
-
-Estimated test additions: **~160 unit + ~12 acceptance** across all phases.
-
-A5-specific testing: validate FlashAttention JS produces numerically stable results for block sizes 64-512. Validate MoE returns non-uniform expert weights. Validate GraphRoPE (patched) produces higher weights for closer hops. Regression: attention-disabled search returns same results as before.
-
-A6 composition testing: verify A6.search() internally calls router, SONA, solver. Verify A6.getStats() aggregates sub-component stats. Verify A6.destroy() cleans up all sub-components.
-
-## Decision: Completion (SPARC-C)
-
-### Phasing (composition-aware)
-
-| Phase | ControllerRegistry entries | Included via composite | Effort | Dependencies |
-|-------|--------------------------|----------------------|--------|-------------|
-| **Phase 0** | Fix packaging bug + ADR-0033 wiring (embedder injection, export missing classes, bridge bugs, cleanup) | — | 8h | None |
-| **Phase 7** | D4, D5, D6 | — | 7h | Phase 0 |
-| **Phase 8** | B5, B6 | — | 5h | None |
-| **Phase 9** | A1, A2, A3, A5 (Flash+MoE+GraphRoPE) | — | 20h | Phase 8 |
-| **Phase 10** | A9, D3 | — | 7h | Phase 9 |
-| **Phase 11** | A6, B4, A5 Hyperbolic (native) | A7, A8, B1, B2 (via A6) | 10h | Phase 7 |
-| **Phase 12** | A11 | — | 4h | Phase 11 |
-| **Phase 13** | B9 | B7, B8 (via B9) | 6h | Phase 11 |
-| **Phase 14** | B3 | — | 3h | Phase 11 |
-| **Phase 16** | D1, D2 | — | 6h | Phase 9 |
-| **Total** | **18 entries** | **8 via composite** | **~70h** + 8h Phase 0 | |
-
-### Dependency Graph
-
-```
-Phase 0 (Fix packaging + ADR-0033 wiring: embedders, exports, bridge bugs, cleanup)
-├─ Phase 7 (Security: CircuitBreaker, RateLimiter, ResourceTracker)
-│  ├─ Phase 11 (A6 [includes A7+A8+B1+B2] + B4 singleton + A5-Hyperbolic)
-│  │  ├─ Phase 12 (A11 FederatedLearning)
-│  │  ├─ Phase 13 (B9 [includes B7+B8])
-│  │  └─ Phase 14 (B3 IndexHealthMonitor)
-│  └─ (independent)
-├─ Phase 8 (Query: MetadataFilter, QueryOptimizer)
-│  └─ Phase 9 (Attention: A1, A2, A3, A5 Flash+MoE+GraphRoPE)
-│     ├─ Phase 10 (A9 Embeddings + D3 AuditLogger)
-│     └─ Phase 16 (D1 Telemetry + D2 AttentionMetrics)
-```
-
-### Summary
-
-| Metric | Current (ADR-0033) | After Phase 10 | After All Phases |
-|--------|:------------------:|:--------------:|:----------------:|
-| Active controllers (after Phase 0 cleanup) | 24/25 | 38/39 | 50/51 |
-| ControllerRegistry entries | 24 (after removing 3 stale) | 35 | 42 |
-| Via composite (auto-created) | 0 | 0 | 8 |
-| Attention mechanisms | None | 6 (Self, Cross, MultiHead, Flash, MoE, GraphRoPE) | 7 (+ Hyperbolic-native) |
-| Self-learning vector index | No | No | Yes (A6: SONA + Contrastive + Solver + Router + Compressor) |
-| SONA micro-LoRA | No | No | Yes (production Rust engine, inside A6) |
-| Federated learning | Blocked | Blocked | Yes (A11, pure JS path) |
-| Vector quantization | No | No | 4-32x compression (B9 auto-selects B7 or B8) |
-| Circuit breaker protection | No | Yes | Yes |
-| Compliance audit logging | No | Yes (D3) | Yes |
-| OpenTelemetry | No | No | Yes (D1) |
-| Estimated total effort | 52h done | +41h | **+70h** |
-
-### Success Criteria
-
-| Phase | Metric | Target |
-|-------|--------|--------|
-| Phase 0 | Existing wiring fixed: imports resolve, embedders injected, exports added, bridge bugs fixed | memory_store works; solverBandit reachable in hooks_route; causalRecall/learningSystem/nightlyLearner get embedder; MutationGuard/AttestationLog/GuardedVectorBackend load (not null); graphTransformer removed |
-| Phase 7 | Circuit breaker prevents cascade failures | 0 cascading errors |
-| Phase 9 | Attention-weighted search returns different top-5 than vector-only | >20% result reordering |
-| Phase 9 | FlashAttention consolidation for 10K entries | <2s wall clock, O(n) memory |
-| Phase 9 | GraphRoPE (patched) hop-distance awareness | Closer hops → higher attention weights |
-| Phase 11 | A6.search() invokes router + SONA + solver internally | Non-empty routing decisions from A6.getStats() |
-| Phase 11 | Hyperbolic attention Poincaré distances | Distances satisfy triangle inequality |
-| Phase 13 | 8-bit quantization memory usage | <25% of Float32 baseline |
-| Phase 16 | OpenTelemetry spans exported | Spans visible in collector |
-
-## Consequences
-
-### Positive
-
-- Phase 0 fixes 3 existing ADR-0033 bugs and removes 3 stale controllers (graphTransformer duplicate, hybridSearch/federatedSession stubs)
-- Activates 26 additional upstream capabilities (50 total controllers after cleanup) with only 18 new registry entries (8 via composites)
-- Composition-aware wiring prevents duplicate instances and lifecycle conflicts
-- A6 is a single registry entry that delivers 6 sub-systems (SONA, Contrastive, SemanticQueryRouter, TemporalCompressor, FederatedSession, Solver)
-- B9 is a single registry entry that delivers full quantization stack (scalar + product)
-- 7 attention mechanisms fundamentally improve search quality
-- SONA micro-LoRA provides real-time adaptation (<1ms per inference)
-- CircuitBreaker prevents cascading failures
-- Full quantization (4-32x compression) via unified B9 API
-- Compliance audit logging (SOC2/HIPAA) via D3
-- Federated learning unblocked via A11
-- OpenTelemetry observability via D1
-- **Effort reduced from 115h to 70h** by respecting composition (no duplicate wiring)
-
-### Negative
-
-- 70 hours of integration work across 10 phases
-- Sub-components (A7, A8, B1, B2, B7, B8) are only accessible through parent APIs — no direct MCP tool access without bridge functions on the composite
-- A6's private fields mean sub-component behavior can only be observed via A6.getStats()
-- HyperbolicAttention requires native package (~1.3MB binary dependency)
-- GraphRoPE JS fallback requires ~15-line patch
-
-### Risks
-
-- A6's lazy `initComponents()` may silently fail to create sub-components (all try-catch) — need A6.getStats() to verify
-- B9 config at construction time locks the quantization method — can't switch scalar↔product without re-creating
-- FlashAttention JS is simplified (not full Tri et al. 2022) — block size tuning needed
-- QUIC networking deferred but could be made real with ~160 lines (HTTP POST replacing mock)
-- **Packaging bug** (memory-bridge.js missing from dist) must be fixed before Phases 8+ can validate
-- **ADR-0033 wiring is significantly broken**: 6 controllers reference non-exported classes (return null/stub), 4 missing required embedder param, 3 bridge routing bugs, 2 duplicate instance creators, 16 of 27 never called from bridge/MCP. Phase 0 (8h) must fix these before adding new controllers.
-- **Non-exported classes require agentic-flow fork patch**: MutationGuard, AttestationLog, GuardedVectorBackend, HierarchicalMemory, MemoryConsolidation, SemanticRouter must be added to agentdb's `index.ts` exports — otherwise the "security layer" from ADR-0033 Phase 5 remains entirely non-functional
-- **Duplicate instance problem in NightlyLearner/CausalRecall**: constructors create internal copies of CausalMemoryGraph, ReflexionMemory, SkillLibrary instead of accepting injected singletons. **Mitigated by Phase 0 items 10-12** (fork patch to accept optional pre-created instances, ~26 lines across 3 files).
-
-## Related
-
-- **ADR-0033**: Complete AgentDB v3 Controller Activation (predecessor — 27/28 wired)
-- **ADR-005** (upstream): Self-Learning Pipeline Integration (B2, B3 are Phase 2)
-- **ADR-006** (upstream): Unified Self-Learning RVF Integration — **defines A6 as orchestrator with 6 sub-components**
-- **ADR-007** (upstream): @ruvector Full Capability Integration (B4 is Phase 1)
-- **ADR-010** (upstream): RVF Solver v0.1.6 Deep Integration
-- **ADR-028** (upstream): 39 Attention Mechanism Types; A5 implements 4 of 39
-- **ADR-050** (upstream): Self-Learning Intelligence Loop (SONA integration pattern)
-- **ADR-053** (upstream): Original 6-phase controller plan
-- **ADR-055** (upstream): Bug remediation (alpha.9→alpha.10)
-- **ADR-057** (upstream): RVF Native Storage Backend (proposed)
-- **ADR-059/060** (upstream): Bug triage — SONA wiring (#1243), FederatedSession (#1222)
-- **ADR-062** (upstream): SemanticRouter export (alpha.10)
-- **ADR-066** (upstream): HierarchicalMemory/MemoryConsolidation
-- **ADR-0030**: Memory system optimization (embedding dimensions)
-- **ADR-0027**: Fork migration and version overhaul (patch workflow)
-- **ADR-0038**: Cascading pipeline decomposition (test strategy)
+This record used the SPARC + MADR methodology, with section headings (Specification / Pseudocode / Architecture / Refinement / Completion) remapped to the canonical MADR sections during the ADR-0271 migration, preserving all content. The deciders were the sparkling team. The H1 was recorded as "ADR-0039: ..." matching its sibling-suffix filename. Original status: "Superseded by ADR-0040 through ADR-0047".

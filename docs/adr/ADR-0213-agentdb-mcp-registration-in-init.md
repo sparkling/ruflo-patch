@@ -1,11 +1,9 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-19
-implemented-date: 2026-05-22
-tags: [init, mcp, agentdb, registration, swarm-reviewed]
+tags: [init, mcp, agentdb, registration]
 supersedes: []
-depends-on: [0201, 0161, 0204]
+depends-on: [ADR-0201, ADR-0161, ADR-0204]
 implements: []
 ---
 
@@ -152,6 +150,8 @@ A fresh 6-expert council re-verified ADR-0213 against fork source + upstream. **
 **Dependency note:** the doc-correction + boot-fix (steps 1+3) ship independently; the RVF `pattern-store → pattern-search` round-trip (Confirmation #2) is genuinely **0204-blocked** (archivist-init) — accurately self-flagged. The F-11-001 fold (align `generateMCPCommands` to `claude mcp add ruflo -- npx -y @sparkleideas/ruflo@latest mcp start`) is same-surface and safe.
 
 ## More Information
+
+Lifecycle dates from the original record: accepted 2026-05-19, implemented 2026-05-22. This ADR was swarm-reviewed.
 
 * **Audit:** F-11-003 (`docs/audits/2026-05-19-soundness-audit/11-init-mcp-installation.md`); F-11-001 (generateMCPCommands key drift).
 * **Boot crash (file as fork bug):** `forks/agentdb/src/mcp/agentdb-mcp-server.ts:16` (hard-pinned sql.js import), `:246` (`busy_timeout` pragma); `forks/agentdb/src/security/input-validation.ts:53` (`ALLOWED_PRAGMAS`, missing `busy_timeout`); `forks/agentdb/src/db-fallback.ts` (sql.js-only).

@@ -1,28 +1,31 @@
-# ADR-0044: Attention Suite Integration
+---
+status: accepted
+date: 2026-03-16
+tags: [attention, controllers, search, native]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-## Status
+# Attention Suite Integration
 
-Implemented
-
-## Date
-
-2026-03-16
-
-## Deciders
-
-sparkling team
-
-## Methodology
-
-SPARC + MADR
-
-## Context
+## Context and Problem Statement
 
 ADR-0039 Phase 9 identified 5 attention controllers (A1-A3, A5) and 1 metrics collector (D2) as high-value candidates. Currently, search returns results ranked solely by vector cosine distance. Attention re-ranking allows the system to discover inter-memory relevance (self-attention), cross-namespace alignment (cross-attention), and multi-perspective scoring (multi-head). A5 adds 4 advanced mechanisms with JS fallbacks and optional native acceleration.
 
-## Decision: Specification (SPARC-S)
+## Considered Options
 
-### Controllers
+* Integrate the attention suite (A1-A3, A5) plus D2 metrics collector, wiring A1-A3/A5 at Level 2 and D2 at Level 4 (chosen).
+
+(No alternatives were recorded. The A5 Deep Analysis swarm reversed an initial DEFER recommendation — see Refinement.)
+
+## Decision Outcome
+
+Chosen option: "Integrate the attention suite (A1-A3, A5) plus D2 metrics collector", because the JS fallbacks are real tested algorithms (1,628 lines of upstream tests validate real outputs) rather than mocks, and attention re-ranking surfaces relevance that pure vector cosine distance cannot.
+
+### Specification (SPARC-S)
+
+#### Controllers
 
 | ID | Class | Lines | Type | Description |
 |----|-------|:-----:|------|-------------|
@@ -32,7 +35,7 @@ ADR-0039 Phase 9 identified 5 attention controllers (A1-A3, A5) and 1 metrics co
 | A5 | AttentionService | 1500+ | Leaf (JS + native) | 4 mechanisms: FlashAttention, MoEAttention, GraphRoPE, HyperbolicAttention. Two files: services/ (full) and controllers/ (771-line facade). |
 | D2 | AttentionMetricsCollector | 254 | Leaf | Per-mechanism latency percentiles, head utilization, sparsity ratio. Currently orphaned. |
 
-### A5 Mechanism Status
+#### A5 Mechanism Status
 
 | Mechanism | JS Fallback | Math Correct? | Native on npm? |
 |-----------|:-----------:|:-------------:|:--------------:|
@@ -41,14 +44,14 @@ ADR-0039 Phase 9 identified 5 attention controllers (A1-A3, A5) and 1 metrics co
 | GraphRoPE | Hop-distance-aware positional encoding | No -- 3 bugs (~15 lines to fix) | NAPI only |
 | HyperbolicAttention | Crude scaling approximation | No -- needs native for correct Poincare math | Yes |
 
-### Key Relationships
+#### Key Relationships
 
 - A1-A3 are interchangeable alternatives that stack (different perspectives). A3 subsumes A1 in theory.
 - A5 is NOT a replacement for A1-A3 -- different pipeline stages. A1-A3 re-rank after vector search; A5 provides FlashAttention for consolidation, MoE for expert routing, GraphRoPE for hop-aware recall.
 - Native bindings: `@ruvector/attention@0.1.31`, 7 platforms, 1.3MB Linux x64 binary.
 - 1,628 lines of upstream tests, 3 production callers (CausalMemoryGraph, NightlyLearner, ExplainableRecall), 4 MCP tools.
 
-## Decision: Pseudocode (SPARC-P)
+### Pseudocode (SPARC-P)
 
 ```
 // controller-registry.ts -- Level 2 (after vectorBackend)
@@ -95,13 +98,13 @@ bridgeGraphRoPESearch(query, hopDistances):
   return attn.graphRoPE(query, { hopDistances, maxHops: 10 })
 ```
 
-### GraphRoPE JS Fix (3 bugs, ~15 lines)
+#### GraphRoPE JS Fix (3 bugs, ~15 lines)
 
 1. Line ~1195: Replace `hopDistances[i]?.[j] || 0` average with per-pair `hopDistances[i][j]`
 2. Line ~1203: Replace `keyPosition = j` (array index) with `hopDistances[0][j]` graph-derived position
 3. Line ~1178: Replace shared `avgHop * freq` with per-pair `hopDistances[i][j] * freq`
 
-## Decision: Architecture (SPARC-A)
+### Architecture (SPARC-A)
 
 - A1, A2, A3 wire at Level 2 as standalone leaf controllers.
 - A5 wires at Level 2. HyperbolicAttention disabled until Phase 11 native install.
@@ -109,16 +112,16 @@ bridgeGraphRoPESearch(query, hopDistances):
 - Bridge functions provide fallback to existing pipeline when attention controllers return null.
 - All new controllers wrapped by CircuitBreaker (Phase 7 prerequisite) with try-catch + 2s timeout.
 
-## Decision: Refinement (SPARC-R)
+### Refinement (SPARC-R)
 
 - The A5 Deep Analysis swarm (3 agents) reversed the initial DEFER recommendation: FlashAttention and MoE JS fallbacks are real tested algorithms, not mocks. 1,628 lines of tests validate real outputs.
 - The "completely broken" comment in `attention-fallbacks.ts` refers to native binding wiring, not the algorithms.
 - A1-A3 are pure JS with no gates -- always available (306-494 lines each).
 - Phase 9 effort: 20h. Depends on Phase 8 (MetadataFilter + QueryOptimizer).
 
-## Decision: Completion (SPARC-C)
+### Completion (SPARC-C)
 
-### Checklist
+#### Checklist
 
 - [ ] Wire A1 SelfAttentionController at Level 2 (~306 lines)
 - [ ] Wire A2 CrossAttentionController at Level 2 (~467 lines)
@@ -133,7 +136,20 @@ bridgeGraphRoPESearch(query, hopDistances):
 - [ ] Register 4 MCP tools for A5 (compute, benchmark, configure, metrics)
 - [ ] Wire D2 to collect metrics from A1-A3 and A5
 
-### Testing
+### Consequences
+
+* Good, because search results are ranked by actual relevance, not just vector distance.
+* Good, because FlashAttention enables O(N) memory consolidation instead of O(N^2).
+* Good, because MoE provides domain-aware expert routing for task assignment.
+* Good, because GraphRoPE adds hop-distance awareness to causal recall.
+* Bad, because of the 20h integration effort across A1-A3, A5, D2.
+* Bad, because HyperbolicAttention is deferred until native install (Phase 11).
+* Bad, because GraphRoPE requires a ~15-line patch before use.
+* Neutral, because there are risks: FlashAttention JS is simplified (not full Tri et al. 2022) -- block size tuning needed; A5 HyperbolicAttention JS approximation uses crude scaling, not real Poincare geometry; and two AttentionService files (services/ 1500+ lines, controllers/ 771 lines) must be imported correctly.
+
+### Confirmation
+
+#### Testing
 
 ```js
 // tests/unit/attention-suite.test.mjs
@@ -199,7 +215,7 @@ describe('ADR-0044: attention suite', () => {
 });
 ```
 
-### Testing Guidance
+#### Testing Guidance
 
 **Unit test file**: `tests/unit/adr-0044-attention-suite.test.mjs`
 
@@ -233,36 +249,15 @@ describe('ADR-0044: attention suite', () => {
 - D2 metrics surfaced in health endpoint: `npm run deploy` (full acceptance)
 - GraphRoPE JS bugfix (3 bugs, ~15 lines): `npm run test:unit`
 
-### Success Criteria
+#### Success Criteria
 
 - Attention-weighted search returns different top-5 than vector-only (>20% result reordering)
 - FlashAttention consolidation for 10K entries completes in <2s, O(N) memory
 - GraphRoPE (patched) produces higher attention weights for closer hops
 - D2 reports per-mechanism latency percentiles and head utilization
 
-## Consequences
+## More Information
 
-### Positive
+This decision was recorded by the sparkling team using the SPARC + MADR methodology.
 
-- Search results ranked by actual relevance, not just vector distance
-- FlashAttention enables O(N) memory consolidation instead of O(N^2)
-- MoE provides domain-aware expert routing for task assignment
-- GraphRoPE adds hop-distance awareness to causal recall
-
-### Negative
-
-- 20h integration effort across A1-A3, A5, D2
-- HyperbolicAttention deferred until native install (Phase 11)
-- GraphRoPE requires ~15-line patch before use
-
-### Risks
-
-- FlashAttention JS is simplified (not full Tri et al. 2022) -- block size tuning needed
-- A5 HyperbolicAttention JS approximation uses crude scaling, not real Poincare geometry
-- Two AttentionService files (services/ 1500+ lines, controllers/ 771 lines) must be imported correctly
-
-## Related
-
-- **ADR-0039**: Upstream controller integration roadmap (parent)
-- **ADR-0033**: Complete AgentDB v3 controller activation (predecessor)
-- **ADR-028** (upstream): 39 Attention Mechanism Types; A5 implements 4 of 39
+The original record cross-referenced related decisions: ADR-0039 (upstream controller integration roadmap, the parent); ADR-0033 (complete AgentDB v3 controller activation, the predecessor); and upstream ADR-028 (39 Attention Mechanism Types) — A5 implements 4 of those 39.

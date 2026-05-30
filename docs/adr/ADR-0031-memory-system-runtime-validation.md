@@ -1,18 +1,15 @@
-# ADR-0031: Memory System Runtime Validation — Post-ADR-0030 Analysis
+---
+status: accepted
+date: 2026-03-15
+tags: [memory, embeddings, mcp, validation]
+supersedes: []
+depends-on: [ADR-0027, ADR-0029, ADR-0030]
+implements: []
+---
 
-## Status
+# Memory System Runtime Validation — Post-ADR-0030 Analysis
 
-Accepted — **implemented in patch.27 + patch.28**
-
-## Date
-
-2026-03-15
-
-## Deciders
-
-sparkling team
-
-## Context
+## Context and Problem Statement
 
 After ADR-0030 was accepted and `@sparkleideas/cli@3.5.15-patch.26` was published, a fresh `npx @sparkleideas/cli@latest init --full --force` was run on `~/src/test` followed by a comprehensive runtime analysis of all memory operations, learning pipelines, pattern storage, search, and MCP tool behavior.
 
@@ -247,7 +244,15 @@ The `@sparkleideas/embeddings` package tries to `import 'agentic-flow/embeddings
 | Swarm init | **Working** | `swarm-1773537881437`, hierarchical topology |
 | Doctor | **Working** | 10 passed, 5 warnings, actionable fix suggestions |
 
-## Decision
+## Considered Options
+
+* **New Patches Required: DB-001 through DB-007 (chosen)** — implement seven new patches across the ruflo and agentic-flow forks to fix the four new bugs and the unimplemented ADR-0030 fixes.
+
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "New Patches Required: DB-001 through DB-007", because the validation surfaced concrete, reproducible runtime failures (MCP search non-functional, dual-database split, dimension mismatch) plus unimplemented ADR-0030 fixes, each mapping to a specific fork-source remediation.
 
 ### New Patches Required
 
@@ -284,7 +289,9 @@ All 7 patches implemented:
 | **DB-006** | **Done** — exported `generateEmbedding` from neural-tools.ts for sync | ruflo `2baa0e5a4` |
 | **DB-007** | **Done** — searchEntries checks results.length before short-circuiting | ruflo `2baa0e5a4` |
 
-### Validation Results (patch.28)
+### Confirmation
+
+#### Validation Results (patch.28)
 
 | Test | Result |
 |------|--------|
@@ -299,24 +306,19 @@ All 7 patches implemented:
 
 **MCP note**: MCP tools run in a long-lived MCP server process managed by Claude Code. The server must be restarted to pick up new package versions. The dimension fix is deployed (bridgeGenerateEmbedding rejects 384-dim vectors) but requires MCP server restart to take effect.
 
-## Consequences
+### Consequences
 
-### Positive
+* Good, because all runtime behavior documented with reproducible test evidence
+* Good, because all 7 planned patches implemented and deployed (patch.27 + patch.28)
+* Good, because CLI memory search quality dramatically improved (0.27 → 0.65–0.88 scores)
+* Good, because init defaults optimized for high-capacity servers (ADR-0030 S3)
+* Good, because embeddings.json generated for ONNX model configuration (ADR-0030 S2)
+* Good, because consistent 768-dim embedding dimension across all code paths
+* Neutral, because (remaining) MCP server needs restart to pick up dimension fix (operational, not code)
+* Neutral, because (remaining) MoE, EWC++, LoRA, Flash Attention subsystems remain dormant (require workload, not code fixes)
 
-- All runtime behavior documented with reproducible test evidence
-- All 7 planned patches implemented and deployed (patch.27 + patch.28)
-- CLI memory search quality dramatically improved (0.27 → 0.65–0.88 scores)
-- Init defaults optimized for high-capacity servers (ADR-0030 S3)
-- embeddings.json generated for ONNX model configuration (ADR-0030 S2)
-- Consistent 768-dim embedding dimension across all code paths
+## More Information
 
-### Remaining
+This decision relates to ADR-0030 (memory system optimization plan — predecessor that this ADR validates), ADR-0029 (memory & learning system fixes — bug fixes), and ADR-0027 (fork migration and version overhaul — patch model).
 
-- MCP server needs restart to pick up dimension fix (operational, not code)
-- MoE, EWC++, LoRA, Flash Attention subsystems remain dormant (require workload, not code fixes)
-
-## Related
-
-- **ADR-0030**: Memory system optimization plan (predecessor — this ADR validates its implementation)
-- **ADR-0029**: Memory & learning system fixes (bug fixes)
-- **ADR-0027**: Fork migration and version overhaul (patch model)
+The deciders were the sparkling team. Original status: "Accepted — implemented in patch.27 + patch.28".

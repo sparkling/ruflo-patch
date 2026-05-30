@@ -1,15 +1,13 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-10
-methodology: [comparative-analysis, council-dialectic, adversarial-review]
-decision-makers: [Henrik Pettersen]
-tags: [concurrency, rust, rvf, file-format, multi-writer, common-practice, redb-superblock-pattern, read-convergence, reader-refresh, snapshot-isolation]
-related: [0090, 0095, 0154, 0163, 0164, 0165, 0168, 0177, 0181, 0202, 0225]
-audience: ai-executor
+tags: [concurrency, rust, rvf, multi-writer]
+supersedes: []
+depends-on: []
+implements: []
 ---
 
-# ADR-0167: Cross-process RVF write coordination — common-practice survey + decision
+# Cross-process RVF write coordination — common-practice survey + decision
 
 > **Status**: discussion. Records the problem, the prior council's diagnosis, the research question, and (when council completes) the decision and trade-offs. **Rust-first solution preferred** — keep the runtime authoritative; avoid building parallel coordination in JS that could be undermined by future native-side changes.
 
@@ -89,7 +87,9 @@ Each expert returns:
 
 Queen then synthesizes a recommended approach; Devil's Advocate stress-tests for edge cases.
 
-## Considered options (Wave 1 framing — to be refined post-Wave 2)
+## Considered Options
+
+(Wave 1 framing — to be refined post-Wave 2.)
 
 * **Option α — Rust RootHeader + double-buffered slot pointer** (Lock-free expert): atomic 8-byte pwrite of manifest offset; readers jump directly. ~300 LoC, in-place format extension.
 * **Option β — `.manifest` sidecar via atomic rename + F_FULLFSYNC** (Filesystem expert): POSIX directory-entry atomicity for manifest commits; macOS F_FULLFSYNC for ordering. Introduces a new sidecar.
@@ -120,6 +120,8 @@ Rust-first preference (this ADR's constraint) favors **α, β, or a Rust port of
 6. **What's the perf delta?** A single-writer pattern serializes writes — does it hit our throughput targets?
 
 ## More information
+
+Original metadata: Methodology comparative-analysis + council-dialectic + adversarial-review; audience `ai-executor`; marked `completed: true`. This decision was recorded as related to ADR-0090, ADR-0095, ADR-0154, ADR-0163, ADR-0164, ADR-0165, ADR-0168, ADR-0177, ADR-0181, ADR-0202, and ADR-0225.
 
 * Test that exposed the issue: `tests/unit/adr0154-cross-process-concurrent.test.mjs`
 * Failing release log: `/tmp/adr-final-release13.log` (37 attempts over 30399ms)
@@ -329,6 +331,18 @@ Implement **Phase 1 = α-refined RootHeader + F_BARRIERFSYNC ordering syncs + F_
 **Phase 2 = δ-Rust as in-process napi library**: deferred to ADR-0168 with `<rvf>.coord.sock` IPC. Pure perf optimization layered on the correct Phase 1 write path.
 
 **Rejected and documented**: γ Bully election (self-retired by distsys-expert), subprocess daemon (refined to library by process-coordinator-expert), pure JS coordination (contradicts ADR-0167's Rust-first constraint).
+
+### Consequences
+
+* Good, because the atomic root-pointer (RootHeader) eliminates the three race shapes (`ManifestNotFound`, `InvalidManifest`, `InvalidChecksum`) at the source — readers jump directly to a validated manifest instead of tail-scanning a concurrently-growing file.
+* Good, because the solution is Rust-first (keeps the runtime authoritative across all language bindings) and requires no SFVR format change for legacy files (Open Q#3 preserved; opportunistic upgrade on first write-intent open).
+* Good, because N=8 became deterministic (767ms wall-time vs the prior 91s-flaky / 30s-timeout-fail), with ~4× headroom against the perf target and N=16 at 1443ms.
+* Bad, because `F_FULLFSYNC`/`F_BARRIERFSYNC` is Darwin-only and requires conditional-compiled per-OS fsync helpers plus a Windows-only β sidecar fallback for slot atomicity (Windows `WriteFile`-at-offset is not POSIX-atomic).
+* Neutral, because the δ-Rust in-process coordinator (the ~100-200ms perf layer) is deferred to ADR-0168 — α alone is the correctness baseline; δ is a pure perf optimization layered on top.
+
+### Confirmation
+
+Verified by the Rust integration stress test `tests/adr0167_n8_stress.rs` (N=8 deterministic canary + N=16 + 5× stability, all green; 324/324 rvf-runtime tests preserved) shipped on `forks/ruvector @ sparkling/main f4cbbf45e`, plus the round-2 acceptance criteria AC1–AC9 (N=8 deterministic, 674/674 acceptance preserved, all 5 napi targets clean, AC9 compact-vs-writers audit gate). The per-criterion targets vs actuals are tabulated in Amendment 2026-05-10f.
 
 ### Implementation order (final, with AM corrections folded)
 

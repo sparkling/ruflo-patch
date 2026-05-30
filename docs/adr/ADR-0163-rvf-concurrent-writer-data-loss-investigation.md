@@ -1,16 +1,13 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-10
-closed-on: 2026-05-10
-methodology: [council-dialectic, evidence-grading]
-decision-makers: [Henrik Pettersen]
-tags: [concurrency, rvf, data-loss, post-mortem, investigation, adr-0095, adr-0154, adr-0162]
-related: [0094, 0095, 0154, 0156, 0162]
-audience: ai-executor
+tags: [concurrency, rvf, data-loss, investigation]
+supersedes: []
+depends-on: []
+implements: []
 ---
 
-# ADR-0163: RVF concurrent-writer data-loss investigation post-ADR-0162 sync
+# RVF concurrent-writer data-loss investigation post-ADR-0162 sync
 
 > **Status**: investigation in flight. This ADR captures the full forensic state as of 2026-05-10 — what was tried, what was misdiagnosed, what is actually known, and what the next concrete step is. It is **not** a decision to apply a specific fix; it is the substrate the eventual fix-decision ADR will reference.
 
@@ -184,6 +181,8 @@ The "leftover that was forgotten" framing is **not accurate**: `.meta` is an int
 4. Are the other 13 acceptance failures all tied to t3-2-concurrent's root cause, or are some of them independent? The agent's "architectural cluster" framing suggests one root; the Substrate Engineer's smoking-gun list spans `memory-router.ts` AND `rvf-backend.ts` which suggests two roots. Bisect closes the dominant one; the residual count tells us if there's a second.
 
 ## More information
+
+Original metadata: Methodology council-dialectic + evidence-grading; audience `ai-executor`; marked `completed: true` with `closed-on: 2026-05-10`. This investigation was recorded as related to ADR-0094, ADR-0095, ADR-0154, ADR-0156, and ADR-0162.
 
 * Full council writeups: `/tmp/concurrency-fix-council/our-fix.md`, `upstream-fix.md`, `substrate-state.md`, `concurrency-expert.md`, `queen-position.md`, `devils-advocate-position.md`
 * Sync state: `/Users/henrik/source/ruflo-patch/.claude-flow/data/sync-2026-05-09.yaml` (`post_batch.acceptance_test_sweep` block)

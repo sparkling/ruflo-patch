@@ -1,16 +1,15 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-24
-tags: [init, helpers, template, drift, golden-master, regenerate, audit-followup, ct-b]
+tags: [init, helpers, template, drift]
 supersedes: []
-depends-on: [0143, 0201, 0211, 0215, 0233]
+depends-on: [ADR-0143, ADR-0201, ADR-0211, ADR-0215, ADR-0233]
 implements: []
 ---
 
 # Init-template fidelity — gate or regenerate the bundled-static layer (CT-B)
 
-## Context
+## Context and Problem Statement
 
 The 2026-05-24 second-pass soundness audit ([[ADR-0233]] §CT-B) identified a recurring structural defect: the published wrapper ships static `.claude/helpers/*.mjs` files that override the source-of-truth generators at runtime. Three "implemented" ADRs are invisible at runtime as a consequence.
 
@@ -65,7 +64,7 @@ Per the [Remediation-ADR pre-flight checklist](./ADR-0201-codebase-soundness-com
 
 All four checks pass. Proceed to Decision.
 
-## Considered options
+## Considered Options
 
 ### Option A — Golden-master test per emitted file (mirror [[ADR-0215]])
 
@@ -111,7 +110,9 @@ Modify `findSourceHelpersDir` (or `writeHelpers`) so the generator output is use
 * Bad: leaves the bundled-static layer alive and silently shadowing — if a future generator is added without removing the bundled counterpart, the preference inversion needs to keep working; one easy refactor could re-invert and reintroduce the bug. Needs a complementary parity test (so it converges with Option A's spirit at runtime, not as a snapshot).
 * Bad: does not address F-07-003 (umbrella plugin.json / install.sh) — those are not in the helper-generator path at all.
 
-## Decision
+## Decision Outcome
+
+Chosen option: "Option B + Option D + a targeted content-invariant lint for F-07-003", because the actual defect is dual-source drift that the bundle-side deletion, the preference inversion, and the umbrella-plugin lint each close at their natural layer.
 
 **Chosen: Option B + Option D + a targeted content-invariant lint for F-07-003** — combine the bundle-side deletion (Option B) for files no generator produces, the preference inversion (Option D) for files where both exist, and a lint pass for the umbrella-plugin/install.sh sites that fall outside the helpers seam entirely. Reject Options A and C as wrong-shape for the actual defect.
 
@@ -144,7 +145,7 @@ Acceptance check (fresh `ruflo init` sandbox per [[feedback-inspect-installed-no
 7. **Pass 7 scope extension:** `scripts/codemod.mjs`'s Pass 7 path-scope predicate (per [[ADR-0143]] §Pass 7 path scope) matches `.claude-plugin/**/*.{json,sh}`. A regression test exists asserting that a deliberately-inserted `@sparkleideas/cli` reference in `.claude-plugin/plugin.json` is flipped to `@sparkleideas/ruflo` by `transformSource()`.
 8. **No regression to ADR-0211's existing acceptance:** the `adr0211` acceptance group still passes after Option D's preference inversion (the parity test makes generator and bundled identical, so the user-facing behaviour does not change — but it now matches the generator, not the bundled static).
 
-## Consequences
+### Consequences
 
 * Good, because the three "implemented" ADRs ([[ADR-0211]] hook-handler keys, [[ADR-0211]]'s `auto-memory-hook.mjs sync`, [[ADR-0143]] brand rebrand) become visible to npx-installing users for the first time — closes the "implemented in source, invisible at runtime" failure mode that audit F-12-001 / F-12-003 / F-07-003 collectively diagnosed.
 * Good, because the parity test (init-helpers-parity) prevents recurrence at build time, where the signal is not eaten by any runtime catch — same mechanism class as [[ADR-0211]]'s build-time subset test, applied to the build-pipeline layer rather than the init-handler layer.

@@ -1,18 +1,13 @@
-# ADR-0024: Remove Legacy Global Patching
+---
+status: accepted
+date: 2026-03-07
+tags: [patching, pipeline, cleanup]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: Accepted
-- **Date**: 2026-03-07
-- **Deciders**: ruflo-patch maintainers
-- **Methodology**: SPARC + MADR
-
-## Decision Drivers
-
-- The repackaging pipeline (ADR-0005, ADR-0022) bakes patches into published `@sparkleideas/*` packages at build time
-- Users install `@sparkleideas/cli`, not `@claude-flow/cli` — runtime patching of the npx cache is obsolete
-- The `--global` code path patches the wrong target (`@claude-flow/cli` in `~/.npm/_npx/`)
-- `repair-post-init.sh` exists only to reapply patches wiped by npx cache updates — irrelevant when patches are pre-baked
-- Legacy CLI commands (`ruflo apply/check/repair`) expose infrastructure that users never need
-- `check-patches.sh --global` in Layer 0 verifies sentinels against the local npx cache, not the build output — false confidence
+# Remove Legacy Global Patching
 
 ## Context and Problem Statement
 
@@ -43,6 +38,15 @@ After this ADR:
   apply patches to each target
 ```
 
+## Decision Drivers
+
+- The repackaging pipeline (ADR-0005, ADR-0022) bakes patches into published `@sparkleideas/*` packages at build time
+- Users install `@sparkleideas/cli`, not `@claude-flow/cli` — runtime patching of the npx cache is obsolete
+- The `--global` code path patches the wrong target (`@claude-flow/cli` in `~/.npm/_npx/`)
+- `repair-post-init.sh` exists only to reapply patches wiped by npx cache updates — irrelevant when patches are pre-baked
+- Legacy CLI commands (`ruflo apply/check/repair`) expose infrastructure that users never need
+- `check-patches.sh --global` in Layer 0 verifies sentinels against the local npx cache, not the build output — false confidence
+
 ## Considered Options
 
 ### Option A: Mark as deprecated, keep code
@@ -59,7 +63,9 @@ Remove `--global` from `patch-all.sh` and `check-patches.sh`. Delete `repair-pos
 - Pro: Clean codebase, unambiguous instructions, no false-confidence sentinel checks
 - Con: Cannot patch local npx cache anymore (but this is the point — users don't need it)
 
-## Decision
+## Decision Outcome
+
+Chosen option: "Option B: Remove legacy code paths", because it yields a clean codebase, unambiguous instructions, and no false-confidence sentinel checks — and the only downside (cannot patch the local npx cache anymore) is precisely the intended outcome, since users no longer install `@claude-flow/cli`.
 
 ### Architecture (SPARC-A)
 
@@ -113,27 +119,21 @@ Patches are auto-discovered by the pipeline — `patch-all.sh` globs `patch/*/fi
 | Deploy to npm | 0–4 | `bash scripts/sync-and-build.sh` |
 | Verify live packages | 4 | `bash scripts/test-acceptance.sh` |
 
-## Consequences
+### Consequences
 
-### Completion (SPARC-C)
+#### Completion (SPARC-C)
 
-**Positive:**
-- Unambiguous patching model — patches only flow through the build pipeline
-- No false-confidence sentinel checks against the wrong target
-- Simplified pre-commit testing (`npm run preflight && npm test`)
-- ~200 lines of dead code removed
-- New contributors cannot be confused by two coexisting patching models
+* Good, because unambiguous patching model — patches only flow through the build pipeline
+* Good, because no false-confidence sentinel checks against the wrong target
+* Good, because simplified pre-commit testing (`npm run preflight && npm test`)
+* Good, because ~200 lines of dead code removed
+* Good, because new contributors cannot be confused by two coexisting patching models
+* Bad, because cannot patch local `@claude-flow/cli` npx cache anymore (intentional — users don't use it)
+* Bad, because developers who used `--global` for quick local testing must use `sync-and-build.sh --test-only` instead (slower but tests what users actually get)
+* Neutral, because existing ADRs (0002, 0004, 0007) reference `--global` — they remain as historical records
 
-**Negative:**
-- Cannot patch local `@claude-flow/cli` npx cache anymore (intentional — users don't use it)
-- Developers who used `--global` for quick local testing must use `sync-and-build.sh --test-only` instead (slower but tests what users actually get)
+## More Information
 
-**Neutral:**
-- Existing ADRs (0002, 0004, 0007) reference `--global` — they remain as historical records
+This decision relates to several prior records. ADR-0005 (fork + build-step rename) established the repackaging pipeline. ADR-0007 (drop-in replacement UX) introduced `repair-post-init.sh` and the CLI patch commands, and this ADR supersedes those aspects. ADR-0022 (full ecosystem repackaging) made `@sparkleideas/*` the user-facing packages. ADR-0023 (Google testing framework) defines the 6-layer test model referenced here.
 
-## Relates To
-
-- **ADR-0005**: Fork + build-step rename (established the repackaging pipeline)
-- **ADR-0007**: Drop-in replacement UX (introduced `repair-post-init.sh` and CLI patch commands — this ADR supersedes those aspects)
-- **ADR-0022**: Full ecosystem repackaging (made `@sparkleideas/*` the user-facing packages)
-- **ADR-0023**: Google testing framework (defines the 6-layer test model referenced here)
+This record originally used the SPARC + MADR methodology, with section headings (Specification / Pseudocode / Architecture / Refinement / Completion) remapped to the canonical MADR sections during the ADR-0271 migration, preserving all content. Original status: "Accepted".

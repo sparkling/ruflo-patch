@@ -1,8 +1,7 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-25
-tags: [upstream-sync, rvagent-wasm, security, allowlist, ADR-129, design-gate]
+tags: [rvagent-wasm, security, allowlist, design-gate]
 supersedes: []
 depends-on: [ADR-0254, ADR-0258]
 implements: []
@@ -158,26 +157,18 @@ When Phase 3 of ADR-129 lands (a separate implementation ADR), the implementer m
 3. Confirm the hyphen-renamed entries (`hooks_post-task`, `hooks_pre-task`, `agentdb_pattern-search`, `agentdb_hierarchical-recall`) appear with the hyphenated spelling exactly.
 4. If `wasm_gallery_categories` is included but Phase 3 has not landed yet, the entry refers to a tool that doesn't yet exist — either land Phase 3 in the same commit batch (preferred) or drop `wasm_gallery_categories` from the allowlist until Phase 3 lands.
 
-## Consequences
+### Consequences
 
-### Positive
+* Good, because **Every allowlist entry resolves.** Each name has a verified grep hit against fork's `mcp-tools/*-tools.ts`. The "curated Ruflo tool" descriptor branding becomes true-by-construction.
+* Good, because **Hyphen convention preserved.** Fork's existing tool names are untouched; no codemod to rename them.
+* Good, because **Fork-curated additions reflect actual fork-side recall surface.** `memory_search_unified` is the SOTA search path per memory `[[project-memory-search-rvf-snapshot-isolation]]`; surfacing it via the allowlist's branded descriptor signals to composed agents which surface is canonical.
+* Good, because **Future-proof against upstream re-converge.** If upstream later expands the allowlist with more underscore-named tools, the fork-side allowlist file is the single source of truth; the translation table in this ADR is the audit trail for what was renamed and why.
+* Bad, because **One-way divergence.** Fork's allowlist now contains tool names upstream's allowlist doesn't (e.g., `memory_search_unified`). Future upstream syncs against the allowlist must hand-merge: a naive `cp` over the file would clobber the fork-additional entries.
+* Bad, because **`wasm_gallery_categories` contingency adds coupling.** This ADR's final allowlist count is "29 if Phase 3 ships in the same batch, else 28 with `wasm_gallery_categories` deferred." The implementer must check the Phase 3 status before committing the allowlist; this ADR documents both possibilities.
+* Neutral, because **No code change in this ADR.** This is a decision-only ADR; the allowlist constant lands in a separate commit under its own implementation ADR. The TypeScript block above is the implementer's spec.
+* Neutral, because **The third gate remains.** [[ADR-0254]] Phases 1-3 gating list still has the `loadRvf` signature typo fix (`optional-modules.d.ts:295`). This ADR resolves only the SAFE_MCP_TOOLS audit; the typo fix is a separate, trivial pre-req ADR.
 
-* **Every allowlist entry resolves.** Each name has a verified grep hit against fork's `mcp-tools/*-tools.ts`. The "curated Ruflo tool" descriptor branding becomes true-by-construction.
-* **Hyphen convention preserved.** Fork's existing tool names are untouched; no codemod to rename them.
-* **Fork-curated additions reflect actual fork-side recall surface.** `memory_search_unified` is the SOTA search path per memory `[[project-memory-search-rvf-snapshot-isolation]]`; surfacing it via the allowlist's branded descriptor signals to composed agents which surface is canonical.
-* **Future-proof against upstream re-converge.** If upstream later expands the allowlist with more underscore-named tools, the fork-side allowlist file is the single source of truth; the translation table in this ADR is the audit trail for what was renamed and why.
-
-### Negative
-
-* **One-way divergence.** Fork's allowlist now contains tool names upstream's allowlist doesn't (e.g., `memory_search_unified`). Future upstream syncs against the allowlist must hand-merge: a naive `cp` over the file would clobber the fork-additional entries.
-* **`wasm_gallery_categories` contingency adds coupling.** This ADR's final allowlist count is "29 if Phase 3 ships in the same batch, else 28 with `wasm_gallery_categories` deferred." The implementer must check the Phase 3 status before committing the allowlist; this ADR documents both possibilities.
-
-### Neutral
-
-* **No code change in this ADR.** This is a decision-only ADR; the allowlist constant lands in a separate commit under its own implementation ADR. The TypeScript block above is the implementer's spec.
-* **The third gate remains.** [[ADR-0254]] Phases 1-3 gating list still has the `loadRvf` signature typo fix (`optional-modules.d.ts:295`). This ADR resolves only the SAFE_MCP_TOOLS audit; the typo fix is a separate, trivial pre-req ADR.
-
-## Confirmation
+### Confirmation
 
 1. If Phases 1-3 of ADR-129 land in a follow-up implementation ADR, that ADR's commit references this ADR for the final SAFE_MCP_TOOLS constant and the renaming-rationale audit trail.
 2. If a future upstream sync touches upstream's SAFE_MCP_TOOLS, this ADR's per-tool table is the diff baseline: any new upstream entry must be re-mapped through "exists in fork? rename or drop?" before being accepted.

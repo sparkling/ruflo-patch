@@ -1,35 +1,15 @@
-# ADR-0095: RVF Inter-Process Write Convergence
+---
+status: accepted
+date: 2026-04-17
+tags: [rvf, memory, concurrency, locking]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: **Implemented** (2026-04-20) — all of items a+b+c+d1+d2+d3+d4+d5+d6+d8+d10+d11 landed; t3-2-concurrent passes deterministically in full acceptance across three consecutive runs (2026-04-19 10:45Z, 2026-04-19 12:46Z, 2026-04-20 10:43Z). BUG-0008 closed. **Partial supersession 2026-05-07**: item **d5 (sidecar dual-write)** is superseded by ADR-0154 (RVF storage unification). All other items — including the load-bearing concurrency invariants **d11 (fsync-before-rename), d12 (`flock(LOCK_EX)`), d13 (re-entrant JS lock with depth counter), d14 (`create_new` after `flock`)** — remain active. ADR-0154 inherits these as load-bearing pre-conditions and does not retire them; see "ADR-0154 carries forward d11–d14" notes in the changelog entries below.
-- **Date**: 2026-04-17 (authored), 2026-04-17 (amended after Sprint-1 investigation), 2026-04-18 (amended after Sprint-1.2 Pass-2 investigation — items d1+d2 appended), **2026-04-20 (Implemented — d11 fsync-before-rename closed the mega-parallel silent-loss tail)**
-- **Scope**: `v3/@claude-flow/memory/src/rvf-backend.ts` — `tryNativeInit` (line 605), `persistToDiskInner` (line 1384 — specifically the shared-tmp-path at line 1450), backend construction call sites (MemoryManager + controller registry). `mergePeerStateBeforePersist` is explicitly **out of scope** for this ADR — the shipped implementation (lines 1298–1382) already does what the original §Decision proposed.
-- **Forked from**: ADR-0094 Open Item #1
-- **Related**: ADR-0086 (Storage Layer), ADR-0090 B7 (in-process multi-writer fix), ADR-0092 (native/pure-TS coexistence), ADR-0082 (no silent fallbacks), ADR-0088 (no daemon in CLI hot path), BUG-0008 (ledger)
+# RVF Inter-Process Write Convergence
 
-## Changelog
-
-- **2026-04-17 (authored)** — Proposed "read-meta-under-lock + merge + write" protocol.
-- **2026-04-17 (amended, same day)** — Sprint-1 investigator (`f4dd1ec`) established that the proposed protocol is already implemented at lines 1298–1382 and does not close the observed inter-process data-loss bug. Real root cause is a **3-layer backend flip race**: (1) silent catch in `tryNativeInit` (line 635) masks native-init races so 5 of 6 concurrent writers silently fall back to pure-TS (ADR-0082 violation); (2) native writers target the `.meta` sidecar while pure-TS writers target the main `.rvf` path — disjoint write targets mean the peer-merge never sees peer writes; (3) shared `.rvf.tmp` path at line 1450 causes cross-process `rename()` ENOENT collisions and transient SFVR-corruption reads. Amended §Decision replaces the merge-protocol proposal with a three-item program: fail-loud on native init once SFVR bytes exist, per-writer unique tmp paths, and dedupe RvfBackend construction per process. See §Investigation Findings (appended below) for the dispositive trace.
-- **2026-04-18 (amended, Sprint-1.2 Pass-2)** — Pass-2 investigator (`ef5d357`) validated items (a)+(b)+(c) landed in `@sparkleideas/cli@3.5.58-patch.137` (fork `9c5809324`), confirmed in-process N=6 now PASSES, but subprocess N=6 still fails with `entryCount=1/6`. Root cause of the residual loss is **H7**: the native `RvfDatabase` holds an exclusive OS-level lock on the SFVR file during `open`/`create`. At N=6 only one writer acquires the native lock; the other 5 fail LOUDLY (item a working as designed) with `RVF error 0x0300: LockHeld` or `0x0303: FsyncFailed` inside `initialize()` — **before** any `store()` call, so the merge protocol is never reached. Item (c)'s factory cache does NOT fire on the CLI hot path because `cli/memory-router.ts:435-443`'s private `createStorage` bypasses `@sparkleideas/memory/storage-factory`. Amendment appends items **d1** (serialize `tryNativeInit` through the advisory lock) and **d2** (route the CLI's private `createStorage` through the shared factory). Items (a)/(b)/(c) stand unchanged.
-- **2026-04-18 (amended, Sprint-1.3 Pass-3)** — Pass-3 investigator (`b16efcc`) validated items (a)+(b)+(c)+(d1)+(d2) landed in `@sparkleideas/cli@3.5.58-patch.139` (fork `3fe71b9c7`). 40-trial matrix now shows 23/40 PASS (up from 0/3 at Pass-2 baseline) — substantial progress, but 17/40 FAIL survive as two distinct residual modes. Error-unwrap instrumentation on `storage-factory.ts` dispositively identifies **H8** (17/17 cold-start failures are `ENOENT` on `.swarm/memory.rvf.lock` because `acquireLock` at `rvf-backend.ts:882` does `writeFile(…, {flag:'wx'})` without first `mkdir(dirname(lockPath),{recursive:true})`) and **H14** (rare silent mixed-backend loss at `entryCount=3..5/6`: `tryNativeInit`'s "pure-TS-owned-file" branch at `rvf-backend.ts:753-764` silently accepts zero-byte files and already-clobbered `RVF\0` files as legitimate pure-TS targets, then pure-TS writes land on `.rvf` while native writes land on `.meta` — disjoint-target merge sees only one population). Amendment appends items **d3** (acquireLock mkdirs dirname before wx-open) and **d4** (tighten tryNativeInit invariant so only genuine `RVF\0` qualifies as pure-TS-owned; short reads and unknown magic throw). Secondary fix bundled with d3/d4: `storage-factory.ts:154` rewrap preserves `err.cause` so the opaque `[StorageFactory] Failed to create storage backend` message stops masking the real ENOENT. Items (a)/(b)/(c)/(d1)/(d2) stand unchanged.
-
-- **2026-05-01 (amended, Swarm-2 final fix — d12+d13+d14)** — Despite the 2026-04-20 "Implemented" status, latent contention reappeared after the 2026-04-29 upstream-merge cycle: cli@patch.282 baseline produced **0/40** on `scripts/diag-rvf-interproc-race.mjs --trials 40` (covering N=2,4,6,8 × 10). Two independent 10-agent swarms (one per round) and two cycles of fix-and-verify converged on the actual root cause: **the native `RvfStore::create` path opens `path` with `OpenOptions::create_new(true)` BEFORE acquiring `WriterLock::acquire(path)`** (`forks/ruvector/crates/rvf/rvf-runtime/src/store.rs:83-90`). Two cold-start peers race the bare-file create unsynchronised; the loser gets EEXIST mapped to `FsyncFailed (0x0303)` and dies fatally at attempts=1 (the JS-side retry budget only handles `LockHeld 0x0300`). Empirically confirmed by instrumented `RVF_DIAG=1` capture of failed trial t4 at N=4 showing writer-3 stderr `RVF error 0x0303: FsyncFailed` at `attempts=1, elapsed=0ms` while writer-1 wrote `.meta` cleanly — exactly the asymmetry that produced "fast 1.5s failures" vs "slow 3.5s passes" and "N=8 perfect / N≤6 leaks" pattern. Items: **d12** (replace native `WriterLock` O_CREAT|O_EXCL PID-file design with kernel `flock(LOCK_EX)` on a never-unlinked sibling + process-local refcount map; `forks/ruvector/crates/rvf/rvf-runtime/src/locking.rs` rewritten); **d13** (JS `.jslock` made re-entrant via `_lockHeldDepth` counter so `store()` holds the lock across in-mem mutate + WAL append + WAL compact in one atomic critical section); **d14** (native `RvfStore::create` reordered to take flock BEFORE `OpenOptions::create_new`; if file exists post-flock, return `LockHeld` so JS dispatcher in `tryNativeInit` retries as `RvfDatabase.open()` which goes through the same flock queue). Result: cli@patch.302 produces **40/40 PASS** on the diag matrix at all N=2,4,6,8 with no silent loss. Items (a)/(b)/(c)/(d1)/(d2)/(d3)/(d4)/(d5)/(d6)/(d8)/(d10)/(d11) stand unchanged. Status returns to **Implemented** (2026-05-01).
-
-- **2026-05-02 (test marker amendment, ADR-0113 unskip program)** — The "subprocess N=6" test (`tests/unit/adr0086-rvf-integration.test.mjs:632`) carried a Pass 2 marker check asserting that `this.acquireLock(` appears BEFORE `this.reapStaleTmpFiles(` within the published dist's `initialize()` body. That ordering was the **d1 design** (lock the entire init sequence). The 2026-05-01 swarm-2 amendment INVERTED that ordering — the new design runs `reapStaleTmpFiles` FIRST (no JS lock; idempotent + race-tolerant) and `tryNativeInit` SECOND (uses the new kernel-flock-based native lock from d12), with `acquireLock` scoped THIRD around `loadFromDisk` only. The d1-style "lock everything around the native flock acquire" pattern was itself the t3-2 silent-loss vector ("writer A holds JS lock while waiting for native flock, blocking all peers' JS lock acquisitions"). Since `cli@patch.302` (and the currently-published `@sparkleideas/memory@3.0.0-alpha.13-patch.317`) ships the swarm-2 ordering, the d1-ordering marker check returns FALSE and the test silently skipped via `SKIP_T3_2_BOOTSTRAP=1`. **Resolution:** marker check dropped (commit `3f74b37`); only the Pass 1 markers (`reapStaleTmpFiles` + `_tmpCounter`, present in both d1 and swarm-2 dists) remain. The test now runs end-to-end against the swarm-2 dist and PASSES (entryCount === 6 in 38s standalone). Both designs satisfy the entryCount invariant; gating on a particular design's source-text ordering was wrong. The Pass 2 marker check was an artifact of the d1 era and should not have survived the swarm-2 amendment.
-
-- **2026-05-07 (sidecar workaround flagged as obsolete — see ADR-0154)** — A 4-agent adversarial swarm investigation established that the **`.meta` sidecar workaround introduced by item d5 (2026-04-18)** has outlived the bug that motivated it. The underlying `RvfStore::create` race that drove the dual-write design was FIXED by items d12+d13+d14 on 2026-05-01 (40/40 PASS). The `.meta` sidecar code remains in `rvf-backend.ts` but is no longer load-bearing — it now produces its own bug class (orphan-numId, asymmetric writer/reader fixed in ADR-0153 R6, atomic-rename ENOENT fixed in ADR-0153 R7, the entire HM-style legacy migration). Upstream design (rUv's RuVector ADR-029) and the fork's own original ADR-0057 plan both specified single-file storage with `META_SEG (0x07)` segments inside `.rvf`. **The dual-file pattern is rUv-defined fragmentation that RVF was designed to ELIMINATE.** ADR-0154 supersedes the dual-write portion of this ADR and proposes unification: extend `rvf-node`'s `parse_metadata_entry` with a `"bytes"` branch (~5 LoC), pass `RvfMetadataEntry[]` as the third arg to the existing `ingestBatch(vectors, ids, metadata)` napi call, delete the entire `.meta` code path. This ADR's scope (the fixed `RvfStore::create` race) stays Implemented; the sidecar artefact migrates to ADR-0154 for resolution.
-
-- **2026-05-07 (ADR-0154 implementation log — partial supersession scoped)** — ADR-0154 shipped with the gated approach: item **d5 (`.meta` sidecar dual-write) is now formally superseded** — `.meta` is still written today as a supplementary durable store for entries without embeddings, but the HM-class data loss bug class is closed because ADR-0154 Phase 4 makes `loadFromDisk` prefer native META_SEG entries over `.meta` when both exist. Hard removal of `.meta` is gated on either runtime support for vector-less metadata segments OR an embedding-pipeline guarantee — both deferred per ADR-0154 follow-up tasks.
-
-  **Items d11–d14 carry forward** as active load-bearing pre-conditions of ADR-0154's unified storage path:
-  - **d11 (fsync-before-rename)** — every atomic-rename target must fsync before rename. ADR-0154 inherits this for the META_SEG write path (which uses `RvfDatabase::ingestBatch` → `write_meta_seg` → segment writer's two-fsync protocol).
-  - **d12 (`flock(LOCK_EX)`)** — kernel-level cross-process exclusion at the native binding layer. ADR-0154 relies on this for cross-process META_SEG durability — `t3-2-concurrent` (N=6 concurrent ingestBatch + metadata) PASSES via this invariant.
-  - **d13 (re-entrant JS lock with depth counter)** — `_lockHeldDepth` makes `store()` an atomic critical section across in-mem mutate + WAL append + WAL compact. ADR-0154 inherits unchanged.
-  - **d14 (`create_new` after `flock`)** — `RvfStore::create` orders the kernel flock acquisition BEFORE `OpenOptions::create_new`. ADR-0154's META_SEG write path uses `RvfDatabase.create/open` which goes through the same code path; without d14, the cold-start race would re-emerge.
-
-  Validation: ADR-0154's pipeline run (2026-05-07 09:50Z) showed `t3-2-concurrent` PASS at 674/674 acceptance. The d11–d14 invariants were not regressed by ADR-0154's META_SEG additions. They MUST stay active for any future RVF storage-layer ADR.
-
-## Context
+## Context and Problem Statement
 
 The 15-agent remediation swarm's `fix-t3-2-rvf-concurrent` agent made RVF concurrent writes pass an in-process simulation (10/10 trials) by calling `compactWal()` after every `store()`. The real CLI test (`t3-2-concurrent`, 6 parallel `cli memory store` subprocesses) still fails: final `.rvf.meta` has `entryCount=1` (5 entries lost) despite all 6 CLIs exiting 0.
 
@@ -51,7 +31,19 @@ This is not an in-process race the B7 fix was designed for. It's a missing read-
 - `t3-2-concurrent` — the primary acceptance check. 6 parallel `cli memory store` with unique keys; expect `.meta.entryCount=6`, observe `1`.
 - `scripts/diag-rvf-interproc-race.mjs` — to be written as the regression guard for this ADR (the in-process diag cannot detect this).
 
-## Decision
+## Considered Options
+
+The alternatives below (A/B/C/D) were authored against the wrong problem — they assumed the merge protocol was missing, which the shipped code contradicts. They are preserved as historical record and a lens on the design space; none of them close the 3-layer backend-identity race identified in §Investigation Findings.
+
+* **Amended three-item program (a + b + c), later extended with d1–d14 (chosen)** — fail-loud native init, unique tmp paths per writer, dedupe RvfBackend per process, serialize native init through the advisory lock, route the CLI's private `createStorage` through the shared factory, mkdir the lockfile parent before the wx-open, tighten the `tryNativeInit` pure-TS-owned invariant, and replace the native `WriterLock` with kernel `flock(LOCK_EX)` ordered before file creation.
+* **A. Read-meta-under-lock + merge + write (original recommended — wrong problem)** — every persist under the lock does a `loadFromDisk(mergeOnly=true)` before writing. Closes the inter-process hole deterministically. Rejected: already shipped at lines 1298–1382; re-proposing it is a no-op.
+* **B. WAL-tailing: don't unlink WAL, use offset watermarks (wrong problem)** — each writer tracks a WAL read offset, reads WAL from their watermark, merges peer entries, advances the watermark; WAL never unlinks. Rejected: doesn't address backend identity flips.
+* **C. OS-level file-lock primitive (flock / fcntl) + single-writer serialization (wrong problem)** — use `flock` instead of the current PID-based `.rvf.lock`; writers queue and re-read fresh on their turn. Rejected: a stronger lock does not repair a backend that silently swallows init errors. (NOTE: a flock-based primitive was ultimately adopted in item d12 once the real root cause was understood.)
+* **D. Central writer process (daemon) (wrong problem)** — one writer process owns `.rvf`; CLI processes send entries via IPC. Rejected: architectural U-turn relative to ADR-0088; huge scope growth.
+
+## Decision Outcome
+
+Chosen option: "Amended three-item program (a + b + c), later extended with d1–d14", because the real bug is a 3-layer backend-identity race occurring **before** the merge path is reached, and each item targets a distinct, empirically-traced failure layer with a surgical fix while honoring ADR-0082's no-silent-fallback invariant.
 
 > **~~Struck 2026-04-17 — original proposal obsolete.~~** The original §Decision below proposed a "read-meta-under-lock + merge + write" protocol in `persistToDiskInner`. Sprint-1 investigation (see §Investigation Findings below) confirmed that `mergePeerStateBeforePersist` at `forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts:1298-1382` **already implements exactly this protocol**, including `.meta`/main-path fallback (lines 1309–1317), header validation (lines 1322–1331), entry replay (lines 1332–1343), and `seenIds`-gated set-if-absent merge (lines 1354–1361). Shipping the original proposal would be a no-op. Per ADR-0094 Maintenance Manifesto rule 1, the superseded text is preserved verbatim below.
 >
@@ -318,47 +310,7 @@ Items (a)+(b)+(c)+(d1)+(d2)+(d3)+(d4) form a closed set targeting seven distinct
 
 Removing any one item leaves a non-deterministic leak path visible in `scripts/diag-rvf-interproc-race.mjs`. Specifically: without d1, N=6 shows `LockHeld`/`FsyncFailed` cascades (Pass-2 trials t1-t3); without d2, the 2×-init amplifies d1's lock-queue depth and can trip the 5s acquire budget at higher N; without d3, cold-start trials ENOENT on `.swarm/memory.rvf.lock` with zero writers able to acquire (Pass-3 matrix 17/40 FAIL); without d4, ~3/40 trials silently end with `entryCount<N` because pure-TS writers clobber SFVR state or write to a disjoint target undetected.
 
-## Alternatives
-
-The alternatives below (A/B/C/D) were authored against the wrong problem — they assumed the merge protocol was missing, which the shipped code contradicts. They are preserved as historical record and a lens on the design space; none of them close the 3-layer backend-identity race identified in §Investigation Findings.
-
-### A. Read-meta-under-lock + merge + write (original recommended — **wrong problem**)
-
-Every persist under the lock does a `loadFromDisk(mergeOnly=true)` before writing. Closes the inter-process hole deterministically.
-
-**Pros**: simple conceptual model ("lock + read-merge-write"); no new file artifacts; preserves WAL compaction semantics.
-**Cons**: double-read cost per persist (but we already hold the lock, so serialized writes amortize it).
-
-**Amendment verdict**: already shipped at lines 1298–1382. Re-proposing it is a no-op.
-
-### B. WAL-tailing: don't unlink WAL, use offset watermarks — **wrong problem**
-
-Each writer tracks a WAL read offset. Subsequent writers read WAL from their watermark, merge peer entries, advance watermark. WAL never unlinks; compaction rewrites with offset 0.
-
-**Pros**: no extra disk reads during persist.
-**Cons**: WAL grows unbounded between full compactions; new "safe compaction" rule required; complicated cross-process offset state.
-
-**Amendment verdict**: doesn't address backend identity flips. If 5 of 6 writers target the main path while 1 targets the sidecar, WAL tailing sees the same mis-partitioned writes.
-
-### C. OS-level file-lock primitive (flock / fcntl) + single-writer serialization — **wrong problem**
-
-Use `flock` instead of the current PID-based `.rvf.lock`. Writers queue; when it's your turn, you re-read everything fresh.
-
-**Pros**: OS guarantees; no application-level protocol risk.
-**Cons**: `flock` semantics differ across POSIX/macOS/NFS; Node.js has no built-in binding (needs native addon or external process); breaks the "simple advisory lock file" model ADR-0090 adopted deliberately.
-
-**Amendment verdict**: stronger lock does not repair a backend that silently swallows init errors. A properly-queued pure-TS writer still writes to the wrong path.
-
-### D. Central writer process (daemon) — **wrong problem**
-
-One writer process owns `.rvf`; CLI processes send entries via IPC. Eliminates the race by eliminating concurrency.
-
-**Pros**: perfect correctness.
-**Cons**: contradicts ADR-0088 ("daemon in CLI hot path was eliminated in favor of file-based simplicity"); huge scope growth.
-
-**Amendment verdict**: architectural U-turn relative to ADR-0088. Not proportionate given items (a)+(b)+(c) fix the root cause in <200 LOC.
-
-## Recommendation (amended)
+### Recommendation (amended)
 
 Adopt items (a), (b), (c) above as the chosen path — fail-loud native init, unique tmp paths per writer, dedupe RvfBackend per process. Explicit rejections:
 
@@ -366,7 +318,57 @@ Adopt items (a), (b), (c) above as the chosen path — fail-loud native init, un
 - **"Switch to Linux/macOS flock() or fcntl()."** Rejected: contradicts ADR-0090's deliberate simple-advisory-lock choice; introduces OS-binding complexity (Node has no stdlib `flock`, requires native addon or external binary); does not fix backend identity flips.
 - **"Single-writer daemon."** Rejected: contradicts ADR-0088 ("daemon in CLI hot path eliminated in favor of file-based simplicity"); huge scope growth for a bug that has a surgical fix.
 
-## Acceptance criteria
+### Pros and Cons of the alternatives
+
+The alternatives below (A/B/C/D) were authored against the wrong problem — they assumed the merge protocol was missing, which the shipped code contradicts. They are preserved as historical record and a lens on the design space; none of them close the 3-layer backend-identity race identified in §Investigation Findings.
+
+#### A. Read-meta-under-lock + merge + write (original recommended — **wrong problem**)
+
+Every persist under the lock does a `loadFromDisk(mergeOnly=true)` before writing. Closes the inter-process hole deterministically.
+
+* Good, because simple conceptual model ("lock + read-merge-write"); no new file artifacts; preserves WAL compaction semantics.
+* Bad, because double-read cost per persist (but we already hold the lock, so serialized writes amortize it).
+
+**Amendment verdict**: already shipped at lines 1298–1382. Re-proposing it is a no-op.
+
+#### B. WAL-tailing: don't unlink WAL, use offset watermarks — **wrong problem**
+
+Each writer tracks a WAL read offset. Subsequent writers read WAL from their watermark, merge peer entries, advance watermark. WAL never unlinks; compaction rewrites with offset 0.
+
+* Good, because no extra disk reads during persist.
+* Bad, because WAL grows unbounded between full compactions; new "safe compaction" rule required; complicated cross-process offset state.
+
+**Amendment verdict**: doesn't address backend identity flips. If 5 of 6 writers target the main path while 1 targets the sidecar, WAL tailing sees the same mis-partitioned writes.
+
+#### C. OS-level file-lock primitive (flock / fcntl) + single-writer serialization — **wrong problem**
+
+Use `flock` instead of the current PID-based `.rvf.lock`. Writers queue; when it's your turn, you re-read everything fresh.
+
+* Good, because OS guarantees; no application-level protocol risk.
+* Bad, because `flock` semantics differ across POSIX/macOS/NFS; Node.js has no built-in binding (needs native addon or external process); breaks the "simple advisory lock file" model ADR-0090 adopted deliberately.
+
+**Amendment verdict**: stronger lock does not repair a backend that silently swallows init errors. A properly-queued pure-TS writer still writes to the wrong path.
+
+#### D. Central writer process (daemon) — **wrong problem**
+
+One writer process owns `.rvf`; CLI processes send entries via IPC. Eliminates the race by eliminating concurrency.
+
+* Good, because perfect correctness.
+* Bad, because contradicts ADR-0088 ("daemon in CLI hot path was eliminated in favor of file-based simplicity"); huge scope growth.
+
+**Amendment verdict**: architectural U-turn relative to ADR-0088. Not proportionate given items (a)+(b)+(c) fix the root cause in <200 LOC.
+
+### Consequences
+
+* Good, because items (a)–(d14) deterministically close the inter-process write convergence race: `diag-rvf-interproc-race.mjs --trials 40` reaches 40/40 PASS at N=2/4/6/8.
+* Good, because every fix honors ADR-0082's no-silent-fallback invariant — losses surface loud rather than silently.
+* Neutral, because item d5 (the `.meta` sidecar dual-write) is superseded by ADR-0154 (RVF storage unification); all other items — including the load-bearing concurrency invariants d11 (fsync-before-rename), d12 (`flock(LOCK_EX)`), d13 (re-entrant JS lock with depth counter), d14 (`create_new` after `flock`) — remain active.
+
+### Confirmation
+
+This ADR is **Implemented** (2026-04-20) — all of items a+b+c+d1+d2+d3+d4+d5+d6+d8+d10+d11 landed; t3-2-concurrent passes deterministically in full acceptance across three consecutive runs (2026-04-19 10:45Z, 2026-04-19 12:46Z, 2026-04-20 10:43Z). BUG-0008 closed. Status returned to **Implemented** (2026-05-01) after the Swarm-2 d12+d13+d14 fix produced 40/40 PASS on the diag matrix.
+
+#### Acceptance criteria
 
 This ADR is Implemented when:
 
@@ -397,73 +399,6 @@ This ADR is Implemented when:
 - **Factory cache is per-process; d1 is what closes the inter-process race.** Item (c)'s module-scope `Map<resolvedPath, RvfBackend>` in `storage-factory.ts` lives in each process's own heap — it provides **zero** inter-process coordination. d2 activates this cache on the CLI hot path (reducing 2×-init → 1×-init per process), but the N-process race is closed by d1's advisory-lock serialization, not by any cache. Architects reviewing future ADRs must not conflate "backend-instance dedup" (c/d2, in-process) with "backend-init serialization" (d1, inter-process) — they address orthogonal failure modes. Documented explicitly to prevent future regressions where the cache is assumed to cover inter-process scenarios.
 - **d3 adds an extra mkdir syscall per cold-start `acquireLock`.** `mkdir(dirname(lockPath), {recursive:true})` silently succeeds (no-ops internally) when the directory already exists — this is the correct behavior, but it adds one extra filesystem syscall per lock acquire. Measured cost: <1ms on APFS (cache-warm) and ~1-3ms on first-ever invocation (cache-cold directory). This is well under the d1 risk bullet's 10-50ms budget and several orders of magnitude under the 5s `acquireLock` wall-clock budget. Acceptable. Mitigation not required; if future profiling ever surfaces this as a hot-path cost, the mkdir can be gated behind a "has-run-once-in-this-process" flag — but the current price is too small to justify the complexity.
 - **d4's stricter invariant converts silent losses into loud cold-start retries.** The pre-d4 behavior accepted zero-byte and unknown-magic states as "pure-TS owns this" and silently fell through; now those states throw. For the primary happy path (d1 serializes init, so no peer is ever mid-write at peek time), this throw never fires — d4 is a defense-in-depth invariant. For the edge case where d1 somehow fails to fully serialize (lock stolen by a stale-PID detection that mis-fires, for example), d4's throw surfaces the bug as a noisy `cli memory store` exit=1 rather than a silent `entryCount<N`. The net is **fewer silent corruptions at the cost of more loud cold-start retries** (the CLI caller should retry the full `cli memory store` on such a throw; acceptance-check harnesses already tolerate this via their subprocess-failure counting). **Mitigation**: d3 + d4 land together in the same commit — d3 prevents the vast majority of zero-byte files d4 rejects, so the practical throw rate is negligible. If d4 throws are observed above 1% of trials at N=8 in AC #15 validation, re-open the lock-ordering question before adopting d4 in production.
-
-## References
-
-- ADR-0094 Open Item #1 (the parent)
-- ADR-0090 B7 (the adjacent in-process fix and its regression guard)
-- BUG-0008 in `docs/bugs/coverage-ledger.md`
-- Queen synthesis `/tmp/hive/queen-synthesis.md` §F row 1 (the fork decision)
-- Fork commit `196100171` (partial always-compact fix; establishes the baseline this ADR supersedes)
-
-## Investigation Findings (2026-04-17)
-
-Ran Sprint-1 root-cause investigation against `@sparkleideas/cli@3.5.58-patch.136` in a fresh `/tmp/ruflo-s1-probe-*` init'd project with a traced copy of the published `@sparkleideas/memory/dist/rvf-backend.js`. The findings below are append-only and supersede the ADR's original failure-mode narrative (which was authored before the fork's current source was inspected).
-
-### Reproduction
-
-At N=6 parallel `cli memory store` subprocesses with unique keys, observed final state:
-
-- `.swarm/memory.rvf` — magic `RVF\0` (pure-TS format), ~33 KB
-- `.swarm/memory.rvf.meta` — magic `RVF\0`, header `entryCount=1` (5 entries lost)
-- 5 of 6 CLI subprocesses exit 0 reporting "Data stored successfully"; 1 subprocess crashes fail-loud with `RVF storage at .swarm/memory.rvf is corrupt: bad magic bytes (expected 'RVF\0', got "SFVR")` in one run, or `ENOENT ... rename '.swarm/memory.rvf.tmp' -> '.swarm/memory.rvf'` in another. **Both secondary failure modes appear non-deterministically** alongside the entryCount=1 primary loss. N=1 serial always succeeds. The in-process B7 diag passes 10/10 (already noted in B7). The CLI path is `.swarm/memory.rvf*`, not `.claude-flow/data/memory/.rvf*` as the ADR context paragraph claimed.
-
-### Source state — stated fix already shipped
-
-`forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts` HEAD (`196100171`):
-
-- `mergePeerStateBeforePersist()` (lines 1298–1382) **already re-reads `.meta` or main RVF before replaying WAL**, under the advisory lock, with `seenIds`-gated set-if-absent semantics (line 1354). The ADR §Decision "Re-read `.meta` + merge WAL" protocol is implemented verbatim.
-- `persistToDiskInner` (line 1404) calls `mergePeerStateBeforePersist()` before every write.
-- `compactWal` (line 1040) serializes persists under the advisory lock.
-- `store()` (line 236) invokes `compactWal()` after every entry (always-compact, ADR-0090 B7 followup).
-
-Quoted call-graph: `store → appendToWal → compactWal → acquireLock → persistToDiskInner → mergePeerStateBeforePersist → readFile(.meta|main) + replayWal → writeFile(tmp) → rename(tmp, target) → unlink(wal) → releaseLock`.
-
-### Real root cause — backend-identity flip + shared tmp path
-
-Trace of 6 concurrent subprocesses (each instruments `tryNativeInit`, `persistToDiskInner`, `rename`) yields the dispositive timeline:
-
-1. **Two RvfBackend instances per CLI invocation.** Each `cli memory store` runs `tryNativeInit` twice — once with `dbPath=.swarm/memory.rvf` (relative), once with the absolute resolved path. Two independent `RvfDatabase.open`/`.create` calls race inside one process before the first persist. Likely two call sites (one via MemoryManager, one via controller registry); not decomposed here.
-2. **Backend identity flips per process.** At persist time, only **1 of 6** subprocesses has `nativeDb=true`; the other 5 have `nativeDb=false`. The native open silently failed for them — swallowed by `tryNativeInit`'s `catch {}` at line 635. Hypothesis: when pid A's `RvfDatabase.create` writes SFVR bytes mid-flight and pid B's `RvfDatabase.open` races, the open sees a half-written header and throws, which tryNativeInit swallows (ADR-0082 violation — silent fallback to pure-TS when native was expected).
-3. **Mixed-backend writes on the same physical file.** The 1 native writer writes pure-TS metadata to `memory.rvf.meta` (via `metadataPath` → sidecar). The 5 pure-TS writers write `RVF\0` bytes to `memory.rvf` **directly** (their `metadataPath` returns the main path). The two writer classes are on disjoint paths and `mergePeerStateBeforePersist` reads only the one it owns. They never see each other's writes.
-4. **Shared tmp path.** Line 1450: `const tmpPath = target + '.tmp'`. All writers targeting the same `target` race on the same `.tmp` file. When writer A's `rename(tmp, target)` wins, writer B's subsequent `rename(tmp, target)` fails with `ENOENT` because B's tmp file was never its own. Observed as the `ENOENT ... rename` error above.
-5. **Fail-loud corruption path fires on SFVR reader racing SFVR writer.** `loadFromDisk`'s NATIVE_MAGIC peek (line 1099) sees SFVR, switches to sidecar-only, but a peer writer's in-flight SFVR file can appear valid-magic-but-short, tripping the "bad magic" path. Observed in the N=6 crash log.
-
-**The ADR's narrative ("WAL-only merge, miss compacted .meta") is obsolete.** The shipped merge code already does what the ADR recommends. The actual bug is two layers above: (a) native initialization is not inter-process safe and silently falls back, (b) pure-TS and native writers use divergent paths, so the merge closes the in-process hole but not the cross-backend one.
-
-### Ruling on D1–D6
-
-- **D1 (rename/fsync gap)** — **NOT the primary bug.** APFS rename is atomic per the atomicity probe spec; the shipped `datasync` on parent dir (line 1458) covers power-loss durability. Tmp-path collision (point 4 above) is the real rename-path concern. **Defer D1 as an amendment; replace with "unique tmp path per process"** (e.g. `target + '.tmp.' + process.pid + '.' + Date.now()`).
-- **D2 (seenIds poisoning)** — **No evidence.** All observed failures are upstream of `seenIds`; the merge path isn't even reached for the lost entries because they were written to a different on-disk path. **Accept as written (no change).**
-- **D3 (WAL after .meta double-count)** — **Safe as written.** replayWal's id gate protects. **Accept.**
-- **D4 (native sidecar interplay)** — **This IS the primary bug, worse than ADR described.** The ADR assumed "one backend wins per persist." In practice the backend flips per-process-per-invocation based on `tryNativeInit` success/failure. **Amend: native must either succeed everywhere or nowhere; pure-TS and native cannot coexist on the same `.rvf` path set concurrently.** Recommend forcing the backend choice at process start and failing loud if native unavailable (remove line-635 silent-catch).
-- **D5 (atomicity scope single-phase)** — **Accept as written** but force unique tmp path.
-- **D6 (fsync strategy)** — **Not the bug.** `datasync` already present; no evidence durability is the loss mode. **Accept as written, keep.**
-
-### Architect recommendation
-
-**Amendment needed.** The current ADR §Decision is correct but insufficient; it fixes a bug that is already fixed and does not close the real hole. The amendment must add:
-
-1. **Fail-loud on native init failure after first success.** Remove the silent `catch {}` at `tryNativeInit` line 635 once a first process has written SFVR. Define an invariant: if the main `.rvf` file exists with `SFVR` magic, every subsequent process MUST either load native or refuse to write. Pure-TS fallback on SFVR-present is silent data loss (ADR-0082 violation).
-2. **Unique tmp paths.** `target + '.tmp.' + process.pid + '.' + counter` to eliminate cross-process tmp collisions.
-3. **De-duplicate RvfBackend instances per process.** The 2× `tryNativeInit` trace indicates double-init. Fix at call sites (likely registry + MemoryManager both instantiate).
-4. **Out-of-scope probe** `scripts/diag-rvf-interproc-race.mjs` (delivered, see below) already detects the loss non-deterministically via subprocess sampling. The rename-atomicity probe and fsync-durability probe from §Out-of-Scope Probe remain valuable as pure disproofs but are lower-priority given the real bug isn't rename atomicity.
-
-The implementer blocked on this ADR should NOT touch `mergePeerStateBeforePersist`. They must touch `tryNativeInit` (fail-loud), the persist path (unique tmp), and the backend construction call sites (de-dupe). Sprint scope should expand accordingly.
-
-### Probe delivered
-
-`scripts/diag-rvf-interproc-race.mjs` — spawns N unique-key `cli memory store` subprocesses, inspects `.swarm/memory.rvf.meta` for `entryCount === N`, exits 1 on loss. Uses the installed CLI (`node_modules/.bin/cli`) against Verdaccio. Correct meta path hard-coded at line 91 (empirically validated). Usable from cascade as `node scripts/diag-rvf-interproc-race.mjs 6 3` (N=6, 3 iterations). The B2 acceptance-bar target is 40/40 at N=2/4/8 across 3 days.
 
 ## Meta-Regression Probe (2026-04-17 — Sprint-1 probe-writer)
 
@@ -525,6 +460,65 @@ AND `tests/unit/adr0086-rvf-integration.test.mjs` Groups 6+7 both green. Any one
 ### Scope note
 
 The fully-mechanized reverter script (`scripts/verify-rvf-meta-regression.sh --experimental`) was **descoped from Sprint 1** by the probe-writer per the ADR-0098 §E scope discipline: rollback experiments belong to Sprint-2 tooling, not S1 probe delivery. Implementers verifying items (a)/(b)/(c) during their own development loop should perform these rollbacks manually as documented above; the diag script's `--help` text points here for the canonical regression-verification procedure.
+
+## Investigation Findings (2026-04-17)
+
+Ran Sprint-1 root-cause investigation against `@sparkleideas/cli@3.5.58-patch.136` in a fresh `/tmp/ruflo-s1-probe-*` init'd project with a traced copy of the published `@sparkleideas/memory/dist/rvf-backend.js`. The findings below are append-only and supersede the ADR's original failure-mode narrative (which was authored before the fork's current source was inspected).
+
+### Reproduction
+
+At N=6 parallel `cli memory store` subprocesses with unique keys, observed final state:
+
+- `.swarm/memory.rvf` — magic `RVF\0` (pure-TS format), ~33 KB
+- `.swarm/memory.rvf.meta` — magic `RVF\0`, header `entryCount=1` (5 entries lost)
+- 5 of 6 CLI subprocesses exit 0 reporting "Data stored successfully"; 1 subprocess crashes fail-loud with `RVF storage at .swarm/memory.rvf is corrupt: bad magic bytes (expected 'RVF\0', got "SFVR")` in one run, or `ENOENT ... rename '.swarm/memory.rvf.tmp' -> '.swarm/memory.rvf'` in another. **Both secondary failure modes appear non-deterministically** alongside the entryCount=1 primary loss. N=1 serial always succeeds. The in-process B7 diag passes 10/10 (already noted in B7). The CLI path is `.swarm/memory.rvf*`, not `.claude-flow/data/memory/.rvf*` as the ADR context paragraph claimed.
+
+### Source state — stated fix already shipped
+
+`forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts` HEAD (`196100171`):
+
+- `mergePeerStateBeforePersist()` (lines 1298–1382) **already re-reads `.meta` or main RVF before replaying WAL**, under the advisory lock, with `seenIds`-gated set-if-absent semantics (line 1354). The ADR §Decision "Re-read `.meta` + merge WAL" protocol is implemented verbatim.
+- `persistToDiskInner` (line 1404) calls `mergePeerStateBeforePersist()` before every write.
+- `compactWal` (line 1040) serializes persists under the advisory lock.
+- `store()` (line 236) invokes `compactWal()` after every entry (always-compact, ADR-0090 B7 followup).
+
+Quoted call-graph: `store → appendToWal → compactWal → acquireLock → persistToDiskInner → mergePeerStateBeforePersist → readFile(.meta|main) + replayWal → writeFile(tmp) → rename(tmp, target) → unlink(wal) → releaseLock`.
+
+### Real root cause — backend-identity flip + shared tmp path
+
+Trace of 6 concurrent subprocesses (each instruments `tryNativeInit`, `persistToDiskInner`, `rename`) yields the dispositive timeline:
+
+1. **Two RvfBackend instances per CLI invocation.** Each `cli memory store` runs `tryNativeInit` twice — once with `dbPath=.swarm/memory.rvf` (relative), once with the absolute resolved path. Two independent `RvfDatabase.open`/`.create` calls race inside one process before the first persist. Likely two call sites (one via MemoryManager, one via controller registry); not decomposed here.
+2. **Backend identity flips per process.** At persist time, only **1 of 6** subprocesses has `nativeDb=true`; the other 5 have `nativeDb=false`. The native open silently failed for them — swallowed by `tryNativeInit`'s `catch {}` at line 635. Hypothesis: when pid A's `RvfDatabase.create` writes SFVR bytes mid-flight and pid B's `RvfDatabase.open` races, the open sees a half-written header and throws, which tryNativeInit swallows (ADR-0082 violation — silent fallback to pure-TS when native was expected).
+3. **Mixed-backend writes on the same physical file.** The 1 native writer writes pure-TS metadata to `memory.rvf.meta` (via `metadataPath` → sidecar). The 5 pure-TS writers write `RVF\0` bytes to `memory.rvf` **directly** (their `metadataPath` returns the main path). The two writer classes are on disjoint paths and `mergePeerStateBeforePersist` reads only the one it owns. They never see each other's writes.
+4. **Shared tmp path.** Line 1450: `const tmpPath = target + '.tmp'`. All writers targeting the same `target` race on the same `.tmp` file. When writer A's `rename(tmp, target)` wins, writer B's subsequent `rename(tmp, target)` fails with `ENOENT` because B's tmp file was never its own. Observed as the `ENOENT ... rename` error above.
+5. **Fail-loud corruption path fires on SFVR reader racing SFVR writer.** `loadFromDisk`'s NATIVE_MAGIC peek (line 1099) sees SFVR, switches to sidecar-only, but a peer writer's in-flight SFVR file can appear valid-magic-but-short, tripping the "bad magic" path. Observed in the N=6 crash log.
+
+**The ADR's narrative ("WAL-only merge, miss compacted .meta") is obsolete.** The shipped merge code already does what the ADR recommends. The actual bug is two layers above: (a) native initialization is not inter-process safe and silently falls back, (b) pure-TS and native writers use divergent paths, so the merge closes the in-process hole but not the cross-backend one.
+
+### Ruling on D1–D6
+
+- **D1 (rename/fsync gap)** — **NOT the primary bug.** APFS rename is atomic per the atomicity probe spec; the shipped `datasync` on parent dir (line 1458) covers power-loss durability. Tmp-path collision (point 4 above) is the real rename-path concern. **Defer D1 as an amendment; replace with "unique tmp path per process"** (e.g. `target + '.tmp.' + process.pid + '.' + Date.now()`).
+- **D2 (seenIds poisoning)** — **No evidence.** All observed failures are upstream of `seenIds`; the merge path isn't even reached for the lost entries because they were written to a different on-disk path. **Accept as written (no change).**
+- **D3 (WAL after .meta double-count)** — **Safe as written.** replayWal's id gate protects. **Accept.**
+- **D4 (native sidecar interplay)** — **This IS the primary bug, worse than ADR described.** The ADR assumed "one backend wins per persist." In practice the backend flips per-process-per-invocation based on `tryNativeInit` success/failure. **Amend: native must either succeed everywhere or nowhere; pure-TS and native cannot coexist on the same `.rvf` path set concurrently.** Recommend forcing the backend choice at process start and failing loud if native unavailable (remove line-635 silent-catch).
+- **D5 (atomicity scope single-phase)** — **Accept as written** but force unique tmp path.
+- **D6 (fsync strategy)** — **Not the bug.** `datasync` already present; no evidence durability is the loss mode. **Accept as written, keep.**
+
+### Architect recommendation
+
+**Amendment needed.** The current ADR §Decision is correct but insufficient; it fixes a bug that is already fixed and does not close the real hole. The amendment must add:
+
+1. **Fail-loud on native init failure after first success.** Remove the silent `catch {}` at `tryNativeInit` line 635 once a first process has written SFVR. Define an invariant: if the main `.rvf` file exists with `SFVR` magic, every subsequent process MUST either load native or refuse to write. Pure-TS fallback on SFVR-present is silent data loss (ADR-0082 violation).
+2. **Unique tmp paths.** `target + '.tmp.' + process.pid + '.' + counter` to eliminate cross-process tmp collisions.
+3. **De-duplicate RvfBackend instances per process.** The 2× `tryNativeInit` trace indicates double-init. Fix at call sites (likely registry + MemoryManager both instantiate).
+4. **Out-of-scope probe** `scripts/diag-rvf-interproc-race.mjs` (delivered, see below) already detects the loss non-deterministically via subprocess sampling. The rename-atomicity probe and fsync-durability probe from §Out-of-Scope Probe remain valuable as pure disproofs but are lower-priority given the real bug isn't rename atomicity.
+
+The implementer blocked on this ADR should NOT touch `mergePeerStateBeforePersist`. They must touch `tryNativeInit` (fail-loud), the persist path (unique tmp), and the backend construction call sites (de-dupe). Sprint scope should expand accordingly.
+
+### Probe delivered
+
+`scripts/diag-rvf-interproc-race.mjs` — spawns N unique-key `cli memory store` subprocesses, inspects `.swarm/memory.rvf.meta` for `entryCount === N`, exits 1 on loss. Uses the installed CLI (`node_modules/.bin/cli`) against Verdaccio. Correct meta path hard-coded at line 91 (empirically validated). Usable from cascade as `node scripts/diag-rvf-interproc-race.mjs 6 3` (N=6, 3 iterations). The B2 acceptance-bar target is 40/40 at N=2/4/8 across 3 days.
 
 ## Investigation Findings (2026-04-17/18, Pass 2)
 
@@ -806,7 +800,7 @@ if (fileExists(this.config.databasePath)) {
 - **Usage** (unchanged): `node scripts/diag-rvf-persist-trace.mjs [N] [trials]`.
 - **Reproducing the two failure modes**:
   - Cold-start ENOENT: `node scripts/diag-rvf-persist-trace.mjs 6 20` typically shows 3-6 failures with `entryCount=null`, stderr containing `factory-createStorage-catch {"code":"ENOENT"..."memory.rvf.lock"}`.
-  - Silent mixed-backend loss: same command. Look for trials with `entryCount=3..5` and grep those writer traces for `tryNativeInit-return-false {"reason":"pure-TS-owned-file"}`. Expect the peek-result trace on that writer to show `bytesRead<4` or `peekStr: "RVF\u0000"`.
+  - Silent mixed-backend loss: same command. Look for trials with `entryCount=3..5` and grep those writer traces for `tryNativeInit-return-false {"reason":"pure-TS-owned-file"}`. Expect the peek-result trace on that writer to show `bytesRead<4` or `peekStr: "RVF "`.
 - **Runtime**: ~6-10s per trial at N=6. 20 trials ≈ 2-3 minutes wall.
 - **Log samples**: `/tmp/pass3-probe-n6-15v3.log` (15 trials including t9's silent 3/6 loss), `/tmp/pass3-probe-n6-20v2.log` (20 trials including t6's 4/6 loss). Extracted t10 mixed-backend detail at `/tmp/t10-trace.log`.
 
@@ -1024,3 +1018,36 @@ That clause is **superseded**. In every shipped configuration the native binding
 **Cross-reference.** The two diagnosed-failing tests (ADR-0090 A4 integration, ADR-0154 Phase 6b) are the canonical examples; the prior agent's handover (`docs/audits/2026-05-19-soundness-audit/REMEDIATION-IMPLEMENTATION-HANDOVER.md`) misdiagnosed both as "real fork concurrency bug, ruvector/RVF native code" when in fact both writer subprocesses had completed without ever reaching the native code path. Investigative diagnostics added to `adr0154-cross-process-concurrent.test.mjs` during this session (and reverted at the end) confirmed all 600 entries persisted to `memory.rvf.meta` (legacy sidecar) and zero bytes to `memory.rvf` (native target).
 
 **Status**: this amendment ships as a tightening of item (a)'s pre-condition handling. ADR-0095 remains **Implemented**; the d11–d14 invariants are untouched.
+
+## Changelog
+
+- **2026-04-17 (authored)** — Proposed "read-meta-under-lock + merge + write" protocol.
+- **2026-04-17 (amended, same day)** — Sprint-1 investigator (`f4dd1ec`) established that the proposed protocol is already implemented at lines 1298–1382 and does not close the observed inter-process data-loss bug. Real root cause is a **3-layer backend flip race**: (1) silent catch in `tryNativeInit` (line 635) masks native-init races so 5 of 6 concurrent writers silently fall back to pure-TS (ADR-0082 violation); (2) native writers target the `.meta` sidecar while pure-TS writers target the main `.rvf` path — disjoint write targets mean the peer-merge never sees peer writes; (3) shared `.rvf.tmp` path at line 1450 causes cross-process `rename()` ENOENT collisions and transient SFVR-corruption reads. Amended §Decision replaces the merge-protocol proposal with a three-item program: fail-loud on native init once SFVR bytes exist, per-writer unique tmp paths, and dedupe RvfBackend construction per process. See §Investigation Findings (appended below) for the dispositive trace.
+- **2026-04-18 (amended, Sprint-1.2 Pass-2)** — Pass-2 investigator (`ef5d357`) validated items (a)+(b)+(c) landed in `@sparkleideas/cli@3.5.58-patch.137` (fork `9c5809324`), confirmed in-process N=6 now PASSES, but subprocess N=6 still fails with `entryCount=1/6`. Root cause of the residual loss is **H7**: the native `RvfDatabase` holds an exclusive OS-level lock on the SFVR file during `open`/`create`. At N=6 only one writer acquires the native lock; the other 5 fail LOUDLY (item a working as designed) with `RVF error 0x0300: LockHeld` or `0x0303: FsyncFailed` inside `initialize()` — **before** any `store()` call, so the merge protocol is never reached. Item (c)'s factory cache does NOT fire on the CLI hot path because `cli/memory-router.ts:435-443`'s private `createStorage` bypasses `@sparkleideas/memory/storage-factory`. Amendment appends items **d1** (serialize `tryNativeInit` through the advisory lock) and **d2** (route the CLI's private `createStorage` through the shared factory). Items (a)/(b)/(c) stand unchanged.
+- **2026-04-18 (amended, Sprint-1.3 Pass-3)** — Pass-3 investigator (`b16efcc`) validated items (a)+(b)+(c)+(d1)+(d2) landed in `@sparkleideas/cli@3.5.58-patch.139` (fork `3fe71b9c7`). 40-trial matrix now shows 23/40 PASS (up from 0/3 at Pass-2 baseline) — substantial progress, but 17/40 FAIL survive as two distinct residual modes. Error-unwrap instrumentation on `storage-factory.ts` dispositively identifies **H8** (17/17 cold-start failures are `ENOENT` on `.swarm/memory.rvf.lock` because `acquireLock` at `rvf-backend.ts:882` does `writeFile(…, {flag:'wx'})` without first `mkdir(dirname(lockPath),{recursive:true})`) and **H14** (rare silent mixed-backend loss at `entryCount=3..5/6`: `tryNativeInit`'s "pure-TS-owned-file" branch at `rvf-backend.ts:753-764` silently accepts zero-byte files and already-clobbered `RVF\0` files as legitimate pure-TS targets, then pure-TS writes land on `.rvf` while native writes land on `.meta` — disjoint-target merge sees only one population). Amendment appends items **d3** (acquireLock mkdirs dirname before wx-open) and **d4** (tighten tryNativeInit invariant so only genuine `RVF\0` qualifies as pure-TS-owned; short reads and unknown magic throw). Secondary fix bundled with d3/d4: `storage-factory.ts:154` rewrap preserves `err.cause` so the opaque `[StorageFactory] Failed to create storage backend` message stops masking the real ENOENT. Items (a)/(b)/(c)/(d1)/(d2) stand unchanged.
+
+- **2026-05-01 (amended, Swarm-2 final fix — d12+d13+d14)** — Despite the 2026-04-20 "Implemented" status, latent contention reappeared after the 2026-04-29 upstream-merge cycle: cli@patch.282 baseline produced **0/40** on `scripts/diag-rvf-interproc-race.mjs --trials 40` (covering N=2,4,6,8 × 10). Two independent 10-agent swarms (one per round) and two cycles of fix-and-verify converged on the actual root cause: **the native `RvfStore::create` path opens `path` with `OpenOptions::create_new(true)` BEFORE acquiring `WriterLock::acquire(path)`** (`forks/ruvector/crates/rvf/rvf-runtime/src/store.rs:83-90`). Two cold-start peers race the bare-file create unsynchronised; the loser gets EEXIST mapped to `FsyncFailed (0x0303)` and dies fatally at attempts=1 (the JS-side retry budget only handles `LockHeld 0x0300`). Empirically confirmed by instrumented `RVF_DIAG=1` capture of failed trial t4 at N=4 showing writer-3 stderr `RVF error 0x0303: FsyncFailed` at `attempts=1, elapsed=0ms` while writer-1 wrote `.meta` cleanly — exactly the asymmetry that produced "fast 1.5s failures" vs "slow 3.5s passes" and "N=8 perfect / N≤6 leaks" pattern. Items: **d12** (replace native `WriterLock` O_CREAT|O_EXCL PID-file design with kernel `flock(LOCK_EX)` on a never-unlinked sibling + process-local refcount map; `forks/ruvector/crates/rvf/rvf-runtime/src/locking.rs` rewritten); **d13** (JS `.jslock` made re-entrant via `_lockHeldDepth` counter so `store()` holds the lock across in-mem mutate + WAL append + WAL compact in one atomic critical section); **d14** (native `RvfStore::create` reordered to take flock BEFORE `OpenOptions::create_new`; if file exists post-flock, return `LockHeld` so JS dispatcher in `tryNativeInit` retries as `RvfDatabase.open()` which goes through the same flock queue). Result: cli@patch.302 produces **40/40 PASS** on the diag matrix at all N=2,4,6,8 with no silent loss. Items (a)/(b)/(c)/(d1)/(d2)/(d3)/(d4)/(d5)/(d6)/(d8)/(d10)/(d11) stand unchanged. Status returns to **Implemented** (2026-05-01).
+
+- **2026-05-02 (test marker amendment, ADR-0113 unskip program)** — The "subprocess N=6" test (`tests/unit/adr0086-rvf-integration.test.mjs:632`) carried a Pass 2 marker check asserting that `this.acquireLock(` appears BEFORE `this.reapStaleTmpFiles(` within the published dist's `initialize()` body. That ordering was the **d1 design** (lock the entire init sequence). The 2026-05-01 swarm-2 amendment INVERTED that ordering — the new design runs `reapStaleTmpFiles` FIRST (no JS lock; idempotent + race-tolerant) and `tryNativeInit` SECOND (uses the new kernel-flock-based native lock from d12), with `acquireLock` scoped THIRD around `loadFromDisk` only. The d1-style "lock everything around the native flock acquire" pattern was itself the t3-2 silent-loss vector ("writer A holds JS lock while waiting for native flock, blocking all peers' JS lock acquisitions"). Since `cli@patch.302` (and the currently-published `@sparkleideas/memory@3.0.0-alpha.13-patch.317`) ships the swarm-2 ordering, the d1-ordering marker check returns FALSE and the test silently skipped via `SKIP_T3_2_BOOTSTRAP=1`. **Resolution:** marker check dropped (commit `3f74b37`); only the Pass 1 markers (`reapStaleTmpFiles` + `_tmpCounter`, present in both d1 and swarm-2 dists) remain. The test now runs end-to-end against the swarm-2 dist and PASSES (entryCount === 6 in 38s standalone). Both designs satisfy the entryCount invariant; gating on a particular design's source-text ordering was wrong. The Pass 2 marker check was an artifact of the d1 era and should not have survived the swarm-2 amendment.
+
+- **2026-05-07 (sidecar workaround flagged as obsolete — see ADR-0154)** — A 4-agent adversarial swarm investigation established that the **`.meta` sidecar workaround introduced by item d5 (2026-04-18)** has outlived the bug that motivated it. The underlying `RvfStore::create` race that drove the dual-write design was FIXED by items d12+d13+d14 on 2026-05-01 (40/40 PASS). The `.meta` sidecar code remains in `rvf-backend.ts` but is no longer load-bearing — it now produces its own bug class (orphan-numId, asymmetric writer/reader fixed in ADR-0153 R6, atomic-rename ENOENT fixed in ADR-0153 R7, the entire HM-style legacy migration). Upstream design (rUv's RuVector ADR-029) and the fork's own original ADR-0057 plan both specified single-file storage with `META_SEG (0x07)` segments inside `.rvf`. **The dual-file pattern is rUv-defined fragmentation that RVF was designed to ELIMINATE.** ADR-0154 supersedes the dual-write portion of this ADR and proposes unification: extend `rvf-node`'s `parse_metadata_entry` with a `"bytes"` branch (~5 LoC), pass `RvfMetadataEntry[]` as the third arg to the existing `ingestBatch(vectors, ids, metadata)` napi call, delete the entire `.meta` code path. This ADR's scope (the fixed `RvfStore::create` race) stays Implemented; the sidecar artefact migrates to ADR-0154 for resolution.
+
+- **2026-05-07 (ADR-0154 implementation log — partial supersession scoped)** — ADR-0154 shipped with the gated approach: item **d5 (`.meta` sidecar dual-write) is now formally superseded** — `.meta` is still written today as a supplementary durable store for entries without embeddings, but the HM-class data loss bug class is closed because ADR-0154 Phase 4 makes `loadFromDisk` prefer native META_SEG entries over `.meta` when both exist. Hard removal of `.meta` is gated on either runtime support for vector-less metadata segments OR an embedding-pipeline guarantee — both deferred per ADR-0154 follow-up tasks.
+
+  **Items d11–d14 carry forward** as active load-bearing pre-conditions of ADR-0154's unified storage path:
+  - **d11 (fsync-before-rename)** — every atomic-rename target must fsync before rename. ADR-0154 inherits this for the META_SEG write path (which uses `RvfDatabase::ingestBatch` → `write_meta_seg` → segment writer's two-fsync protocol).
+  - **d12 (`flock(LOCK_EX)`)** — kernel-level cross-process exclusion at the native binding layer. ADR-0154 relies on this for cross-process META_SEG durability — `t3-2-concurrent` (N=6 concurrent ingestBatch + metadata) PASSES via this invariant.
+  - **d13 (re-entrant JS lock with depth counter)** — `_lockHeldDepth` makes `store()` an atomic critical section across in-mem mutate + WAL append + WAL compact. ADR-0154 inherits unchanged.
+  - **d14 (`create_new` after `flock`)** — `RvfStore::create` orders the kernel flock acquisition BEFORE `OpenOptions::create_new`. ADR-0154's META_SEG write path uses `RvfDatabase.create/open` which goes through the same code path; without d14, the cold-start race would re-emerge.
+
+  Validation: ADR-0154's pipeline run (2026-05-07 09:50Z) showed `t3-2-concurrent` PASS at 674/674 acceptance. The d11–d14 invariants were not regressed by ADR-0154's META_SEG additions. They MUST stay active for any future RVF storage-layer ADR.
+
+## More Information
+
+Original status: **Implemented** (2026-04-20) — all of items a+b+c+d1+d2+d3+d4+d5+d6+d8+d10+d11 landed; t3-2-concurrent passes deterministically in full acceptance across three consecutive runs (2026-04-19 10:45Z, 2026-04-19 12:46Z, 2026-04-20 10:43Z). BUG-0008 closed. **Partial supersession 2026-05-07**: item **d5 (sidecar dual-write)** is superseded by ADR-0154 (RVF storage unification). All other items — including the load-bearing concurrency invariants **d11 (fsync-before-rename), d12 (`flock(LOCK_EX)`), d13 (re-entrant JS lock with depth counter), d14 (`create_new` after `flock`)** — remain active. ADR-0154 inherits these as load-bearing pre-conditions and does not retire them; see "ADR-0154 carries forward d11–d14" notes in the changelog entries above.
+
+Dates: 2026-04-17 (authored), 2026-04-17 (amended after Sprint-1 investigation), 2026-04-18 (amended after Sprint-1.2 Pass-2 investigation — items d1+d2 appended), **2026-04-20 (Implemented — d11 fsync-before-rename closed the mega-parallel silent-loss tail)**.
+
+Scope: `v3/@claude-flow/memory/src/rvf-backend.ts` — `tryNativeInit` (line 605), `persistToDiskInner` (line 1384 — specifically the shared-tmp-path at line 1450), backend construction call sites (MemoryManager + controller registry). `mergePeerStateBeforePersist` is explicitly **out of scope** for this ADR — the shipped implementation (lines 1298–1382) already does what the original §Decision proposed.
+
+This ADR was forked from ADR-0094 Open Item #1. It is related to ADR-0086 (Storage Layer), ADR-0090 B7 (in-process multi-writer fix), ADR-0092 (native/pure-TS coexistence), ADR-0082 (no silent fallbacks), ADR-0088 (no daemon in CLI hot path), and BUG-0008 (ledger). Additional references: ADR-0090 B7 (the adjacent in-process fix and its regression guard), BUG-0008 in `docs/bugs/coverage-ledger.md`, Queen synthesis `/tmp/hive/queen-synthesis.md` §F row 1 (the fork decision), and fork commit `196100171` (partial always-compact fix; establishes the baseline this ADR supersedes). The `.meta` sidecar dual-write (item d5) is superseded by ADR-0154 (RVF storage unification).

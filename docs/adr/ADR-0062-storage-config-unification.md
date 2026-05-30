@@ -1,11 +1,15 @@
-# ADR-0062: Storage & Configuration Unification
+---
+status: superseded
+date: 2026-04-05
+tags: [storage, config, embedding, dimension]
+supersedes: []
+depends-on: [ADR-0061]
+implements: []
+---
 
-- **Status**: **Implemented (2026-05-03)** — initial unification landed; **superseded by ADR-0063** (post-implementation audit + remediation).
-- **Date**: 2026-04-05
-- **Deciders**: 8-agent analysis swarm + hive-mind review
-- **Methodology**: Deep source audit across 4 forks (ruflo, agentic-flow, ruv-FANN, ruvector)
+# Storage & Configuration Unification
 
-## Context
+## Context and Problem Statement
 
 An 8-agent swarm audited all storage settings, embedding configuration, HNSW parameters, cache/TTL values, SQLite tuning, WASM/native config, and cross-component compatibility across the controller pipeline. The audit found **15 issues** including 3 critical, 3 high, 5 medium, and 4 low severity.
 
@@ -43,7 +47,15 @@ The root cause is that the ADR-0052 config-driven embedding framework (`getEmbed
 
 **In practice**: the bridge passes 384 to the registry, and AgentDB resolves 768 from `getEmbeddingConfig()`. Controllers created by the registry get 384-dim zero-vector stubs while AgentDB's own controllers use 768-dim real embeddings. Currently dormant but fragile.
 
-## Decision
+## Considered Options
+
+* Unify storage and configuration via a prioritized fix plan (P0-P3) executed incrementally against the forks (chosen).
+
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "Unify storage and configuration via a prioritized fix plan (P0-P3)", because the issues are independent and can be addressed incrementally, fixing the most correctness-critical items (race condition, dimension mismatch, data loss) first.
 
 ### Priority 0 — Must Fix (blocks correctness)
 
@@ -264,22 +276,22 @@ case 'selfLearningRvfBackend': {
 | `controller-registry.ts:1135` | 'cli-default' | Federated agent ID |
 | `cache-manager.ts:399` | 60000 | Cache cleanup interval |
 
-## Consequences
+### Consequences
 
-### Positive
+#### Positive
 
-- Documents the full dimension split across the pipeline for the first time
-- Identifies 3 critical bugs (race condition, dimension mismatch, data loss) before they hit production
-- Provides a prioritized fix plan that can be executed incrementally
-- `deriveHNSWParams()` adoption will automatically tune HNSW for the chosen embedding model
-- `busy_timeout` prevents `SQLITE_BUSY` errors in multi-process scenarios
+* Good, because it documents the full dimension split across the pipeline for the first time.
+* Good, because it identifies 3 critical bugs (race condition, dimension mismatch, data loss) before they hit production.
+* Good, because it provides a prioritized fix plan that can be executed incrementally.
+* Good, because `deriveHNSWParams()` adoption will automatically tune HNSW for the chosen embedding model.
+* Good, because `busy_timeout` prevents `SQLITE_BUSY` errors in multi-process scenarios.
 
-### Negative
+#### Negative
 
-- P0-2 (config-driven dimension) changes the default dimension from 384 to 768 if `embeddings.json` or `getEmbeddingConfig()` is wired in — existing databases with 384-dim vectors would become incompatible
-- Migration path needed: detect existing database dimension before applying config
+* Bad, because P0-2 (config-driven dimension) changes the default dimension from 384 to 768 if `embeddings.json` or `getEmbeddingConfig()` is wired in — existing databases with 384-dim vectors would become incompatible.
+* Bad, because a migration path is needed: detect existing database dimension before applying config.
 
-### Risks
+#### Risks
 
 - Changing dimension default in bridge is a **breaking change** for existing `.swarm/memory.db` files with 384-dim embeddings stored as BLOBs
 - `getEmbeddingConfig()` loads `@xenova/transformers` lazily — adding it to the bridge init path may increase cold start
@@ -294,9 +306,8 @@ For P0-2 (dimension unification), the safe approach:
 3. If new database, use `getEmbeddingConfig().dimension` (768 or configured)
 4. Add `dimension` to a `.swarm/config.json` so the choice is sticky
 
-## Related
+## More Information
 
-- **ADR-0052**: Config-driven embedding framework (the intended single source of truth)
-- **ADR-0040**: Shared singletons for NightlyLearner dependencies
-- **ADR-0059**: RVF native storage backend
-- **ADR-0061**: Controller integration completion (predecessor — wired 40 controllers)
+Original status: "Implemented (2026-05-03) — initial unification landed; superseded by ADR-0063 (post-implementation audit + remediation)." This ADR is superseded by ADR-0063 (Storage Audit Remediation), which audited the implementation and remediated bugs found in it. Date: 2026-04-05. Deciders: 8-agent analysis swarm + hive-mind review. Methodology: Deep source audit across 4 forks (ruflo, agentic-flow, ruv-FANN, ruvector).
+
+This decision relates to the following ADRs: ADR-0052 (Config-driven embedding framework — the intended single source of truth); ADR-0040 (Shared singletons for NightlyLearner dependencies); ADR-0059 (RVF native storage backend); and ADR-0061 (Controller integration completion — predecessor, wired 40 controllers).

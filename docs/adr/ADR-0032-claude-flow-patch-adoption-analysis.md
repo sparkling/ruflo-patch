@@ -1,14 +1,15 @@
-# ADR-0032: claude-flow-patch Memory/Learning Patch Adoption Analysis
+---
+status: accepted
+date: 2026-03-15
+tags: [memory, patches, bridge, learning]
+supersedes: []
+depends-on: [ADR-0030, ADR-0031]
+implements: []
+---
 
-## Status
+# claude-flow-patch Memory/Learning Patch Adoption Analysis
 
-Accepted
-
-## Date
-
-2026-03-15
-
-## Context
+## Context and Problem Statement
 
 The `claude-flow-patch` repo (`~/src/claude-flow-patch`) contains 146 runtime patches applied via Python scripts to npx-cached source files. The `ruflo-patch` fork model patches TypeScript source directly and publishes as `@sparkleideas/*`. This ADR analyzes which memory/learning patches from claude-flow-patch should be adopted via the fork approach.
 
@@ -71,9 +72,19 @@ All WM-063 through WM-083 (21 "activation" patches) are **retired** — supersed
 All WM-063 through WM-083 (21 patches) — superseded by bridge-first architecture.
 MM-003, IN-001, IN-002 (3 patches) — superseded by ADR-068 refactor.
 
-## Decision: Patches to Adopt
+## Considered Options
 
-### Priority 1: Foundation (CRITICAL)
+* **Adopt the identified WM patches via the fork approach in three priority tiers (chosen)** — port WM-100/WM-101 (foundation), WM-112/WM-113 (ESM/CJS bridge), and WM-117 (optimization).
+
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "Adopt the identified WM patches via the fork approach in three priority tiers", because WM-100 is the single biggest fix available (without it the ControllerRegistry import fails silently and the entire bridge layer degrades to stubs), and the remaining patches close the ESM/CJS memory gap and add vector compression for scale.
+
+### Patches to Adopt
+
+#### Priority 1: Foundation (CRITICAL)
 
 | Patch | Ops | Target | Description |
 |-------|-----|--------|-------------|
@@ -82,7 +93,7 @@ MM-003, IN-001, IN-002 (3 patches) — superseded by ADR-068 refactor.
 
 **Impact**: Without WM-100, the ControllerRegistry import fails silently and the entire bridge layer degrades to stubs. This is the single biggest fix available — it unlocks all existing bridge wiring.
 
-### Priority 2: ESM/CJS Bridge (HIGH)
+#### Priority 2: ESM/CJS Bridge (HIGH)
 
 | Patch | Ops | Target | Description |
 |-------|-----|--------|-------------|
@@ -91,7 +102,7 @@ MM-003, IN-001, IN-002 (3 patches) — superseded by ADR-068 refactor.
 
 **Impact**: Eliminates memory divergence between CJS hooks (intelligence.cjs, hook-handler.cjs) and ESM bridge (auto-memory-hook.mjs, memory-bridge.ts). Currently these two systems operate independently.
 
-### Priority 3: Optimization (MEDIUM)
+#### Priority 3: Optimization (MEDIUM)
 
 | Patch | Ops | Target | Description |
 |-------|-----|--------|-------------|
@@ -99,9 +110,9 @@ MM-003, IN-001, IN-002 (3 patches) — superseded by ADR-068 refactor.
 
 **Impact**: Storage optimization for large memory stores. Not urgent at current scale but valuable as memory grows.
 
-## Implementation Plan
+### Implementation Plan
 
-### Phase 1: WM-100 (ControllerRegistry Export)
+#### Phase 1: WM-100 (ControllerRegistry Export)
 
 **Fork**: ruflo (`~/src/forks/ruflo`)
 **File**: `v3/@claude-flow/memory/src/index.ts`
@@ -112,12 +123,12 @@ export { ControllerRegistry, INIT_LEVELS } from './controller-registry.js';
 
 **Validation**: After build+deploy, `memory_stats` MCP tool should show controllers loaded (not stubs).
 
-### Phase 2: WM-101 (AgentDB v3 Upgrade)
+#### Phase 2: WM-101 (AgentDB v3 Upgrade)
 
 **Fork**: ruflo
 **Note**: This may already be at v3 in the fork. Verify `agentdb` version in the built package before patching.
 
-### Phase 3: WM-112 + WM-113 (ESM/CJS Bridge)
+#### Phase 3: WM-112 + WM-113 (ESM/CJS Bridge)
 
 **Fork**: ruflo
 **Files**:
@@ -125,13 +136,13 @@ export { ControllerRegistry, INIT_LEVELS } from './controller-registry.js';
 - `v3/@claude-flow/cli/.claude/helpers/hook-handler.cjs` — write signal files
 - `v3/@claude-flow/cli/.claude/helpers/auto-memory-hook.mjs` — consume signals
 
-### Phase 4: WM-117 (ProductQuantizer)
+#### Phase 4: WM-117 (ProductQuantizer)
 
 **Fork**: ruflo
 **Files**: `memory-bridge.ts`, `memory-tools.ts`
 **Gated on**: Vector count ≥ 256
 
-## Estimated Impact
+### Estimated Impact
 
 | Metric | Current | After WM-100 | After WM-112/113 | After WM-117 |
 |--------|---------|-------------|------------------|-------------|
@@ -141,9 +152,15 @@ export { ControllerRegistry, INIT_LEVELS } from './controller-registry.js';
 | Vector storage | Uncompressed | Uncompressed | Uncompressed | 8-16x compressed |
 | Learning feedback loop | Partial (SONA only) | Full (bridge+controllers) | Full + CJS signals | Full + CJS signals |
 
-## Related
+### Consequences
 
-- **ADR-0030**: Memory system optimization (implemented patch.27-28)
-- **ADR-0031**: Runtime validation (implemented patch.27-28)
-- **ADR-068** (claude-flow-patch): Bridge-first architecture consolidation
-- **ADR-053** (claude-flow-patch): Evaluate WM-089/084 upstream overlap
+* Good, because WM-100 brings all 43 bridge functions live (from stubs), the single biggest available fix.
+* Good, because WM-112/WM-113 establish bidirectional ESM/CJS data exchange (currently none), eliminating memory divergence between CJS hooks and the ESM bridge.
+* Good, because WM-117 adds 8-16x vector compression for large memory stores.
+* Neutral, because WM-117 is not urgent at current scale, valuable only as memory grows.
+
+## More Information
+
+This decision relates to ADR-0030 (memory system optimization, implemented patch.27-28) and ADR-0031 (runtime validation, implemented patch.27-28). It also references claude-flow-patch records ADR-068 (bridge-first architecture consolidation) and ADR-053 (evaluate WM-089/084 upstream overlap).
+
+Original status: "Accepted".

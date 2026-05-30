@@ -1,11 +1,15 @@
-# ADR-0082: Test Integrity — No Fallbacks, Fail Loudly
+---
+status: accepted
+date: 2026-04-12
+tags: [testing, acceptance, integrity]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: **Implemented** (2026-04-22) — full-cascade acceptance green against `@sparkleideas/cli@3.5.58-patch.231` and `@sparkleideas/agentic-flow@2.0.2-alpha-patch.348`: **559/560 pass, 0 fail, 1 skip_accepted**. All 5 known silent-pass checks verified loud-fail + green in the cascade (`check_adr0059_memory_search`, `check_adr0059_memory_store_retrieve`, `check_t1_1_semantic_ranking`, `check_t3_1`, `check_adr0059_no_id_collisions`). BM25 hash-fallback product fix (`forks/ruflo/v3/@claude-flow/memory/src/bm25.ts`) active in shipped tarball. Residual harness race in `check_adr0059_memory_store_retrieve` (shared-E2E_DIR lock contention at parallelism ~570) fixed by switching to the sibling `_e2e_isolate` pattern; first full-cascade run exposed it (1 intermittent fail), second run validated the fix. See §Status Update 2026-04-22 below.
-- **Date**: 2026-04-12
-- **Deciders**: Henrik Pettersen
-- **Methodology**: 4-agent audit of 150+ acceptance checks
+# Test Integrity — No Fallbacks, Fail Loudly
 
-## Context
+## Context and Problem Statement
 
 A comprehensive audit of the acceptance test suite found 46 cheating checks, 13 weak
 checks, and 8 harness-level workarounds that mask product bugs. The test suite reported
@@ -16,7 +20,15 @@ checks, and 8 harness-level workarounds that mask product bugs. The test suite r
 - WAL-mode databases were silently corrupted by sql.js fallback
 - 5 attention tools were absent from published packages (test said "PASS: tool not found")
 
-## Decision
+## Considered Options
+
+* **Enforce three test-integrity rules: no silent fallbacks in tests, no harness workarounds masking product bugs, and no silent fallbacks in product code (chosen).**
+
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "Enforce three test-integrity rules — no silent fallbacks in tests, no harness workarounds masking product bugs, no silent fallbacks in product code", because the audit proved that a green suite (217 PASS / 0 FAIL) coexisted with critical user-facing failures, so the suite must be made a genuine quality gate that fails loudly when features are broken or absent.
 
 ### Rule 1: No silent fallbacks in tests
 
@@ -48,6 +60,17 @@ If the product doesn't create `memory_entries`, the test MUST FAIL.
 - If the embedding model doesn't load, WARN loudly (not silently return hash vectors)
 - If hash-fallback is active, use BM25-only scoring (not 70% noise + 30% BM25)
 - Every `catch {}` must log the error, not swallow it
+
+### Consequences
+
+* Good, because the suite becomes a genuine quality gate instead of a rubber stamp.
+* Good, because no more "217 PASS / 0 FAIL" when search is broken for all users.
+* Neutral, because tests will initially FAIL (exposing real bugs).
+* Neutral, because each failure must be fixed in the PRODUCT, not in the test.
+
+### Confirmation
+
+Implemented 2026-04-22 — full-cascade acceptance green against `@sparkleideas/cli@3.5.58-patch.231` and `@sparkleideas/agentic-flow@2.0.2-alpha-patch.348`: 559/560 pass, 0 fail, 1 skip_accepted. All 5 known silent-pass checks verified loud-fail + green in the cascade (`check_adr0059_memory_search`, `check_adr0059_memory_store_retrieve`, `check_t1_1_semantic_ranking`, `check_t3_1`, `check_adr0059_no_id_collisions`). The BM25 hash-fallback product fix (`forks/ruflo/v3/@claude-flow/memory/src/bm25.ts`) is active in the shipped tarball. See the Status Update 2026-04-22 section below for the full promotion evidence.
 
 ## Implementation Tasks
 
@@ -189,13 +212,6 @@ These tests were written under the ADR-0082 "fail loudly" discipline: no silent 
 - Layer 2 harness workaround removal (manual DDL, embeddings.json stamping) — not yet removed
 - Layer 3 cheating test fixes — the 46-check inventory has not been systematically addressed; individual checks were fixed ad hoc as encountered
 
-## Consequences
-
-- Tests will initially FAIL (exposing real bugs)
-- Each failure must be fixed in the PRODUCT, not in the test
-- The suite becomes a genuine quality gate instead of a rubber stamp
-- No more "217 PASS / 0 FAIL" when search is broken for all users
-
 ## Status Update 2026-04-21
 
 **Old status**: Partially Implemented
@@ -274,3 +290,7 @@ This is the last known silent-pass adjacent defect: the check was correctly loud
 
 - `test-results/accept-2026-04-21T231047Z/acceptance-results.json` (run 1)
 - `test-results/accept-2026-04-21T232055Z/acceptance-results.json` (run 2, promotion)
+
+## More Information
+
+Original status: "**Implemented** (2026-04-22) — full-cascade acceptance green against `@sparkleideas/cli@3.5.58-patch.231` and `@sparkleideas/agentic-flow@2.0.2-alpha-patch.348`: **559/560 pass, 0 fail, 1 skip_accepted**. All 5 known silent-pass checks verified loud-fail + green in the cascade (`check_adr0059_memory_search`, `check_adr0059_memory_store_retrieve`, `check_t1_1_semantic_ranking`, `check_t3_1`, `check_adr0059_no_id_collisions`). BM25 hash-fallback product fix (`forks/ruflo/v3/@claude-flow/memory/src/bm25.ts`) active in shipped tarball. Residual harness race in `check_adr0059_memory_store_retrieve` (shared-E2E_DIR lock contention at parallelism ~570) fixed by switching to the sibling `_e2e_isolate` pattern; first full-cascade run exposed it (1 intermittent fail), second run validated the fix." The recorded Date was 2026-04-12. The methodology recorded was a 4-agent audit of 150+ acceptance checks.

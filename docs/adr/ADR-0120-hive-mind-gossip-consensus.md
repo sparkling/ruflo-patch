@@ -1,13 +1,15 @@
-# ADR-0120: Hive-mind Gossip consensus protocol (T2)
+---
+status: accepted
+date: 2026-05-02
+tags: [hive-mind, consensus, gossip, protocol]
+supersedes: []
+depends-on: [ADR-0116, ADR-0118]
+implements: []
+---
 
-- **Status**: **Implemented (2026-05-03)** per ADR-0118 §Status (T2 complete; fork 2839874b2 + ruflo-patch ccf2c62). In-handler dispatch at `hive-mind-tools.ts:241` (enum) + `:78-104, 134-163` (vote tally).
-- **Date**: 2026-05-02
-- **Deciders**: Henrik Pettersen
-- **Depends on**: ADR-0116 (hive-mind marketplace plugin — provides the verification matrix that surfaced this gap), ADR-0118 (runtime gaps tracker — owns the T2 task definition)
-- **Related**: ADR-0114 (substrate/protocol/execution layering — the gossip protocol must respect the protocol-layer contract)
-- **Scope**: Fork-side runtime in `v3/@claude-flow/cli/src/mcp-tools/hive-mind-tools.ts` plus agent wiring. Closes T2 from ADR-0118.
+# Hive-mind Gossip consensus protocol (T2)
 
-## Context
+## Context and Problem Statement
 
 ADR-0116's USERGUIDE-vs-implementation verification matrix flagged the row "5 protocols" as a documentation-only feature. The USERGUIDE block `**Consensus Strategies**` (substring anchor in `/Users/henrik/source/ruvnet/ruflo/docs/USERGUIDE.md`) advertises five protocols — Byzantine, Raft, Quorum, Weighted, Gossip — but the runtime enum only ships three.
 
@@ -24,7 +26,7 @@ Result: an installer who reads the USERGUIDE and asks the gossip-coordinator age
 
 T2 in ADR-0118 owns this gap and is independent of T1 (Weighted) and T3 (CRDT) — the three Tns all extend the same enum but their tally implementations don't share state. T2 ships standalone.
 
-## Decision drivers
+## Decision Drivers
 
 - **USERGUIDE contract.** The "Consensus Strategies" block names Gossip; ADR-0116's verification matrix treats USERGUIDE-promised features as a contract the runtime must honour.
 - **Agent file resolves to nothing.** `forks/ruflo/v3/@claude-flow/cli/.claude/agents/consensus/gossip-coordinator.md` is shippable surface today; without runtime support, an agent invocation passing `strategy: 'gossip'` is rejected by the `_consensus` JSON-schema validator at the MCP boundary.
@@ -35,44 +37,52 @@ T2 in ADR-0118 owns this gap and is independent of T1 (Weighted) and T3 (CRDT) �
 - **ADR-0118 §T2 escalation rule.** This ADR picks push-style as the default per the task definition. If push-vs-pull-vs-push-pull becomes contested in real workloads, that promotion goes to its own ADR rather than re-litigating here.
 - **Protocol-layer constraint (ADR-0114).** Gossip is a protocol-layer addition; substrate (storage, MCP transport) and execution (agent dispatch) layers stay untouched.
 
-## Considered options
+## Considered Options
 
 - **(a) Push-style epidemic propagation [CHOSEN].** Each voter, on receiving a vote, re-broadcasts proposal state to a deterministic random subset of size `ceil(log2(N))`. Settling is detected by a round counter plus a no-vote-changed predicate.
 - **(b) Pull-style anti-entropy.** Idle voters poll a randomly selected peer for proposal state; convergence is driven by readers, not writers. Settling requires a separate round-tracking signal.
 - **(c) Push-pull hybrid.** Combine (a) and (b): writers push on vote, idle voters also pull periodically. Faster convergence under churn, larger surface.
 
-## Pros and cons of the options
+## Decision Outcome
+
+Chosen option: **(a) push-style epidemic propagation**, because it delivers the eventual-consistency guarantee the USERGUIDE row requires with the smallest mechanical surface, slots cleanly into the existing `vote`-action code path in `forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hive-mind-tools.ts:582+`, and reuses the round-counter shape already specified for the proposal record. Fanout `ceil(log2(N))` gives sublinear bandwidth growth with deterministic convergence in `O(log N)` rounds — concretely, for the N=4–32 range the fork targets, that is 2–5 rounds, and with the per-rebroadcast jitter of 10–50ms specified under §Architecture this maps to wall-clock settling on the order of 50ms–250ms (excluding caller poll cadence on `_consensus`). Per ADR-0118 §T2, push-vs-pull-vs-push-pull escalates to its own ADR if real workloads contest the choice.
+
+**Implement gossip-style epidemic propagation with eventual-consistency settling.** Each `vote` action schedules deferred re-broadcasts to a deterministic-per-round subset of voters of size `ceil(log2(N))`; a `gossipRound` counter on each proposal tracks propagation depth; settling fires when `gossipRound >= ceil(log2(totalNodes))` AND `gossipRound > lastVoteChangedRound` (with an `N == 1` short-circuit). Round advancement is bounded by both `currentRoundBroadcastSet` coverage and a per-round timeout; total work is bounded by the hard budget `2 * ceil(log2(N))`. See §Specification for the full predicate, fields, and budget.
+
+Push-style anti-entropy is the default. The ADR-0118 escalation rule applies: if push-vs-pull-vs-push-pull becomes a contested design decision, promote that choice to its own ADR rather than re-litigate here.
+
+### Consequences
+
+* Good, because no causal-broadcast or total-order requirement at the substrate layer (ADR-0114 protocol-layer respected).
+* Good, because bandwidth scales sublinearly with N (`ceil(log2(N))` fanout).
+* Good, because it reuses existing `vote` action wiring; no new MCP tool; no new transport.
+* Good, because it closes the "5 protocols (Gossip)" row in ADR-0116's verification matrix.
+* Bad, because of longer time-to-convergence than BFT/Raft (`O(log N)` rounds vs. constant for quorum-decided protocols).
+* Bad, because of eventual consistency only — callers must check `settled: true` before acting on the tally; `{ settled: false, exhausted: true }` is a possible terminal state callers must handle.
+* Bad, because of broadcast amplification: every vote schedules `ceil(log2(N))` re-broadcasts, so total in-process message count is `O(N log N)` per fully-voted proposal.
+* Bad, because of degenerate fanout at small N: `N=1` requires the predicate's short-circuit, `N=2` runs with fanout=1 (a single missed deferred-rebroadcast costs an extra round). Mitigated by the per-round timeout but still a tuning weakness for very small hives.
+* Bad, because voter dropouts in the chosen fanout subset can extend convergence by one round; persistently disagreeing voter sets exhaust the budget rather than settle.
+
+### Confirmation
+
+Authoritative test list lives in §Refinement. Per-level summary:
+
+- **Unit + integration**: `forks/ruflo/v3/@claude-flow/cli/__tests__/mcp-tools-deep.test.ts` (added in the same commit as the implementation per `feedback-all-test-levels.md`).
+- **Acceptance**: `check_hive_mind_gossip_consensus` in `lib/acceptance-hive-mind-checks.sh` (or the existing ADR-0118-allocated acceptance file). Wired into `scripts/test-acceptance.sh` per ADR-0094.
+
+## Pros and Cons of the Options
 
 **(a) Push-style epidemic [CHOSEN]**
-- Pros: simplest schedule (broadcast on vote, done); reuses existing `vote` action machinery; deterministic round count given proposal id; matches the round-counter shape already specified for `ConsensusProposal`.
-- Cons: every vote triggers `ceil(log2(N))` re-broadcasts → total in-process message count is `O(N log N)` per fully-voted proposal (broadcast amplification); silent voter dropouts in the chosen fanout subset extend convergence by one round; for small N the `ceil(log2(N))` fanout has degenerate cases — `N=2` gives `fanout=1` (single point of failure for re-broadcast) and `N=1` gives `fanout=0` (no propagation, so the predicate must short-circuit, see Specification); no reader-driven catch-up so a node that misses round `r` only catches up if a later round picks it.
+- Good, because of simplest schedule (broadcast on vote, done); reuses existing `vote` action machinery; deterministic round count given proposal id; matches the round-counter shape already specified for `ConsensusProposal`.
+- Bad, because every vote triggers `ceil(log2(N))` re-broadcasts → total in-process message count is `O(N log N)` per fully-voted proposal (broadcast amplification); silent voter dropouts in the chosen fanout subset extend convergence by one round; for small N the `ceil(log2(N))` fanout has degenerate cases — `N=2` gives `fanout=1` (single point of failure for re-broadcast) and `N=1` gives `fanout=0` (no propagation, so the predicate must short-circuit, see Specification); no reader-driven catch-up so a node that misses round `r` only catches up if a later round picks it.
 
 **(b) Pull-style anti-entropy**
-- Pros: tolerant to writer dropouts (idle readers re-fetch state); throttled by reader cadence rather than vote arrival; naturally tolerates voter joins mid-proposal because joiners simply pull the current state on their next poll.
-- Cons: requires a separate idle-poll scheduler in the MCP server (new timer per voter); settling detection is harder — no clean round boundary, so `gossipRound` becomes meaningless and a separate convergence signal is required; higher latency to first convergence under low-churn load (no event triggers a fetch).
+- Good, because of tolerance to writer dropouts (idle readers re-fetch state); throttled by reader cadence rather than vote arrival; naturally tolerates voter joins mid-proposal because joiners simply pull the current state on their next poll.
+- Bad, because it requires a separate idle-poll scheduler in the MCP server (new timer per voter); settling detection is harder — no clean round boundary, so `gossipRound` becomes meaningless and a separate convergence signal is required; higher latency to first convergence under low-churn load (no event triggers a fetch).
 
 **(c) Push-pull hybrid**
-- Pros: best convergence under churn; defensible against both writer and reader silence; standard production choice for distributed gossip (e.g. SWIM, Cassandra anti-entropy) precisely because pure push leaks state under partition.
-- Cons: combined complexity of (a) + (b) — two independent schedulers; cost not justified given this fork's single-process runtime (no real network partitions) and small N (≤ 32) where pure push converges in 2–5 rounds.
-
-## Decision outcome
-
-**Chosen option: (a) push-style epidemic propagation**, because it delivers the eventual-consistency guarantee the USERGUIDE row requires with the smallest mechanical surface, slots cleanly into the existing `vote`-action code path in `forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hive-mind-tools.ts:582+`, and reuses the round-counter shape already specified for the proposal record. Fanout `ceil(log2(N))` gives sublinear bandwidth growth with deterministic convergence in `O(log N)` rounds — concretely, for the N=4–32 range the fork targets, that is 2–5 rounds, and with the per-rebroadcast jitter of 10–50ms specified under §Architecture this maps to wall-clock settling on the order of 50ms–250ms (excluding caller poll cadence on `_consensus`). Per ADR-0118 §T2, push-vs-pull-vs-push-pull escalates to its own ADR if real workloads contest the choice.
-
-## Consequences
-
-**Positive**
-- No causal-broadcast or total-order requirement at the substrate layer (ADR-0114 protocol-layer respected).
-- Bandwidth scales sublinearly with N (`ceil(log2(N))` fanout).
-- Reuses existing `vote` action wiring; no new MCP tool; no new transport.
-- Closes the "5 protocols (Gossip)" row in ADR-0116's verification matrix.
-
-**Negative**
-- Longer time-to-convergence than BFT/Raft (`O(log N)` rounds vs. constant for quorum-decided protocols).
-- Eventual consistency only — callers must check `settled: true` before acting on the tally; `{ settled: false, exhausted: true }` is a possible terminal state callers must handle.
-- Broadcast amplification: every vote schedules `ceil(log2(N))` re-broadcasts, so total in-process message count is `O(N log N)` per fully-voted proposal.
-- Degenerate fanout at small N: `N=1` requires the predicate's short-circuit, `N=2` runs with fanout=1 (a single missed deferred-rebroadcast costs an extra round). Mitigated by the per-round timeout but still a tuning weakness for very small hives.
-- Voter dropouts in the chosen fanout subset can extend convergence by one round; persistently disagreeing voter sets exhaust the budget rather than settle.
+- Good, because of best convergence under churn; defensible against both writer and reader silence; standard production choice for distributed gossip (e.g. SWIM, Cassandra anti-entropy) precisely because pure push leaks state under partition.
+- Bad, because of combined complexity of (a) + (b) — two independent schedulers; cost not justified given this fork's single-process runtime (no real network partitions) and small N (≤ 32) where pure push converges in 2–5 rounds.
 
 ## Validation
 
@@ -80,12 +90,6 @@ Authoritative test list lives in §Refinement. This block is the per-level summa
 
 - **Unit + integration**: `forks/ruflo/v3/@claude-flow/cli/__tests__/mcp-tools-deep.test.ts` (added in the same commit as the implementation per `feedback-all-test-levels.md`).
 - **Acceptance**: `check_hive_mind_gossip_consensus` in `lib/acceptance-hive-mind-checks.sh` (or the existing ADR-0118-allocated acceptance file). Wired into `scripts/test-acceptance.sh` per ADR-0094.
-
-## Decision
-
-**Implement gossip-style epidemic propagation with eventual-consistency settling.** Each `vote` action schedules deferred re-broadcasts to a deterministic-per-round subset of voters of size `ceil(log2(N))`; a `gossipRound` counter on each proposal tracks propagation depth; settling fires when `gossipRound >= ceil(log2(totalNodes))` AND `gossipRound > lastVoteChangedRound` (with an `N == 1` short-circuit). Round advancement is bounded by both `currentRoundBroadcastSet` coverage and a per-round timeout; total work is bounded by the hard budget `2 * ceil(log2(N))`. See §Specification for the full predicate, fields, and budget.
-
-Push-style anti-entropy is the default. The ADR-0118 escalation rule applies: if push-vs-pull-vs-push-pull becomes a contested design decision, promote that choice to its own ADR rather than re-litigate here.
 
 ## Implementation plan
 
@@ -297,15 +301,22 @@ The per-round timeout is the second correctness lever: without it, a single non-
 
 **Promote to design-decision ADR if** anti-entropy protocol choice (push vs. pull vs. push-pull) becomes contested. Push is the chosen default per the ADR-0118 task definition; if a real workload reveals it as wrong, that's a design decision deserving its own ADR-0131+ (ADR-0121 through ADR-0130 are already allocated).
 
-## References
+## More Information
 
+Original status: **Implemented (2026-05-03)** per ADR-0118 §Status (T2 complete; fork 2839874b2 + ruflo-patch ccf2c62). In-handler dispatch at `hive-mind-tools.ts:241` (enum) + `:78-104, 134-163` (vote tally).
+
+This ADR depends on ADR-0116 (hive-mind marketplace plugin — provides the verification matrix that surfaced this gap) and ADR-0118 (runtime gaps tracker — owns the T2 task definition). It is related to ADR-0114 (substrate/protocol/execution layering — the gossip protocol must respect the protocol-layer contract).
+
+Scope: Fork-side runtime in `v3/@claude-flow/cli/src/mcp-tools/hive-mind-tools.ts` plus agent wiring. Closes T2 from ADR-0118.
+
+References:
 - ADR-0116 §USERGUIDE-vs-implementation verification matrix (the audit row this closes)
 - ADR-0118 §T2 (the task definition lifted into this ADR)
 - ADR-0114 (architectural model — protocol-layer constraints the gossip implementation must respect)
 - ADR-0117 (marketplace MCP server registration — establishes the `mcp__ruflo__*` namespace used in agent frontmatter)
 - USERGUIDE Hive Mind contract: substring anchor `**Consensus Strategies**` in `/Users/henrik/source/ruvnet/ruflo/docs/USERGUIDE.md`
 
-## Review notes
+### Review notes
 
 Open questions surfaced during review (2026-05-02), not blocking the Proposed status:
 

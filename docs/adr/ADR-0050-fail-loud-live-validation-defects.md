@@ -1,22 +1,15 @@
-# ADR-0050: Fail-Loud Live Validation — Defect Catalog
+---
+status: accepted
+date: 2026-03-17
+tags: [fail-loud, defects, controllers, validation]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-## Status
+# Fail-Loud Live Validation — Defect Catalog
 
-Accepted
-
-## Date
-
-2026-03-17
-
-## Deciders
-
-sparkling team
-
-## Methodology
-
-SPARC + MADR
-
-## Context
+## Context and Problem Statement
 
 ADR-0049 replaced 34 silent `catch { return null }` blocks with error-aware catch blocks and added `requireController()` guards to 14 bridge functions. A 3-agent swarm then ran every ADR-0040–0047 MCP tool against a fresh `@sparkleideas/cli` install at `~/src/test` (v3.5.15-patch.85) to catalog what's actually broken at runtime now that errors are no longer swallowed.
 
@@ -35,11 +28,21 @@ ADR-0049 replaced 34 silent `catch { return null }` blocks with error-aware catc
 | FAIL | 5 | Tool returned error or crashed |
 | DEGRADED | 7 | Tool returned `success: true` but with empty/stub/wrong data |
 
-## Decision: Specification (SPARC-S)
+## Considered Options
 
-### 5 Failures (tools that error or crash)
+* Catalog every defect with root cause, then fix in priority tiers (Tier 1 blocks core functionality, Tier 2 features inert, Tier 3 improvements), shipping agentic-flow barrel exports first (chosen).
 
-#### F1: `hooks_route` — null dereference
+(No alternatives were recorded — this ADR is a defect catalog, not a design choice between competing approaches.)
+
+## Decision Outcome
+
+Chosen option: "Catalog every defect with root cause and fix in priority tiers", because the fail-loud mode from ADR-0049 made previously-invisible failures observable, and grouping them by tier (with barrel exports shipping first) enables incremental fixing without blocking deployment.
+
+### Specification (SPARC-S)
+
+#### 5 Failures (tools that error or crash)
+
+##### F1: `hooks_route` — null dereference
 
 - **Error**: `Cannot read properties of undefined (reading 'toLowerCase')`
 - **Controller**: solverBandit route handler
@@ -47,7 +50,7 @@ ADR-0049 replaced 34 silent `catch { return null }` blocks with error-aware catc
 - **File**: `v3/@claude-flow/memory/src/application/queries/search-memory.query.ts:127`
 - **ADR**: 0040
 
-#### F2: `agentdb_filtered_search` — bridge not available
+##### F2: `agentdb_filtered_search` — bridge not available
 
 - **Error**: `"Bridge not available"`
 - **Controller**: B5 metadataFilter
@@ -55,7 +58,7 @@ ADR-0049 replaced 34 silent `catch { return null }` blocks with error-aware catc
 - **File**: `v3/@claude-flow/cli/src/memory/memory-bridge.ts:2699-2724`
 - **ADR**: 0043
 
-#### F3: `agentdb_attention_metrics` — D2 not active
+##### F3: `agentdb_attention_metrics` — D2 not active
 
 - **Error**: `"AttentionMetrics (D2) not active"`
 - **Controller**: D2 attentionMetrics
@@ -63,7 +66,7 @@ ADR-0049 replaced 34 silent `catch { return null }` blocks with error-aware catc
 - **File**: `v3/@claude-flow/memory/src/controller-registry.ts:1884-1895`
 - **ADR**: 0044
 
-#### F4: `agentdb_quantize_status` — B9 not active
+##### F4: `agentdb_quantize_status` — B9 not active
 
 - **Error**: `"QuantizedVectorStore not active"`
 - **Controller**: B9 quantizedVectorStore
@@ -71,7 +74,7 @@ ADR-0049 replaced 34 silent `catch { return null }` blocks with error-aware catc
 - **File**: `v3/@claude-flow/memory/src/controller-registry.ts:1696-1699`
 - **ADR**: 0047
 
-#### F5: `agentdb_health_report` — B3 not available
+##### F5: `agentdb_health_report` — B3 not available
 
 - **Error**: `"indexHealthMonitor not available"`
 - **Controller**: B3 indexHealthMonitor
@@ -79,52 +82,52 @@ ADR-0049 replaced 34 silent `catch { return null }` blocks with error-aware catc
 - **File**: `v3/@claude-flow/cli/src/memory/memory-bridge.ts` (handler) + `agentdb/src/index.ts` (export)
 - **ADR**: 0047
 
-### 7 Degradations (tools that succeed with empty/wrong data)
+#### 7 Degradations (tools that succeed with empty/wrong data)
 
-#### D1: `agentdb_attention_compute` — empty results
+##### D1: `agentdb_attention_compute` — empty results
 
 - **Symptom**: `success: true`, `results: []`
 - **Root cause**: Handler schema (agentdb-tools.ts:1134-1160) accepts `query`/`namespace`/`limit` which correctly matches ADR-0044 spec (line 75: `bridgeAttentionSearch(options)` takes `{ query, namespace, limit }`). The empty results are a logic issue — the handler performs a memory search against a namespace with no data, not a schema mismatch.
 - **ADR**: 0044
 
-#### D2: `agentdb_attention_benchmark` — wrong dimensions
+##### D2: `agentdb_attention_benchmark` — wrong dimensions
 
 - **Symptom**: `success: true`, hardcoded `dim=64` instead of requested `768`
 - **Root cause**: Handler schema (agentdb-tools.ts:1164-1194) defines `entryCount`/`blockSize` which matches the ADR-0044 pseudocode (line 84-85). ADR-0044 does NOT specify a `dimensions` parameter. The real issue is that synthetic benchmark entries at line 1181 use hardcoded 64-dimensional vectors instead of a configurable dimension. Fix: add a `dimensions` parameter to the schema and use it when generating synthetic entries.
 - **ADR**: 0044
 
-#### D3: `agentdb_attention_configure` — read-only, ignores mechanism
+##### D3: `agentdb_attention_configure` — read-only, ignores mechanism
 
 - **Symptom**: `success: true`, `engine: "fallback"`, `initialized: false`
 - **Root cause**: Handler schema (agentdb-tools.ts:1198-1219) has empty `properties: {}`. ADR-0044 does NOT specify a `mechanism` parameter for this tool — configuration happens at init-time via the AttentionService constructor. The tool is correctly read-only (queries engine type, info, stats). The degradation is that without NAPI/WASM, engine is permanently "fallback". Consider renaming to `agentdb_attention_status` to match read-only behavior.
 - **ADR**: 0044
 
-#### D4: `agentdb_embed` — zero-dimension embedding
+##### D4: `agentdb_embed` — zero-dimension embedding
 
 - **Symptom**: `success: true`, `embedding: []`, `dimension: 0`, `provider: "unknown"`
 - **Root cause**: Registry imports `agentdb.EnhancedEmbeddingService` which resolves to the 143-line WASM wrapper (controllers/), not the 1436-line full implementation (services/). The wrapper has no multi-provider support, no LRU cache, no dimension alignment. Returns zeroed data.
 - **ADR**: 0045 (swarm bug #9)
 
-#### D5: `agentdb_embed_status` — contradicts health
+##### D5: `agentdb_embed_status` — contradicts health
 
 - **Symptom**: `active: false`, `"EnhancedEmbeddingService not active"`
 - **Root cause**: Two different readiness checks disagree. Health report (memory-bridge.ts:1987) calls `registry.listControllers()` which uses `isControllerEnabled()` (controller-registry.ts:820-822) — returns `true` if AgentDB is available (configuration readiness). But `embed_status` handler (agentdb-tools.ts:1062-1087) calls `bridgeHasController()` (memory-bridge.ts:1450-1451) which checks `registry.get()` — returns null for deferred controllers not yet instantiated (instantiation readiness). For Level 3 controllers, there is a window where `enabled: true` but `get()` returns null.
 - **File**: `v3/@claude-flow/cli/src/memory/memory-bridge.ts:1450-1451` vs `:1987`
 - **ADR**: 0045
 
-#### D6: `agentdb_telemetry_metrics` — empty counters
+##### D6: `agentdb_telemetry_metrics` — empty counters
 
 - **Symptom**: `success: true`, `counters: {}`, `histograms: {}`, `exporters: ["console"]`
 - **Root cause**: D1 TelemetryManager is an in-memory stub (no real OpenTelemetry SDK). No controller init or operation calls `telemetryManager.startSpan()` or `increment()`. Data is always empty because nothing produces telemetry events.
 - **ADR**: 0045
 
-#### D7: `agentdb_telemetry_spans` — empty spans
+##### D7: `agentdb_telemetry_spans` — empty spans
 
 - **Symptom**: `success: true`, `spans: []`
 - **Root cause**: Same as D6 — no span instrumentation wired into any controller or bridge operation.
 - **ADR**: 0045
 
-### 9 Disabled controllers
+#### 9 Disabled controllers
 
 | Level | Controller | ADR | Cause |
 |:-----:|-----------|-----|-------|
@@ -138,17 +141,17 @@ ADR-0049 replaced 34 silent `catch { return null }` blocks with error-aware catc
 | 4 | attentionMetrics | 0044 | **FIXED**: barrel export of `AttentionMetricsCollector` + no-arg constructor |
 | 2 | gnnService (anomaly) | 0040 | **FIXED** (rev 4): replaced inline wrapper with real `GNNService` class (JS fallbacks) |
 
-### 3 Cross-cutting issues
+#### 3 Cross-cutting issues
 
-#### X1: CLI `--args` flag silently dropped
+##### X1: CLI `--args` flag silently dropped
 
 The `mcp exec` subcommand accepts `--params` / `-p` for tool parameters. The `--args` flag is silently ignored with no warning, causing tools to receive `{}` input and produce misleading "namespace required" errors. Unknown flags should produce an error.
 
-#### X2: `success: false` returns exit code 0
+##### X2: `success: false` returns exit code 0
 
 Tools returning `{ success: false, error: "..." }` still exit with code 0. Under fail-loud mode, MCP tools that detect controller failures should propagate as exit code 1 so CI/scripts can catch them.
 
-#### X3: Attention tool schema issues
+##### X3: Attention tool schema issues
 
 Original analysis claimed 3 schema/spec mismatches. Source verification against ADR-0044 found:
 
@@ -156,13 +159,13 @@ Original analysis claimed 3 schema/spec mismatches. Source verification against 
 - `attention_benchmark`: Schema (`entryCount`/`blockSize`) **matches** ADR-0044 pseudocode (line 84-85). ADR-0044 does not specify a `dimensions` parameter. Real issue: hardcoded `dim=64` in synthetic entries (agentdb-tools.ts:1181). Fix: add `dimensions` parameter.
 - `attention_configure`: Empty `properties: {}` is **correct** — ADR-0044 configures AttentionService at init-time, not via tool parameters. Tool is read-only by design. Consider renaming to `agentdb_attention_status`.
 
-## Decision: Pseudocode (SPARC-P)
+### Pseudocode (SPARC-P)
 
 No pseudocode — this ADR is a defect catalog, not an implementation plan. Fixes are tracked individually below.
 
-## Decision: Architecture (SPARC-A)
+### Architecture (SPARC-A)
 
-### Defect categories and fix owners
+#### Defect categories and fix owners
 
 | Category | Count | Fix approach |
 |----------|:-----:|-------------|
@@ -178,9 +181,9 @@ No pseudocode — this ADR is a defect catalog, not an implementation plan. Fixe
 | CLI UX (silent flag drop) | 1 | Reject unknown flags in mcp exec command parser (X1) |
 | Exit code propagation | 1 | Return exit code 1 when tool result has `success: false` (X2) |
 
-## Decision: Refinement (SPARC-R)
+### Refinement (SPARC-R)
 
-### Priority tiers
+#### Priority tiers
 
 **Tier 1 — Fix immediately (blocks core functionality)**
 
@@ -210,9 +213,9 @@ No pseudocode — this ADR is a defect catalog, not an implementation plan. Fixe
 | — | Export AuditLogger from agentdb | No circular dep risk (imports only `fs`/`path`). | ~2 lines |
 | — | Export FederatedLearningManager from agentdb + fix factory | No circular dep risk (type-only `@ruvector/sona` import). Also needs factory fix: constructor expects `FederatedConfig` with `agentId: string`, factory passes `{ backend, dimension }`. | ~5 lines |
 
-## Decision: Completion (SPARC-C)
+### Completion (SPARC-C)
 
-### Checklist
+#### Checklist
 
 - [x] Tier 1: Add null guard to `input.textQuery!.toLowerCase()` in search-memory.query.ts:127 (F1)
 - [x] Tier 1: Investigate registry/db init failure in bridgeFilteredSearch; improve error message (F2)
@@ -242,11 +245,11 @@ No pseudocode — this ADR is a defect catalog, not an implementation plan. Fixe
 - [x] Run `npm run deploy` — 55/55 acceptance (v3.5.15-patch.90, 2026-03-18)
 - [x] Full 6-agent integration test against fresh install: 13/14 PASS, 49 total tests, 41 pass, 6 loud-fail (correct), 2 fail (pre-existing)
 
-### Dependency order
+#### Dependency order
 
 Barrel exports in agentic-flow fork must ship first (unblocks F3, F5, AuditLogger, FederatedLearningManager). All ruflo-side fixes are independent of each other.
 
-### Success Criteria
+#### Success Criteria
 
 - ~~0 FAIL results from MCP tool validation (all 5 failures fixed)~~ **13/14 PASS** — D4 embed persists (model configured but not loaded; separate from barrel export fix)
 - ~~Degraded tools return real data instead of empty stubs (at least D1-D5)~~ **D1-D3, D5-D7 fixed.** D4 remains: EnhancedEmbeddingService initialized but model not loaded at runtime.
@@ -254,30 +257,20 @@ Barrel exports in agentic-flow fork must ship first (unblocks F3, F5, AuditLogge
 - 9/9 previously-disabled controllers now active (was 0/9 at ADR creation)
 - `npm run deploy` passes 55/55
 
-## Consequences
+### Consequences
 
-### Positive
+* Good, because there is a complete defect catalog with root causes, not just symptoms.
+* Good, because priority tiers enable incremental fixing without blocking deployment.
+* Good, because mapping to swarm audit bugs (#9, #12, #13, #14, #15, #17) confirms code analysis with runtime evidence.
+* Good, because fail-loud mode (ADR-0049) successfully surfaced 5 failures that were previously invisible.
+* Bad, because 5 MCP tools are broken for end users until Tier 1 fixes ship.
+* Bad, because 7 tools return misleading `success: true` with empty data until Tier 2.
+* Bad, because the total fix effort is estimated at ~95 lines across 4 files + 4 fork barrel export lines.
+* Neutral, because there are risks: Tier 1 fixes may introduce new failures if constructor signatures aren't carefully verified; B3 deferred init timing (F5) uses the established `waitForDeferred()` pattern — low risk; and X3 attention schemas mostly match ADR-0044 spec, with only D2 benchmark dimension needing a new parameter.
 
-- Complete defect catalog with root causes, not just symptoms
-- Priority tiers enable incremental fixing without blocking deployment
-- Mapping to swarm audit bugs (#9, #12, #13, #14, #15, #17) confirms code analysis with runtime evidence
-- Fail-loud mode (ADR-0049) successfully surfaced 5 failures that were previously invisible
+#### New upstream bugs discovered during integration testing (2026-03-18)
 
-### Negative
-
-- 5 MCP tools are broken for end users until Tier 1 fixes ship
-- 7 tools return misleading `success: true` with empty data until Tier 2
-- Total fix effort estimated at ~95 lines across 4 files + 4 fork barrel export lines
-
-### Risks
-
-- Tier 1 fixes may introduce new failures if constructor signatures aren't carefully verified
-- B3 deferred init timing (F5) uses established `waitForDeferred()` pattern — low risk
-- X3 attention schemas mostly match ADR-0044 spec; only D2 benchmark dimension needs a new parameter
-
-### New upstream bugs discovered during integration testing (2026-03-18)
-
-#### N1: `agentdb_causal-query` — orphaned timeout crash
+##### N1: `agentdb_causal-query` — orphaned timeout crash
 
 - **Symptom**: Tool returns correct result, then process crashes with unhandled timeout error
 - **Error**: `Error: causal_query timeout (2s)` at `agentdb-tools.js:660`
@@ -285,42 +278,42 @@ Barrel exports in agentic-flow fork must ship first (unblocks F3, F5, AuditLogge
 - **File**: `v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts` (~line 660)
 - **Fix**: Add `clearTimeout()` on the success path
 
-#### N2: `agentdb_pattern-store` — bare "Bridge not available" error
+##### N2: `agentdb_pattern-store` — bare "Bridge not available" error
 
 - **Symptom**: Returns `"Bridge not available"` with no diagnostic context
 - **Root cause**: Same class of error as F2, but the F2 diagnostic fix was only applied to `bridgeFilteredSearch`, not to `bridgePatternStore`
 - **File**: `v3/@claude-flow/cli/src/memory/memory-bridge.ts` (pattern-store bridge function)
 - **Fix**: Apply same diagnostic pattern as F2 — check registry vs db, return specific error
 
-#### N3: `agentdb_semantic-route` — false success (exit 0 with error payload)
+##### N3: `agentdb_semantic-route` — false success (exit 0 with error payload)
 
 - **Symptom**: Returns exit code 0 and `[OK]` but payload contains `route: null` and `error: "SemanticRouter not available"`
 - **Root cause**: The tool returns `{ route: null, error: "..." }` without a `success: false` field, so the X2 exit-code check doesn't trigger
 - **File**: `v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts` (semantic-route handler) OR the bridge function
 - **Fix**: Return `{ success: false, error: "..." }` so X2 propagates exit code 1
 
-#### N4: `agentdb_attention_metrics` — empty metrics with no notice
+##### N4: `agentdb_attention_metrics` — empty metrics with no notice
 
 - **Symptom**: Returns `{ success: true, metrics: {} }` with no `notice` field
 - **Root cause**: D6 (telemetry_metrics) and D7 (telemetry_spans) both add notice fields on empty data, but attention_metrics does not follow the same pattern
 - **File**: `v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts` (attention_metrics handler)
 - **Fix**: Add notice field: `"No attention operations performed. Metrics populate after attention_compute or attention_benchmark calls."`
 
-#### N5: `agentdb_hierarchical-recall` — missing `success` field
+##### N5: `agentdb_hierarchical-recall` — missing `success` field
 
 - **Symptom**: Response has `{ results: [], controller: "hierarchicalMemory" }` but no `success` boolean
 - **Root cause**: Handler returns raw results without wrapping in the standard `{ success: true/false, ... }` envelope
 - **File**: `v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts` (hierarchical-recall handler)
 - **Fix**: Wrap response with `success` field; add notice when results empty
 
-#### N6: `agentdb_embed` — false success with zero-dimension embedding
+##### N6: `agentdb_embed` — false success with zero-dimension embedding
 
 - **Symptom**: Returns `{ success: true, embedding: [], dimension: 0, provider: "unknown" }` — reports success but produces no usable output
 - **Root cause**: `EnhancedEmbeddingService` barrel export now points to services/ (full impl), and embed_status correctly reports `provider: "transformers"`, `model: "all-MiniLM-L6-v2"`, but the actual embed handler does not invoke the model. The handler's code path may use a different method or the model fails to load silently.
 - **File**: `v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts` (embed handler) + `v3/@claude-flow/cli/src/memory/memory-bridge.ts` (bridgeEmbed)
 - **Fix**: Investigate why bridgeEmbed returns empty when embed_status shows model configured. If model can't load, return `success: false` with diagnostic.
 
-### Checklist — New bugs
+#### Checklist — New bugs
 
 - [x] N1: Clear orphaned timeout in causal-query handler (try/finally + clearTimeout)
 - [x] N2: Add F2-style diagnostic to pattern-store bridge (cascading registry/db/store checks)
@@ -330,12 +323,11 @@ Barrel exports in agentic-flow fork must ship first (unblocks F3, F5, AuditLogge
 - [x] N6: Fixed — `embed()` returns `Float32Array`, not `{embedding,dimension,provider}` object. Bridge now handles typed array directly.
 - [x] Run `npm run deploy` — 55/55 acceptance (v3.5.15-patch.91, 2026-03-18)
 
-## Related
+## More Information
 
-- **ADR-0049**: Fail-loud mode (prerequisite — made these defects visible)
-- **ADR-0040 through ADR-0047**: The 8 ADRs whose implementations contain these defects
-- **ADR-0048**: Lazy controller initialization (deferred init causes F5)
-- **Swarm audit 2026-03-17**: 8-agent code analysis that found 29 bugs; this ADR confirms 7 at runtime
+This decision was recorded by the sparkling team using the SPARC + MADR methodology.
+
+The original record cross-referenced related work: ADR-0049 (fail-loud mode, the prerequisite that made these defects visible); ADR-0040 through ADR-0047 (the 8 ADRs whose implementations contain these defects); ADR-0048 (lazy controller initialization, whose deferred init causes F5); and the swarm audit of 2026-03-17 (8-agent code analysis that found 29 bugs; this ADR confirms 7 at runtime).
 
 ## Revision History
 

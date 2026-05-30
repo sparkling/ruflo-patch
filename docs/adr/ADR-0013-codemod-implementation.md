@@ -1,10 +1,15 @@
-# ADR-0013: Codemod Implementation
+---
+status: accepted
+date: 2026-03-05
+tags: [codemod, build, naming]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-## Status
+# Codemod Implementation
 
-Implemented
-
-## Context
+## Context and Problem Statement
 
 ### Specification (SPARC-S)
 
@@ -72,7 +77,16 @@ FUNCTION applyNameMapping(name):
   return name  // unchanged (third-party, @ruvector/*, etc.)
 ```
 
-## Decision
+## Considered Options
+
+* **Use a custom Node.js transform script with a JSON-aware package.json phase and a regex-based source-file phase (chosen).**
+* **`sed` with multiple passes** -- Rejected. `sed` cannot handle JSON structure-aware transformations (renaming a dependency key without renaming the same string in a `"description"` field). Asymmetric mappings with word-boundary constraints are fragile in `sed` regex syntax. Multi-pass `sed` invocations risk double-replacement across passes.
+* **`jscodeshift` (AST-based)** -- Rejected. Only handles JavaScript/TypeScript ASTs. Cannot transform `package.json` (not valid JS), `tsconfig.json`, or `.npmrc`. Adding a second tool for JSON files negates the benefit. The import paths we need to transform are string literals -- regex handles these correctly without full AST parsing.
+* **`codemod` (Facebook/Meta tool)** -- Rejected. Heavier dependency, designed for large-scale JS refactors. Our transformations are simpler (string replacement in import paths) and span more file types (JSON, config files) than codemod handles natively.
+
+## Decision Outcome
+
+Chosen option: "Use a custom Node.js transform script", because it is not `sed` (too fragile for asymmetric mappings and JSON manipulation) and not `jscodeshift` (overkill for what is mostly string replacement in non-AST contexts like `package.json` and import path literals), and matches the build pipeline language with no extra toolchain.
 
 ### Architecture (SPARC-A)
 
@@ -135,31 +149,16 @@ For unscoped packages, use word-boundary matching with negative lookbehind to av
 
 The script uses an allowlist of file extensions rather than a denylist. Only files matching the allowed extensions are processed.
 
-### Considered Alternatives
+### Consequences
 
-1. **`sed` with multiple passes** -- Rejected. `sed` cannot handle JSON structure-aware transformations (renaming a dependency key without renaming the same string in a `"description"` field). Asymmetric mappings with word-boundary constraints are fragile in `sed` regex syntax. Multi-pass `sed` invocations risk double-replacement across passes.
-
-2. **`jscodeshift` (AST-based)** -- Rejected. Only handles JavaScript/TypeScript ASTs. Cannot transform `package.json` (not valid JS), `tsconfig.json`, or `.npmrc`. Adding a second tool for JSON files negates the benefit. The import paths we need to transform are string literals -- regex handles these correctly without full AST parsing.
-
-3. **`codemod` (Facebook/Meta tool)** -- Rejected. Heavier dependency, designed for large-scale JS refactors. Our transformations are simpler (string replacement in import paths) and span more file types (JSON, config files) than codemod handles natively.
-
-## Consequences
-
-### Refinement (SPARC-R)
-
-**Positive:**
-
-- JSON-aware phase prevents corruption of `package.json` structure (preserves formatting, handles nested fields correctly)
-- Regex ordering (scoped before unscoped) eliminates the double-replacement class of bugs entirely
-- Negative lookahead on `@sparkleideas` means re-running the codemod is idempotent
-- Allowlist of file extensions prevents accidental transformation of binary files or git objects
-- Node.js implementation requires no additional toolchain -- matches the build pipeline language
-
-**Negative:**
-
-- The regex patterns must be maintained as upstream adds new package names or changes naming conventions
-- Regex-based source transformation is not AST-aware -- it will transform strings inside comments and template literals. This is intentional: transforming comments is harmless, and template literals containing package names should be transformed to match the new scope
-- If upstream introduces a package whose name is a substring of an existing package (e.g., `agent` vs `agentdb`), the word-boundary patterns must be reviewed
+* Good, because the JSON-aware phase prevents corruption of `package.json` structure (preserves formatting, handles nested fields correctly).
+* Good, because regex ordering (scoped before unscoped) eliminates the double-replacement class of bugs entirely.
+* Good, because negative lookahead on `@sparkleideas` means re-running the codemod is idempotent.
+* Good, because the allowlist of file extensions prevents accidental transformation of binary files or git objects.
+* Good, because the Node.js implementation requires no additional toolchain -- matches the build pipeline language.
+* Bad, because the regex patterns must be maintained as upstream adds new package names or changes naming conventions.
+* Bad, because regex-based source transformation is not AST-aware -- it will transform strings inside comments and template literals. This is intentional: transforming comments is harmless, and template literals containing package names should be transformed to match the new scope.
+* Bad, because if upstream introduces a package whose name is a substring of an existing package (e.g., `agent` vs `agentdb`), the word-boundary patterns must be reviewed.
 
 **Trade-offs and edge cases:**
 
@@ -170,7 +169,9 @@ The script uses an allowlist of file extensions rather than a denylist. Only fil
 - **`pnpm-lock.yaml`**: Delete this file after the codemod runs. Run `pnpm install` to regenerate it with the new package names. Transforming a lockfile in-place is fragile and unnecessary.
 - **`.npmrc`**: May contain `@claude-flow:registry=...` lines. Transform the scope prefix in registry configuration lines. Use a targeted regex that matches only the scope prefix in registry directives.
 
-### Completion (SPARC-C)
+### Confirmation
+
+Completion (SPARC-C):
 
 - [x] Codemod script implemented in Node.js at `scripts/codemod.mjs`
 - [x] package.json transform handles all 6 fields (name, deps, peer, optional, bin, exports)

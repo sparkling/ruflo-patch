@@ -1,21 +1,13 @@
-# ADR-0057: CLAUDE.md Generator Redesign
+---
+status: accepted
+date: 2026-04-03
+tags: [claudemd, generator, init, templates]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: Implemented (2026-04-11). Dead code removed, full template fixed as strict superset of standard, output clean across all 6 templates.
-- **Date**: 2026-04-03
-- **Implemented**: 2026-04-11
-- **Deciders**: ruflo-patch maintainers
-- **Methodology**: SPARC + MADR
-
-## Decision Drivers
-
-1. Current generator produces ~250 lines (standard) to ~400 lines (full) of CLAUDE.md, far exceeding the ~100-line / 4,000-character budget where per-project instructions remain effective
-2. 12 instances of "Task tool" across 3 functions -- the correct Claude Code tool name is "Agent tool" (SubagentStart/SubagentStop in hook events)
-3. `autoStartProtocol()` shows `Task({prompt:..., subagent_type:...})` pseudo-code that does not match how Claude Code tool invocations actually work (XML tool_use blocks)
-4. `executionRules()` references "poll TaskOutput" -- no such tool exists
-5. `setupAndBoundary()` says "Task tool handles ALL execution" -- wrong tool name
-6. "ADR-026" in `swarmOrchestration()` points to upstream's ADR numbering, not the local ruflo-patch ADR-0026 (Pipeline Stage Decoupling)
-7. Sections like `intelligenceSystem()` use jargon Claude does not understand (SONA, EWC++, LoRA, Flash Attention) -- these are not actionable instructions
-8. Several sections are reference material (agent type catalogs, CLI command tables, hook/worker inventories) that belong in tool discovery, not in per-project instructions
+# CLAUDE.md Generator Redesign
 
 ## Context and Problem Statement
 
@@ -37,7 +29,26 @@ The current generator conflates both purposes into a single per-project file. Th
 5. **No framework jargon Claude cannot act on.** Terms like SONA, EWC++, HNSW, LoRA, Flash Attention are internal implementation details. CLAUDE.md instructions must use plain terms Claude can execute.
 6. **Deferred MCP tools bridge the gap.** When the claude-flow MCP server is registered, its 150+ tools appear in `system-reminder` blocks. The generator should not duplicate what the MCP tool registry already provides.
 
-## Decision
+## Decision Drivers
+
+1. Current generator produces ~250 lines (standard) to ~400 lines (full) of CLAUDE.md, far exceeding the ~100-line / 4,000-character budget where per-project instructions remain effective
+2. 12 instances of "Task tool" across 3 functions -- the correct Claude Code tool name is "Agent tool" (SubagentStart/SubagentStop in hook events)
+3. `autoStartProtocol()` shows `Task({prompt:..., subagent_type:...})` pseudo-code that does not match how Claude Code tool invocations actually work (XML tool_use blocks)
+4. `executionRules()` references "poll TaskOutput" -- no such tool exists
+5. `setupAndBoundary()` says "Task tool handles ALL execution" -- wrong tool name
+6. "ADR-026" in `swarmOrchestration()` points to upstream's ADR numbering, not the local ruflo-patch ADR-0026 (Pipeline Stage Decoupling)
+7. Sections like `intelligenceSystem()` use jargon Claude does not understand (SONA, EWC++, LoRA, Flash Attention) -- these are not actionable instructions
+8. Several sections are reference material (agent type catalogs, CLI command tables, hook/worker inventories) that belong in tool discovery, not in per-project instructions
+
+## Considered Options
+
+* Split the generator output: per-project CLAUDE.md becomes a slim rulebook (3 templates), and reference material moves to an idempotent global `~/.claude/CLAUDE.md` block (chosen).
+
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "Split the generator into a slim per-project rulebook plus a global discovery block", because CLAUDE.md serves two distinct audiences with different budgets, and separating per-project rules (a rulebook) from tool-discovery reference material (loaded once globally) keeps the per-project file within the 4,000-character budget while fixing the incorrect tool names and pseudo-code.
 
 ### 1. Template Hierarchy
 
@@ -269,27 +280,31 @@ Plus one new export:
 |----------|-------|---------|
 | `generateGlobalBlock()` | ~50 | Produces the `<!-- claude-flow:start -->` block for ~/.claude/CLAUDE.md |
 
-## Consequences
+### Consequences
 
-### Positive
+#### Positive
 
-- Per-project CLAUDE.md drops from ~250 lines to ~70 lines (72% reduction), staying well within the 4,000-character budget
-- All 12 "Task tool" references corrected to "Agent tool"
-- No incorrect pseudo-code examples that teach Claude wrong invocation patterns
-- Reference material moves to global where it is loaded once, not per-project
-- Generator shrinks from 17 section functions to 9, reducing maintenance surface
-- Idempotent global block with HTML comment markers
+* Good, because per-project CLAUDE.md drops from ~250 lines to ~70 lines (72% reduction), staying well within the 4,000-character budget.
+* Good, because all 12 "Task tool" references are corrected to "Agent tool".
+* Good, because there are no incorrect pseudo-code examples that teach Claude wrong invocation patterns.
+* Good, because reference material moves to global where it is loaded once, not per-project.
+* Good, because the generator shrinks from 17 section functions to 9, reducing maintenance surface.
+* Good, because of the idempotent global block with HTML comment markers.
 
-### Negative
+#### Negative
 
-- Users who relied on per-project CLI command tables or agent type lists will need to run `init --setup-global` to get that content into their global file
-- 3 templates instead of 6 reduces granularity (mitigated by `--with-security` / `--with-performance` flags)
-- Existing projects that re-run `init` will get a much shorter CLAUDE.md, which may surprise users
+* Bad, because users who relied on per-project CLI command tables or agent type lists will need to run `init --setup-global` to get that content into their global file.
+* Bad, because 3 templates instead of 6 reduces granularity (mitigated by `--with-security` / `--with-performance` flags).
+* Bad, because existing projects that re-run `init` will get a much shorter CLAUDE.md, which may surprise users.
 
-### Risks
+#### Risks
 
 | Risk | Mitigation |
 |------|------------|
 | Users miss CLI reference after upgrade | `init` prints a notice: "CLI reference moved to ~/.claude/CLAUDE.md. Run `init --setup-global` to install." |
 | Global block conflicts with user's existing ~/.claude/CLAUDE.md | HTML comment markers make the block replaceable. Generator reads existing content and only replaces within markers. |
 | ADR-0035 tests (S-08, S-17) assume specific CLAUDE.md content | Tests must be updated to match new template output. Specifically: line count assertions, content pattern checks. |
+
+## More Information
+
+This decision was recorded by the ruflo-patch maintainers using the SPARC + MADR methodology. Original status: "Implemented (2026-04-11). Dead code removed, full template fixed as strict superset of standard, output clean across all 6 templates." Dated 2026-04-03; implemented 2026-04-11.

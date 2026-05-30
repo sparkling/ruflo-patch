@@ -1,11 +1,15 @@
-# ADR-0021: Agent Booster Integration
+---
+status: accepted
+date: 2026-03-07
+tags: [agent-booster, routing, wasm, packaging]
+supersedes: []
+depends-on: [ADR-0014]
+implements: []
+---
 
-- **Status**: Accepted
-- **Date**: 2026-03-07
-- **Deciders**: ruflo-patch maintainers
-- **Methodology**: SPARC + MADR
+# Agent Booster Integration
 
-## Context
+## Context and Problem Statement
 
 The `@sparkleideas/cli` ships a `CLAUDE.md` to every user project via `npx @sparkleideas/cli init`. That file defines a 3-Tier Model Routing system (ADR-026) and instructs agents to:
 
@@ -206,7 +210,7 @@ Tell users to `npm install agent-booster` (unscoped upstream package) in the CLI
 
 ## Decision Outcome
 
-**Chosen option: Option A -- Integrate Now**
+Chosen option: "Option A -- Integrate Now", because publishing `@sparkleideas/agent-booster` fulfils an existing documented contract (CLAUDE.md already tells agents to check for `[AGENT_BOOSTER_AVAILABLE]`), delivers direct user cost/latency savings, degrades gracefully when uninstalled, and is the lowest-risk integration (zero internal deps, pre-built WASM).
 
 ### Rationale
 
@@ -220,25 +224,17 @@ Tell users to `npm install agent-booster` (unscoped upstream package) in the CLI
 
 ### Consequences
 
-**Good (user-facing)**:
-
-- Users get $0, sub-millisecond code transforms for simple edits (var-to-const, add types, rename variables)
-- The 3-Tier Model Routing system documented in CLAUDE.md works end-to-end for the first time
-- `agent-booster-server` binary provides a Morph LLM-compatible local API server
-- MCP Tools integration works with Claude Desktop, Cursor, and VS Code
-- Fully offline operation -- no network dependency for Tier 1 edits
-- 100% deterministic results eliminate LLM hallucination risk on simple transforms
-
-**Bad (user-facing)**:
-
-- Users who install the package add ~5MB (WASM binary) to their `node_modules`
-- One additional package to track for version updates
-
-**Neutral**:
-
-- Users who do not install `@sparkleideas/agent-booster` see no change in behavior -- Tier 2/3 routing continues to work as before
-- The upstream `agent-booster` (unscoped) package remains available on npm independently
-- Binary names (`agent-booster`, `agent-booster-server`) are the same regardless of npm scope
+* Good, because users get $0, sub-millisecond code transforms for simple edits (var-to-const, add types, rename variables).
+* Good, because the 3-Tier Model Routing system documented in CLAUDE.md works end-to-end for the first time.
+* Good, because the `agent-booster-server` binary provides a Morph LLM-compatible local API server.
+* Good, because MCP Tools integration works with Claude Desktop, Cursor, and VS Code.
+* Good, because of fully offline operation -- no network dependency for Tier 1 edits.
+* Good, because 100% deterministic results eliminate LLM hallucination risk on simple transforms.
+* Bad, because users who install the package add ~5MB (WASM binary) to their `node_modules`.
+* Bad, because there is one additional package to track for version updates.
+* Neutral, because users who do not install `@sparkleideas/agent-booster` see no change in behavior -- Tier 2/3 routing continues to work as before.
+* Neutral, because the upstream `agent-booster` (unscoped) package remains available on npm independently.
+* Neutral, because binary names (`agent-booster`, `agent-booster-server`) are the same regardless of npm scope.
 
 ### Required Documentation Updates
 
@@ -251,7 +247,9 @@ When this ADR is implemented, the following documents must be updated:
 | `README.md` | Update package count; mention Tier 1 routing availability |
 | `CLAUDE.md` | Update Tier 1 row in 3-Tier Model Routing table to reference `@sparkleideas/agent-booster` |
 
-### Required Tests
+### Confirmation
+
+Required tests:
 
 | Layer | Test | What it validates |
 |-------|------|-------------------|
@@ -260,13 +258,13 @@ When this ADR is implemented, the following documents must be updated:
 | **Acceptance** | `scripts/test-acceptance.sh` | New test: `test_a13_agent_booster()` — verify `import('@sparkleideas/agent-booster')` resolves, WASM module initializes, a simple code transform (e.g., `var x = 1` → `const x = 1`) returns correct output |
 | **Acceptance** | `scripts/test-acceptance.sh` | New test: `test_a14_agent_booster_bin()` — verify `npx @sparkleideas/agent-booster --version` runs and returns a version string |
 
----
+## More Information
 
-## References
+The original record documented its methodology as SPARC + MADR. Related decisions and references:
 
 - ADR-026: 3-Tier Model Routing (referenced in CLAUDE.md shipped to all user projects)
 - CLAUDE.md: `[AGENT_BOOSTER_AVAILABLE]` and `[TASK_MODEL_RECOMMENDATION]` directives
 - [Unpublished Sources Audit](../unpublished-sources.md): "Integrate Now" recommendation
-- [ADR-0014: Topological Publish Order](ADR-0014-topological-publish-order.md): Level 1 placement
-- [ADR-0022: Full Ecosystem Repackaging](ADR-0022-full-ecosystem-repackaging.md): Comprehensive integration of all packages
+- ADR-0014 (topological publish order) governs the Level 1 placement of this package.
+- ADR-0022 (full ecosystem repackaging) covers the comprehensive integration of all packages.
 - Upstream source: `github.com/ruvnet/agentic-flow/packages/agent-booster/`

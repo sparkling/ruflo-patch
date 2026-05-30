@@ -1,22 +1,15 @@
-# ADR-0049: Fail Loud — Remove Silent Error Swallowing
+---
+status: accepted
+date: 2026-03-17
+tags: [fail-loud, error-handling, controllers]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-## Status
+# Fail Loud — Remove Silent Error Swallowing
 
-Accepted
-
-## Date
-
-2026-03-17
-
-## Deciders
-
-sparkling team
-
-## Methodology
-
-SPARC + MADR
-
-## Context
+## Context and Problem Statement
 
 A swarm audit of ADR-0040 through ADR-0047 (8 agents, 29 bugs found) revealed a systemic problem: **every controller factory and bridge function silently swallows errors, returning `null` or fallback data**. This hides 13 constructor mismatches, 2 missing exports, 4 unwired integrations, and 6 missing features. All 240 unit tests pass, but the system runs entirely on legacy fallback paths at runtime.
 
@@ -42,9 +35,19 @@ The graceful degradation pattern was designed for *optional* controllers that ma
 
 ADR-0048 (lazy controller initialization) added deferred init but preserved the silent swallowing. This ADR supersedes that approach for the factory and bridge layers.
 
-## Decision: Specification (SPARC-S)
+## Considered Options
 
-### Fail-loud mode
+* Add a `CLAUDE_FLOW_STRICT` fail-loud mode: factories throw (strict) or log-with-context (non-strict) instead of silently swallowing, with init errors collected into a single post-init summary (chosen).
+
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "Add a `CLAUDE_FLOW_STRICT` fail-loud mode", because the graceful-degradation pattern was designed for optional controllers but is masking mandatory-integration failures, and a strict-by-default switch makes every constructor mismatch immediately visible in development while preserving production graceful degradation via `CLAUDE_FLOW_STRICT=false`.
+
+### Specification (SPARC-S)
+
+#### Fail-loud mode
 
 Add a `CLAUDE_FLOW_STRICT` environment variable (default: `true` in development, `false` in production). When strict mode is on:
 
@@ -55,7 +58,7 @@ Add a `CLAUDE_FLOW_STRICT` environment variable (default: `true` in development,
 
 When strict mode is off (production), the existing graceful degradation is preserved — but errors are **logged with full context** instead of silently swallowed.
 
-### What changes
+#### What changes
 
 | Current | Strict mode ON | Strict mode OFF (production) |
 |---------|---------------|------------------------------|
@@ -63,16 +66,16 @@ When strict mode is off (production), the existing graceful degradation is prese
 | `if (!ctrl) return fallback` | `if (!ctrl) throw new ControllerNotAvailable(name)` | `if (!ctrl) { this.logMissing(name); return fallback }` |
 | `catch () {}` (fire-and-forget) | Same (fire-and-forget is intentional) | Same |
 
-### What does NOT change
+#### What does NOT change
 
 - Fire-and-forget patterns (safeguard 4) — these are intentionally async/detached
 - Health check aggregation — still collects per-controller status
 - MCP tool error responses — still return `{ success: false, error }` to callers
 - The `withBridgeSafeguards` timeout wrapper — still returns fallback on timeout
 
-## Decision: Pseudocode (SPARC-P)
+### Pseudocode (SPARC-P)
 
-### controller-registry.ts changes
+#### controller-registry.ts changes
 
 ```
 // New error classes
@@ -100,7 +103,7 @@ if (this.strictMode && this.initErrors.length > 0) {
 }
 ```
 
-### memory-bridge.ts changes
+#### memory-bridge.ts changes
 
 ```
 // New error class
@@ -122,9 +125,9 @@ if (!ctrl) {
 }
 ```
 
-## Decision: Architecture (SPARC-A)
+### Architecture (SPARC-A)
 
-### Strict mode detection
+#### Strict mode detection
 
 ```
 const STRICT = process.env.CLAUDE_FLOW_STRICT !== 'false'
@@ -132,7 +135,7 @@ const STRICT = process.env.CLAUDE_FLOW_STRICT !== 'false'
 
 Default is `true` (strict). Production deployments set `CLAUDE_FLOW_STRICT=false` to preserve graceful degradation. This means development and testing always fail loud.
 
-### Error event bus
+#### Error event bus
 
 All swallowed errors (in non-strict mode) emit events on the registry's EventEmitter:
 - `controller:init-error` — factory threw during construction
@@ -141,7 +144,7 @@ All swallowed errors (in non-strict mode) emit events on the registry's EventEmi
 
 These events can be collected by D1 TelemetryManager (when it works) or by a simple console logger.
 
-### Init error collection
+#### Init error collection
 
 During `initializeControllers()`, errors are collected per-level rather than thrown immediately. After all levels complete, the collected errors are:
 - **Strict mode**: thrown as a single summary error
@@ -149,15 +152,15 @@ During `initializeControllers()`, errors are collected per-level rather than thr
 
 This preserves the level-based init ordering — Level 2 controllers still init even if a Level 1 controller fails.
 
-## Decision: Refinement (SPARC-R)
+### Refinement (SPARC-R)
 
-### Scope
+#### Scope
 
 This ADR patches TWO files:
 1. `controller-registry.ts` — 27 catch blocks + init summary
 2. `memory-bridge.ts` — key bridge functions (not all 105 catch blocks; only the ones for ADR-0040 through ADR-0047 controllers)
 
-### Bridge functions to patch (Phase 1)
+#### Bridge functions to patch (Phase 1)
 
 | Bridge function | Controller | ADR |
 |----------------|-----------|-----|
@@ -175,22 +178,22 @@ This ADR patches TWO files:
 | `bridgeHealthReport` | B3 IndexHealth | 0047 |
 | `bridgeFederatedRound` | A11 FederatedLearning | 0047 |
 
-### What we are NOT changing
+#### What we are NOT changing
 
 - The 20+ bridge functions for pre-ADR-0040 controllers (reasoningBank, skills, reflexion, etc.) — these work and aren't broken
 - MCP tool handler error responses — these already surface errors to callers
 - The `withBridgeSafeguards` timeout pattern — legitimate fire-and-forget
 
-### Effort
+#### Effort
 
 - controller-registry.ts: ~2h (replace 27 catch blocks with error class + emit)
 - memory-bridge.ts: ~2h (patch 13 bridge functions)
 - Error classes + strict mode detection: ~30min
 - Tests: ~1h (verify strict mode throws, non-strict mode emits events)
 
-## Decision: Completion (SPARC-C)
+### Completion (SPARC-C)
 
-### Checklist
+#### Checklist
 
 - [ ] Define `ControllerInitError` and `ControllerNotAvailable` error classes
 - [ ] Add `strictMode` property to ControllerRegistry (reads `CLAUDE_FLOW_STRICT` env)
@@ -204,7 +207,21 @@ This ADR patches TWO files:
 - [ ] Add unit tests: init summary collects errors across levels
 - [ ] Verify existing 240 tests still pass (non-strict mode)
 
-### Testing
+### Consequences
+
+* Good, because every constructor mismatch becomes immediately visible during development.
+* Good, because missing exports produce clear "FederatedLearningManager not found in agentdb" errors.
+* Good, because developers can distinguish "not installed" from "wiring bug" from "API changed".
+* Good, because the init summary gives a single dashboard of what's broken after startup.
+* Good, because production graceful degradation is preserved via `CLAUDE_FLOW_STRICT=false`.
+* Bad, because strict mode will break CI until the 29 bugs from ADR-0040–0047 audit are fixed.
+* Bad, because it adds ~50 lines of error class boilerplate.
+* Bad, because non-strict mode adds console noise (logged errors instead of silence).
+* Neutral, because there are risks: teams may set `CLAUDE_FLOW_STRICT=false` permanently to avoid fixing bugs (mitigated: CI defaults to strict); and event-based error reporting requires a listener to be useful (mitigated: console.warn fallback when no listener).
+
+### Confirmation
+
+#### Testing
 
 ```js
 import { describe, it } from 'node:test';
@@ -289,7 +306,7 @@ describe('ADR-0049: fail-loud mode', () => {
 });
 ```
 
-### Success Criteria
+#### Success Criteria
 
 - `CLAUDE_FLOW_STRICT=true npm run test:unit` surfaces all 13 constructor mismatches as thrown errors
 - `CLAUDE_FLOW_STRICT=false npm run test:unit` passes all 240 existing tests (backward compatible)
@@ -297,29 +314,8 @@ describe('ADR-0049: fail-loud mode', () => {
 - Every swallowed error includes: controller name, bridge function name, original error message
 - Zero silent `catch { return null }` blocks remain in factory methods
 
-## Consequences
+## More Information
 
-### Positive
+This decision was recorded by the sparkling team using the SPARC + MADR methodology.
 
-- Every constructor mismatch becomes immediately visible during development
-- Missing exports produce clear "FederatedLearningManager not found in agentdb" errors
-- Developers can distinguish "not installed" from "wiring bug" from "API changed"
-- Init summary gives a single dashboard of what's broken after startup
-- Production graceful degradation preserved via `CLAUDE_FLOW_STRICT=false`
-
-### Negative
-
-- Strict mode will break CI until the 29 bugs from ADR-0040–0047 audit are fixed
-- Adds ~50 lines of error class boilerplate
-- Non-strict mode adds console noise (logged errors instead of silence)
-
-### Risks
-
-- Teams may set `CLAUDE_FLOW_STRICT=false` permanently to avoid fixing bugs (mitigated: CI defaults to strict)
-- Event-based error reporting requires a listener to be useful (mitigated: console.warn fallback when no listener)
-
-## Related
-
-- **ADR-0040 through ADR-0047**: The 8 ADRs whose implementations are hidden by silent swallowing
-- **ADR-0048**: Lazy controller initialization (preserved, not modified)
-- **Swarm audit 2026-03-17**: 8-agent analysis that discovered 29 bugs hidden by graceful degradation
+The original record cross-referenced related work: ADR-0040 through ADR-0047 (the 8 ADRs whose implementations are hidden by silent swallowing); ADR-0048 (lazy controller initialization, preserved and not modified); and the swarm audit of 2026-03-17 (the 8-agent analysis that discovered 29 bugs hidden by graceful degradation).

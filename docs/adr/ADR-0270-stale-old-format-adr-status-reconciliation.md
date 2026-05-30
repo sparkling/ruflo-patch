@@ -1,18 +1,11 @@
 ---
 status: accepted
-completed: false
 date: 2026-05-29
-tags: [corpus-hygiene, adr-status, reconciliation, outstanding-work, defer-with-trigger]
+tags: [corpus-hygiene, adr-status, reconciliation, outstanding-work]
 supersedes: []
 depends-on: [ADR-0262, ADR-0257, ADR-0269]
 implements: []
 ---
-
-> **Status (2026-05-29)**: `accepted` (the reconciliation verdicts below are
-> ratified), `completed: false` so this ADR surfaces in an `adr-index`
-> outstanding-work query as the single anchor for the genuinely-open set it
-> enumerates. Flip to `completed: true` when every ADR in §"Genuinely open"
-> is closed or re-homed.
 
 # Reconciliation of stale old-format ADR status lines (2026-05-29 corpus audit)
 
@@ -148,6 +141,8 @@ Per `[[feedback-skip-accepted-as-squelch]]`, each carries a trigger. Live-revali
    `completed: true`.
 
 ## More Information
+
+Status (2026-05-29): `accepted` (the reconciliation verdicts below are ratified), `completed: false` so this ADR surfaces in an `adr-index` outstanding-work query as the single anchor for the genuinely-open set it enumerates. Flip to `completed: true` when every ADR in §"Genuinely open" is closed or re-homed.
 
 * [[ADR-0262]] — the `completed:` schema extension this reconciliation operationalises.
 * [[ADR-0257]] / [[ADR-0269]] — the defer-with-trigger / queryable-tracker pattern this ADR follows.

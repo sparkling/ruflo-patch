@@ -1,17 +1,17 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-12
-tags: [hierarchical-memory, mcp-tools, fix, regression-repair, adr-0176, adr-0066, adr-0177]
+tags: [hierarchical-memory, mcp-tools, fix]
 supersedes: []
 depends-on: [ADR-0066, ADR-0176, ADR-0177]
-implements: [ADR-0176-phase-3]
-references-upstream: [ruvnet/agentdb:README]
+implements: [ADR-0176]
 ---
 
 # Fix hierarchical memory: restore controller + complete the `hierarchical-*` MCP surface
 
-## What was broken
+## Context and Problem Statement
+
+### What was broken
 
 After today's ADR-0177 reset (fork's agentdb → upstream HEAD `a478ab3`) hierarchical memory was non-functional. Three concrete symptoms:
 
@@ -23,9 +23,9 @@ After today's ADR-0177 reset (fork's agentdb → upstream HEAD `a478ab3`) hierar
 
 Net: of the 4 hierarchical-* MCP tools any skill could reasonably call, **only 1 worked** (`agentdb_causal-edge` — survived both the underscore rename and the missing-class issue).
 
-## Audit context — what upstream documents vs ships, what downstream consumes
+### Audit context — what upstream documents vs ships, what downstream consumes
 
-### Upstream agentdb promises what it doesn't deliver
+#### Upstream agentdb promises what it doesn't deliver
 
 `ruvnet/agentdb/README.md` documents the surface in 5 places:
 - Line 94: lists `agentdb_hierarchical_store` among the 41 advertised MCP tools
@@ -42,7 +42,7 @@ But upstream's actual code ships **none of them**:
 
 Upstream ruflo's `CHANGELOG.md:18` confirms the origin: *"AgentDB v3.0.0-alpha.9: 8 new controllers (HierarchicalMemory, MemoryConsolidation, SemanticRouter, GNNService, RVFOptimizer, MutationGuard, AttestationLog, GuardedVectorBackend) + 6 MCP tools"* — HierarchicalMemory was a downstream addition packaged into agentdb's release. The reset to upstream removed the actual implementation while preserving the documentation that promises it works.
 
-### Downstream consumption is broad — not isolated to /adr-index
+#### Downstream consumption is broad — not isolated to /adr-index
 
 Five upstream `ruflo` plugins reference `agentdb_hierarchical-*` tools across ~17 skill / agent / command / README files:
 
@@ -55,7 +55,7 @@ Five upstream `ruflo` plugins reference `agentdb_hierarchical-*` tools across ~1
 
 The hierarchical-* surface is load-bearing for at least 4 distinct downstream concerns: ADR tracking, knowledge graphs, goal/research workflows, and market data pipelines. ADR-0176's "/adr-index" framing understated the consumer count by ~4×.
 
-### Latent UX bug: namespace argument silently dropped
+#### Latent UX bug: namespace argument silently dropped
 
 `ruflo-market-data/docs/adrs/0001-market-data-contract.md:19` documents a known issue with the hierarchical-* tools:
 
@@ -67,7 +67,7 @@ But several consumers continue to write namespace as if it worked:
 
 Skill calls reach the tool but the namespace argument has no runtime effect — records collide across namespaces in the underlying `hierarchical_memory` SQL table. Out of scope for this fix; tracked as Open Follow-up #7.
 
-### Prior ADR history on this surface
+#### Prior ADR history on this surface
 
 Several ruflo-patch ADRs have touched hierarchical memory:
 
@@ -83,7 +83,17 @@ Several ruflo-patch ADRs have touched hierarchical memory:
 | ADR-0176 Phase 3 | Specified implementing `hierarchical-query`; today's commits land it |
 | **ADR-0178** (this) | Documents the fix |
 
-## The fix (3 commits, 2 repos)
+## Considered Options
+
+* **Restore the fork-only `HierarchicalMemory` controller from snapshot `bd760f2`, add the missing `.query()` method, and revert the underscore tool-name normalization (chosen).** Each of the three layers was already declared as expected-to-work; this closes the gaps as a coordinated fix.
+
+(No alternatives were recorded — this is a regression-repair restoring declared-but-missing behaviour. The substantive sub-decisions, e.g. which snapshot to restore from, are recorded under the Decision Outcome below.)
+
+## Decision Outcome
+
+Chosen option: "Restore the controller, implement `hierarchical-query`, and revert the tool-name normalization", because each of the three broken layers was already a promise the fork's own documentation and skill manifests made; closing them is a fix, not a feature.
+
+### The fix (3 commits, 2 repos)
 
 ### 1. Restore the controller class — `forks/agentdb/main` `599106b`
 
@@ -119,7 +129,7 @@ Distinct from `recall()` (similarity search) and from `getMemoryById()` (single-
 - MCP tool registration `agentdb_hierarchical-query` in `cli/src/mcp-tools/agentdb-tools.ts` between the existing `hierarchical-recall` and `consolidate` tools. inputSchema accepts `pathPattern` (required), `tier` (optional), `limit` (optional, capped at MAX_TOP_K). Validation via existing `validateString` / `validatePositiveInt` helpers.
 - Tool exported in the file's export array so the registry picks it up at boot.
 
-## Result
+### Result
 
 | MCP tool | Before fix | After fix |
 |---|---|---|
@@ -133,7 +143,7 @@ Distinct from `recall()` (similarity search) and from `getMemoryById()` (single-
 
 Type-check: `forks/agentdb` `tsc --noEmit` shows 114 baseline errors (all pre-existing in `benchmarks/` + `examples/` + `tests/benchmarks/`, identical to upstream's set), zero new errors in restored or modified `src/` files.
 
-## Why this is a fix, not a feature
+### Why this is a fix, not a feature
 
 Each of the three layers was already declared somewhere as expected-to-work:
 
@@ -143,7 +153,7 @@ Each of the three layers was already declared somewhere as expected-to-work:
 
 Each layer was a promise the fork made and didn't keep. This ADR records closing those three gaps as a coordinated fix.
 
-## Consequences
+### Consequences
 
 * Good, because the fork now delivers what every layer of its own documentation already claims. No semantic change for callers — the tools behave the way their schemas + descriptions said they would.
 * Good, because the stub-fallback path at `controller-registry.ts:1486` (`createTieredMemoryStub()`) is no longer the de-facto runtime state for hierarchical memory. Strict mode users stop getting `ControllerInitError`; non-strict-mode users stop getting silent in-memory-only persistence.
@@ -161,7 +171,7 @@ Each layer was a promise the fork made and didn't keep. This ADR records closing
 
   Hierarchical-memory operations sit on top of substrate-level concurrency work tracked by ADR-0163 (closed for the t3-2 6-writer case via `7deff1027` vectorless-recovery fix), ADR-0167 + ADR-0168 (cross-process N=8 work continues). The `adr0090-b5-hierarchicalMemory` test bucket was one of the 14 failing buckets ADR-0163 cluster-tracked; needs re-verification against the restored class. Mitigation: Open Follow-up #8 catalogs the in-class gaps and decisions.
 
-## Verification
+### Confirmation
 
 | Layer | Verification |
 |---|---|
@@ -171,7 +181,11 @@ Each layer was a promise the fork made and didn't keep. This ADR records closing
 | Name revert | `forks/ruflo` `git show 8c9d9ab81 --stat` confirms 13 single-line changes (13 insertions / 13 deletions) in one file, no other surface touched |
 | End-to-end acceptance | **Pending `npm run release`.** No e2e test exercises hierarchical-query yet — Open Follow-up #1. |
 
-## Open follow-ups
+## More Information
+
+Original status: accepted and completed. This ADR implements ADR-0176 Phase 3 and references upstream source `ruvnet/agentdb:README`. It depends on ADR-0066 (which introduced the `HierarchicalMemory` controller) and ADR-0177 (the reset that removed it).
+
+### Open follow-ups
 
 1. **Add an end-to-end acceptance check** in `ruflo-patch/lib/acceptance-adr0177-checks.sh` (or sibling): `ruflo init` → `agentdb_hierarchical-store` records at paths `adr/ADR-001..003` → `agentdb_hierarchical-query` with pattern `adr/*` → assert 3 results. Validates the full 3-layer chain (controller method → orchestration → MCP registration).
 

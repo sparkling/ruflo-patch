@@ -1,11 +1,9 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-24
-implemented: 2026-05-28
-tags: [audit-followup, security, aidefence, pii, mcp-envelope, ct-n]
+tags: [audit-followup, security, aidefence, pii]
 supersedes: []
-depends-on: [0201, 0210, 0233, 0238]
+depends-on: [ADR-0201, ADR-0210, ADR-0233, ADR-0238]
 implements: []
 ---
 
@@ -50,7 +48,7 @@ implements: []
 
 # Security follow-ups beyond CT-E: isError envelope + framing + detector deferrals (CT-N)
 
-## Context
+## Context and Problem Statement
 
 [[ADR-0233]] §CT-E ("Surface without enforcement") delegated the *wire-or-remove* decision for eight unused security/telemetry/consensus surfaces to [[ADR-0238]]. CT-N is the **second-pass remediation track** for slice-04 (security) covering the five remaining findings that ADR-0238 explicitly listed as out-of-scope (PII coverage / `aidefence_learn` poisoning) plus the framing-mismatch and protocol-boundary findings that don't fit the wire-or-remove shape.
 
@@ -110,7 +108,9 @@ Applied per finding ([[feedback-remediation-adr-preflight]]).
 * **Option C — Fold F-04-009 into [[ADR-0242]] since both are MCP-envelope-honesty issues.** **Rejected** — ADR-0242 is a long-term cultural-shift ADR explicitly scoped to handler-side rules; folding F-04-009 in would (a) blur ADR-0242's "handlers must throw" message, (b) couple a one-file client fix to ADR-0242's multi-cycle adoption timeline, (c) re-open ADR-0242's careful scope discipline. Cleaner to deliver F-04-009 as a small sibling ADR that explicitly disclaims overlap with ADR-0242.
 * **Option D — Option B extended (chosen).** Own F-04-009 as the high-leverage structural fix; ride along with F-04-010 (one-line scope-extension to ADR-0238's already-committed docblock rewrite) and F-04-011 (small backoff fix in one file). **Defer F-04-006 and F-04-007 with explicit rationale** (upstream-not-wired + fork-only fix would be permanent merge tax for a security boundary upstream chose not to enforce — exact same calculus as [[ADR-0238]] Surfaces 1 and 2). This ADR closes the structural protocol-boundary gap and the small framing/recovery gaps; the deferred items are tracked openly as future product-bet ADRs.
 
-## Decision
+## Decision Outcome
+
+Chosen option: "Option D — own F-04-009 + F-04-010 + F-04-011; defer F-04-006 and F-04-007 with explicit rationale", because the three small fixes close the reachable security/envelope gaps now while the two architecture-gated findings stay visible in the audit trail rather than buried as won't-fix.
 
 **Chosen: Option D — own F-04-009 + F-04-010 + F-04-011; defer F-04-006 and F-04-007 with explicit rationale.**
 
@@ -131,26 +131,18 @@ Applied per finding ([[feedback-remediation-adr-preflight]]).
 * **Site 3 (F-04-011)**: `grep -n "installAttempted" forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/security-tools.ts` shows the variable renamed to `installAttemptedAt` and typed `number | null`. Behaviour test in `forks/ruflo/v3/@claude-flow/cli/__tests__/security-tools-backoff.test.ts` (or extend an existing aidefence test) asserts that after a simulated install-fail, a second call within 5 minutes throws the cached error AND a third call after `Date.now() + 5*60_000 + 1` re-attempts the install path.
 * **Sites 4 + 5 (F-04-006, F-04-007)**: No code-level gate (deferred). Acceptance is documentary: this ADR's "More information" section names the open follow-ups; the security audit's slice-04 file remains the authoritative findings record; future product-bet ADRs that pick up either finding must reference this ADR's deferral rationale.
 
-## Consequences
+### Consequences
 
-### Positive
-
-* **F-04-009 fix** closes the largest structural gap in the MCP envelope-honesty story at the seam where it costs one file. Future handlers that adopt [[ADR-0242]]'s server-side rule (throw fatals) and existing handlers that already set `isError: true` honestly (the 6 aidefence handlers, plus any others) get the same consistent failure path on the client side.
-* **F-04-010 ride-along** removes a perf-claim mismatch in the same docblock [[ADR-0238]] Surface 1 already rewrites — zero extra commits, one extra sentence in the rewrite.
-* **F-04-011 backoff** turns a session-long aidefence outage into a 5-minute self-recovering pause; matches the audit's verbatim recommendation; small file-local change.
-* **Deferral honesty** for F-04-006/F-04-007 keeps both findings visible in the audit trail rather than burying them in a "won't fix"; future product-bet ADRs can pick them up with the rationale already documented.
-
-### Negative
-
-* **F-04-009 is a behaviour change** for any caller that today silently swallows aidefence-error envelopes (per the audit, the two smoke scripts at `plugins/ruflo-{aidefence,browser}/scripts/smoke.sh` check only registration, not envelope contents). After this fix, those callers will see `MCPClientError` thrown where they previously saw a returned object with `isError: true`. **Mitigation**: the audit explicitly recommends this; the previous behaviour was a silent fail-open by convention; the change makes the failure observable. Surface the change in the implementation commit message + flag for plugin smoke-script review.
-* **F-04-007 deferral leaves the poisoning vector open**. `aidefence_learn` remains exploitable for trust-poisoning of mitigation rankings (NOT of detection — regex detection is data-independent). The audit calibrated this as HIGH; deferring it accepts the risk until `caller_identity` plumbing exists. **Mitigation**: the entire aidefence surface is opt-in per F-04-001 and being reframed as "manual scan utility" per ADR-0238 Surface 1 — operators are being told the surface is advisory; the poisoning impact is bounded to a ranking surface that nothing else trusts at runtime.
-* **F-04-006 deferral leaves PII coverage gaps documented but unfixed**. Operators reading either detector's description may still assume comprehensive coverage. **Mitigation**: ADR-0238 Surface 1's docblock rewrite reframes aidefence as a "manual scan utility"; this ADR documents the gap so future ADR-0238-style framing-honesty work can extend to the `aidefence_has_pii` description.
-* **Three small fork-only fixes** (F-04-009, F-04-010 ride-along, F-04-011) each carry permanent merge tax against upstream in their respective files. Acceptable: total surface is three files, all small edits, all structurally aligned with corpus rules upstream's code already half-implements.
-
-### Neutral
-
-* This ADR does not touch `mcp-server.ts:691-707` (that wrap is correct — it converts thrown errors to JSON-RPC error frames already). The fix is at the client helper that wraps tool dispatch in `cli/src/`, not at the MCP server transport layer.
-* This ADR does not propose a new lint or arch-test. The fix is a one-file behavioural change with a test; new structural rules belong to [[ADR-0242]]'s scope.
+* Good, because **F-04-009 fix** closes the largest structural gap in the MCP envelope-honesty story at the seam where it costs one file. Future handlers that adopt [[ADR-0242]]'s server-side rule (throw fatals) and existing handlers that already set `isError: true` honestly (the 6 aidefence handlers, plus any others) get the same consistent failure path on the client side.
+* Good, because **F-04-010 ride-along** removes a perf-claim mismatch in the same docblock [[ADR-0238]] Surface 1 already rewrites — zero extra commits, one extra sentence in the rewrite.
+* Good, because **F-04-011 backoff** turns a session-long aidefence outage into a 5-minute self-recovering pause; matches the audit's verbatim recommendation; small file-local change.
+* Good, because **Deferral honesty** for F-04-006/F-04-007 keeps both findings visible in the audit trail rather than burying them in a "won't fix"; future product-bet ADRs can pick them up with the rationale already documented.
+* Bad, because **F-04-009 is a behaviour change** for any caller that today silently swallows aidefence-error envelopes (per the audit, the two smoke scripts at `plugins/ruflo-{aidefence,browser}/scripts/smoke.sh` check only registration, not envelope contents). After this fix, those callers will see `MCPClientError` thrown where they previously saw a returned object with `isError: true`. **Mitigation**: the audit explicitly recommends this; the previous behaviour was a silent fail-open by convention; the change makes the failure observable. Surface the change in the implementation commit message + flag for plugin smoke-script review.
+* Bad, because **F-04-007 deferral leaves the poisoning vector open**. `aidefence_learn` remains exploitable for trust-poisoning of mitigation rankings (NOT of detection — regex detection is data-independent). The audit calibrated this as HIGH; deferring it accepts the risk until `caller_identity` plumbing exists. **Mitigation**: the entire aidefence surface is opt-in per F-04-001 and being reframed as "manual scan utility" per ADR-0238 Surface 1 — operators are being told the surface is advisory; the poisoning impact is bounded to a ranking surface that nothing else trusts at runtime.
+* Bad, because **F-04-006 deferral leaves PII coverage gaps documented but unfixed**. Operators reading either detector's description may still assume comprehensive coverage. **Mitigation**: ADR-0238 Surface 1's docblock rewrite reframes aidefence as a "manual scan utility"; this ADR documents the gap so future ADR-0238-style framing-honesty work can extend to the `aidefence_has_pii` description.
+* Bad, because **Three small fork-only fixes** (F-04-009, F-04-010 ride-along, F-04-011) each carry permanent merge tax against upstream in their respective files. Acceptable: total surface is three files, all small edits, all structurally aligned with corpus rules upstream's code already half-implements.
+* Neutral, because this ADR does not touch `mcp-server.ts:691-707` (that wrap is correct — it converts thrown errors to JSON-RPC error frames already). The fix is at the client helper that wraps tool dispatch in `cli/src/`, not at the MCP server transport layer.
+* Neutral, because this ADR does not propose a new lint or arch-test. The fix is a one-file behavioural change with a test; new structural rules belong to [[ADR-0242]]'s scope.
 
 ## Sites table
 
@@ -165,6 +157,8 @@ Applied per finding ([[feedback-remediation-adr-preflight]]).
 | 5 | F-04-007 | HIGH | `forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/security-tools.ts:357-447` + `forks/ruflo/v3/@claude-flow/aidefence/src/domain/services/threat-learning-service.ts:191-239` | **Deferred** — requires `caller_identity` plumbing in `MCPCallContext` (same architectural change [[ADR-0238]] Surface 2 deferred for claims RBAC) | deferred to `caller_identity` direction (joint with F-04-003 / F-04-004 / ADR-101) |
 
 ## More information
+
+Original status: accepted 2026-05-24; the owned (non-deferred) work was implemented on 2026-05-28.
 
 ### Why F-04-006 and F-04-007 are deferred (not "won't fix")
 

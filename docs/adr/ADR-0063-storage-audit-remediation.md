@@ -1,11 +1,15 @@
-# ADR-0063: Storage Audit Remediation
+---
+status: accepted
+date: 2026-04-05
+tags: [storage, audit, embedding, dimension]
+supersedes: [ADR-0062]
+depends-on: [ADR-0061]
+implements: []
+---
 
-- **Status**: **Implemented (2026-05-03)** — post-implementation audit + remediation of ADR-0062 complete.
-- **Date**: 2026-04-05
-- **Deciders**: 8-agent deep audit swarm
-- **Supersedes**: ADR-0062 P0-2, P1-1 (implementation bugs found by audit)
+# Storage Audit Remediation
 
-## Context
+## Context and Problem Statement
 
 An 8-agent swarm performed a deep audit of all storage settings, embedding configuration, HNSW parameters, cache/TTL values, SQLite tuning, WASM/native fallbacks, cross-component compatibility, and learning pipeline state across 4 forks (ruflo, agentic-flow, ruv-FANN, ruvector) — post-ADR-0062 implementation.
 
@@ -24,7 +28,15 @@ The audit found **3 critical**, **4 high**, and **8 medium** severity issues. Tw
 | S7 | SQLite/RVF | 5 connection points, only AgentDB native path applies full pragma set |
 | S8 | Learning pipeline | Stale test at `controller-registry.test.ts:234`; learning-bridge 768-dim vs registry 384-dim mismatch |
 
-## Decision
+## Considered Options
+
+* Remediate the storage audit findings via critical/high/medium fixes (C1-C3, H1-H4, M1-M8) across the forks (chosen).
+
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "Remediate the storage audit findings via critical/high/medium fixes", because the audit found that the ADR-0062 implementation itself contained two critical bugs (wrong import path, non-existent method) plus a persistent dimension split and several lower-severity issues that must be addressed for correctness.
 
 ### Critical Fixes (C1–C3)
 
@@ -229,7 +241,7 @@ tieredCache: {
 
 **Location**: `ruflo` fork, `v3/@claude-flow/memory/src/config-adapter.ts`.
 
-## Inventory: Remaining Hardcoded Values (Post-Remediation)
+### Inventory: Remaining Hardcoded Values (Post-Remediation)
 
 After all fixes above, these intentional hardcodes remain:
 
@@ -242,23 +254,23 @@ After all fixes above, these intentional hardcodes remain:
 | `ENABLE_FLASH_CONSOLIDATION` | false | Feature flag — enable when AttentionService is stable |
 | `RuVectorBackend` adaptive params | M=8/16/32 tiers | Dead code — not called at init |
 
-## Consequences
+### Consequences
 
-### Positive
+#### Positive
 
-- Resolves two critical bugs in ADR-0062 implementation (C1, C2)
-- Unifies dimension default to 768 across the entire stack
-- Fixes silent RateLimiter misconfiguration (H1)
-- Raises maxElements from 10K to 100K (H2)
-- Documents all remaining hardcoded values with rationale
-- Prevents SQLITE_BUSY errors in concurrent scenarios (M1–M3)
+* Good, because it resolves two critical bugs in ADR-0062 implementation (C1, C2).
+* Good, because it unifies the dimension default to 768 across the entire stack.
+* Good, because it fixes silent RateLimiter misconfiguration (H1).
+* Good, because it raises maxElements from 10K to 100K (H2).
+* Good, because it documents all remaining hardcoded values with rationale.
+* Good, because it prevents SQLITE_BUSY errors in concurrent scenarios (M1–M3).
 
-### Negative
+#### Negative
 
-- C3 changes 1536→768 default in ruflo/memory legacy components — existing databases with 1536-dim vectors become incompatible
-- H2 raises memory usage (100K vectors × 768 dims × 4 bytes = ~300MB ceiling vs ~30MB at 10K)
+* Bad, because C3 changes 1536→768 default in ruflo/memory legacy components — existing databases with 1536-dim vectors become incompatible.
+* Bad, because H2 raises memory usage (100K vectors × 768 dims × 4 bytes = ~300MB ceiling vs ~30MB at 10K).
 
-### Risks
+#### Risks
 
 - C1 fix changes the import from `@claude-flow/memory` to `@claude-flow/agentdb` — must verify `agentdb` is available as a runtime dependency of the CLI package
 - `require()` in ESM context (memory-bridge.ts line 94) remains fragile — consider switching to `await import()` in a future pass
@@ -273,9 +285,8 @@ Same as ADR-0062: detect existing database dimension before applying defaults. F
 3. Use stored dimension (backward compat)
 4. If new index, use `getEmbeddingConfig().dimension`
 
-## Related
+## More Information
 
-- **ADR-0062**: Storage & Configuration Unification (predecessor — this ADR fixes bugs found in its implementation)
-- **ADR-0052**: Config-driven embedding framework (the intended single source of truth)
-- **ADR-0040**: Shared singletons for NightlyLearner dependencies
-- **ADR-0061**: Controller integration completion
+Original status: "Implemented (2026-05-03) — post-implementation audit + remediation of ADR-0062 complete." Date: 2026-04-05. Deciders: 8-agent deep audit swarm. This ADR supersedes ADR-0062 P0-2 and P1-1 (implementation bugs found by the audit).
+
+This decision relates to the following ADRs: ADR-0062 (Storage & Configuration Unification — predecessor; this ADR fixes bugs found in its implementation); ADR-0052 (Config-driven embedding framework — the intended single source of truth); ADR-0040 (Shared singletons for NightlyLearner dependencies); and ADR-0061 (Controller integration completion).

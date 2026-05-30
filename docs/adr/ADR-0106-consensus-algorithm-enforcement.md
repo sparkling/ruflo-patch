@@ -1,12 +1,15 @@
-# ADR-0106: Consensus algorithm enforcement
+---
+status: accepted
+date: 2026-04-29
+tags: [hive-mind, consensus, raft, byzantine]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: Accepted; in-handler dispatch superseded by ADR-0119 (T1 weighted) + ADR-0120 (T2 gossip) + ADR-0121 (T3 CRDT) — all complete in ADR-0118 §Status (2026-05-03). Daemon-resident `ConsensusEngine` (Option A wiring) intentionally deferred per §Out of scope (federation infrastructure, ~1400 LOC parked). Orphaned: `forks/ruflo/v3/@claude-flow/swarm/src/consensus/{raft,byzantine,gossip,index}.ts` — preserved per §Out of scope. — Original status: Full wire-up of `swarm/src/consensus/{raft,gossip,byzantine}.ts` (443 + 513 + 431 LOC) + `ConsensusEngine` (267 LOC) into `hive-mind_consensus` MCP handler via daemon-resident pattern, per memory `feedback-no-value-judgements-on-features.md`. All 4 strategies become real protocol implementations (raft term-based leader election + log replication; gossip epoch-based propagation; byzantine PBFT vote-counting + equivocation detection — signatures-unverified annotation stays as documented limitation, not gate). Upstream's `6992d5f67` JSON-tally improvements (term-collision, Byzantine cross-vote detection) layer on top. Add CLI flag exposure (`strategy` / `term` / `quorumPreset` / `timeoutMs`) so all protocol parameters are user-addressable. Trust-model framing stays as documented context. Implementation in ADR-0103's program (post-W5; now operationalised via ADR-0118 §Status table).
-- **Date**: 2026-04-29 (promoted 2026-05-01)
-- **Roadmap**: ADR-0103 item 2
-- **Scope**: hive-mind consensus protocols (`raft` / `byzantine` / `gossip` /
-  `quorum` / `crdt`) — runtime fault-tolerance properties, not just labels.
+# Consensus algorithm enforcement
 
-## Context
+## Context and Problem Statement
 
 README claims, surveyed:
 
@@ -104,7 +107,7 @@ there, but no upstream code wires hives across machines today.
 - ⚠️ Trust model: hive workers are not independent untrusted nodes;
   Byzantine guarantees are over-claimed regardless of wiring.
 
-## Decision options
+## Considered Options
 
 ### Option A — Wire `ConsensusEngine` into MCP tool
 
@@ -177,7 +180,48 @@ This split lets the README claim be honest (intra-hive: trusted-clique
 voting; cross-hive: real Raft) without forcing every hive run through
 heavyweight consensus machinery.
 
-## Test plan
+## Decision Outcome
+
+Chosen option: "Option A — full wire-up of `ConsensusEngine` into the `hive-mind_consensus` MCP handler via the daemon-resident pattern", because per memory `feedback-no-value-judgements-on-features.md` the default is to wire ALL features: ~3500+ LOC of tested consensus implementations exist, and skipping them on trust-model grounds was a value judgement the user explicitly rejected; the trust-model framing remains true but informs what additional features to build (signature verification, cross-hive persistence), not whether to wire what's already written.
+
+**Updated 2026-04-29 per memory `feedback-no-value-judgements-on-features.md` ("import ALL features"):** earlier draft recommended **Option D** (improve JSON tally + reframe README + park `ConsensusEngine` as future federation infrastructure). That was a value judgement to skip wiring on trust-model grounds. **Recommendation flipped to Option A — full wire-up.**
+
+Ship **Option A**: wire `ConsensusEngine` into the `hive-mind_consensus` MCP handler as the dispatch layer behind `strategy: 'raft' | 'byzantine' | 'gossip' | 'paxos'`. All 4 protocols become real protocol implementations:
+
+- `consensus/index.ts` (`ConsensusEngine`) → MCP-handler dispatch (`ConsensusEngine.initialize({algorithm: strategy})` replaces inline `switch`)
+- `consensus/raft.ts` → real term-based leader election + log replication for `strategy:'raft'`
+- `consensus/gossip.ts` → real epoch propagation for `strategy:'gossip'`
+- `consensus/byzantine.ts` → real PBFT vote-tallying + equivocation detection for `strategy:'byzantine'` (structural PBFT only — signature verification is a separate feature gap, annotated in code, not a reason to leave the protocol unwired)
+
+The **trust-model insight** from §Investigation findings (workers are trusted siblings under one `claude` session; adversarial Byzantine guarantees are theatrical until federation ships) **stays in the ADR as documented context**, but it does NOT gate wiring. Annotations on each class capture the limitation:
+
+```
+// raft.ts: Raft state is in-process per Queen session; cross-hive federation persistence is a separate enhancement.
+// gossip.ts: Gossip epoch state per Queen session; cross-hive persistence is a federation enhancement.
+// byzantine.ts: signatures field is structural-only; full PBFT identity verification is a separate feature gap (federation layer needs it). Wiring the protocol now means strategy='byzantine' produces real BFT-shape vote tallies; signature-verified adversarial guarantees come later.
+```
+
+**What changes vs the prior Option D recommendation**:
+- The "improve JSON tally" parts of Option D (equivocation detection, absence-aware status) **survive** — those are real correctness wins regardless of which backend dispatches. Layer them on top of `ConsensusEngine` rather than alongside it.
+- The "preserve as @internal future federation" parts **flip to "wire and annotate"**. Federation enhancements (signature verification, cross-hive persistence) become *additional features to add later*, not the *only condition under which we'd wire these classes*.
+- The "reframe README to match trusted-clique" parts **stay deflated**. README still shouldn't claim adversarial Byzantine fault tolerance until signature verification ships. But "consensus algorithms enforced at runtime via real Raft/Gossip/PBFT state machines" becomes empirically true.
+
+**Daemon-socket transport for ConsensusEngine state** (the Option-A "hard problem" called out earlier — `ConsensusEngine` is `EventEmitter`-based and stateful, so cross-MCP-call persistence is non-trivial): solve it via Option-A1's daemon-resident pattern. ConsensusEngine instances live in the long-running ruflo daemon; MCP-tool handlers RPC into the daemon. Same pattern as ADR-0107's QueenCoordinator advisor wiring — both classes become daemon-side state.
+
+**Why Option A now**: per `feedback-no-value-judgements-on-features.md`, default to wire. ~3500+ LOC of tested consensus implementations exist; not wiring them was a value judgement that the user explicitly rejected. The trust-model framing remains true (workers are trusted siblings) but it informs *what additional features to build* (signature verification, cross-hive persistence), not *whether to wire what's already written*.
+
+### Consequences
+
+* Good, because "consensus algorithms enforced at runtime via real Raft/Gossip/PBFT state machines" becomes empirically true instead of a JSON-tally bookkeeping illusion.
+* Good, because ~3500+ LOC of tested consensus implementations are put to use rather than parked as dead weight.
+* Good, because the equivocation-detection and absence-aware-status correctness wins from Option D layer on top of `ConsensusEngine` rather than being discarded.
+* Good, because the daemon-resident pattern (shared with ADR-0107's QueenCoordinator wiring) solves the `EventEmitter`-state-across-MCP-calls hard problem.
+* Bad, because the README must stay deflated — it cannot claim adversarial Byzantine fault tolerance until signature verification ships (annotated as a separate feature gap).
+* Neutral, because the trust-model framing remains true (workers are trusted siblings) and informs future federation work (signature verification, cross-hive persistence), not the current wiring decision.
+
+### Confirmation
+
+#### Test plan
 
 **Regression** (automated, runs in `test:acceptance`):
 
@@ -272,30 +316,8 @@ transport for ConsensusEngine state is its own design problem.
   Option A is ever revisited.
 - README rewrite (covered by ADR-0101).
 
-## Recommendation
+## More Information
 
-**Updated 2026-04-29 per memory `feedback-no-value-judgements-on-features.md` ("import ALL features"):** earlier draft recommended **Option D** (improve JSON tally + reframe README + park `ConsensusEngine` as future federation infrastructure). That was a value judgement to skip wiring on trust-model grounds. **Recommendation flipped to Option A — full wire-up.**
+Status: Accepted; in-handler dispatch superseded by ADR-0119 (T1 weighted) + ADR-0120 (T2 gossip) + ADR-0121 (T3 CRDT) — all complete in ADR-0118 §Status (2026-05-03). Daemon-resident `ConsensusEngine` (Option A wiring) intentionally deferred per §Out of scope (federation infrastructure, ~1400 LOC parked). Orphaned: `forks/ruflo/v3/@claude-flow/swarm/src/consensus/{raft,byzantine,gossip,index}.ts` — preserved per §Out of scope.
 
-Ship **Option A**: wire `ConsensusEngine` into the `hive-mind_consensus` MCP handler as the dispatch layer behind `strategy: 'raft' | 'byzantine' | 'gossip' | 'paxos'`. All 4 protocols become real protocol implementations:
-
-- `consensus/index.ts` (`ConsensusEngine`) → MCP-handler dispatch (`ConsensusEngine.initialize({algorithm: strategy})` replaces inline `switch`)
-- `consensus/raft.ts` → real term-based leader election + log replication for `strategy:'raft'`
-- `consensus/gossip.ts` → real epoch propagation for `strategy:'gossip'`
-- `consensus/byzantine.ts` → real PBFT vote-tallying + equivocation detection for `strategy:'byzantine'` (structural PBFT only — signature verification is a separate feature gap, annotated in code, not a reason to leave the protocol unwired)
-
-The **trust-model insight** from §Investigation findings (workers are trusted siblings under one `claude` session; adversarial Byzantine guarantees are theatrical until federation ships) **stays in the ADR as documented context**, but it does NOT gate wiring. Annotations on each class capture the limitation:
-
-```
-// raft.ts: Raft state is in-process per Queen session; cross-hive federation persistence is a separate enhancement.
-// gossip.ts: Gossip epoch state per Queen session; cross-hive persistence is a federation enhancement.
-// byzantine.ts: signatures field is structural-only; full PBFT identity verification is a separate feature gap (federation layer needs it). Wiring the protocol now means strategy='byzantine' produces real BFT-shape vote tallies; signature-verified adversarial guarantees come later.
-```
-
-**What changes vs the prior Option D recommendation**:
-- The "improve JSON tally" parts of Option D (equivocation detection, absence-aware status) **survive** — those are real correctness wins regardless of which backend dispatches. Layer them on top of `ConsensusEngine` rather than alongside it.
-- The "preserve as @internal future federation" parts **flip to "wire and annotate"**. Federation enhancements (signature verification, cross-hive persistence) become *additional features to add later*, not the *only condition under which we'd wire these classes*.
-- The "reframe README to match trusted-clique" parts **stay deflated**. README still shouldn't claim adversarial Byzantine fault tolerance until signature verification ships. But "consensus algorithms enforced at runtime via real Raft/Gossip/PBFT state machines" becomes empirically true.
-
-**Daemon-socket transport for ConsensusEngine state** (the Option-A "hard problem" called out earlier — `ConsensusEngine` is `EventEmitter`-based and stateful, so cross-MCP-call persistence is non-trivial): solve it via Option-A1's daemon-resident pattern. ConsensusEngine instances live in the long-running ruflo daemon; MCP-tool handlers RPC into the daemon. Same pattern as ADR-0107's QueenCoordinator advisor wiring — both classes become daemon-side state.
-
-**Why Option A now**: per `feedback-no-value-judgements-on-features.md`, default to wire. ~3500+ LOC of tested consensus implementations exist; not wiring them was a value judgement that the user explicitly rejected. The trust-model framing remains true (workers are trusted siblings) but it informs *what additional features to build* (signature verification, cross-hive persistence), not *whether to wire what's already written*.
+Original status: full wire-up of `swarm/src/consensus/{raft,gossip,byzantine}.ts` (443 + 513 + 431 LOC) + `ConsensusEngine` (267 LOC) into `hive-mind_consensus` MCP handler via daemon-resident pattern, per memory `feedback-no-value-judgements-on-features.md`. All 4 strategies become real protocol implementations (raft term-based leader election + log replication; gossip epoch-based propagation; byzantine PBFT vote-counting + equivocation detection — signatures-unverified annotation stays as documented limitation, not gate). Upstream's `6992d5f67` JSON-tally improvements (term-collision, Byzantine cross-vote detection) layer on top. Add CLI flag exposure (`strategy` / `term` / `quorumPreset` / `timeoutMs`) so all protocol parameters are user-addressable. Trust-model framing stays as documented context. Implementation in ADR-0103's program (post-W5; now operationalised via ADR-0118 §Status table). Dated 2026-04-29 (promoted 2026-05-01). Roadmap: ADR-0103 item 2. Scope: hive-mind consensus protocols (`raft` / `byzantine` / `gossip` / `quorum` / `crdt`) — runtime fault-tolerance properties, not just labels.

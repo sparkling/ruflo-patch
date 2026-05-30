@@ -1,12 +1,15 @@
-# ADR-0091: sql.js Memory Fallback Removed
+---
+status: accepted
+date: 2026-04-15
+tags: [sqljs, storage, memory, fallback]
+supersedes: [ADR-0075]
+depends-on: []
+implements: []
+---
 
-- **Status**: Implemented (as of 2026-04-15)
-- **Date**: 2026-04-15
-- **Scope**: `@claude-flow/memory` database provider; ruflo-patch enforcement checks
-- **Supersedes (partial)**: ADR-0075 "Upstream Creator Corrections" — the sql.js edge fallback claim
-- **Related**: ADR-0082 (Test Integrity — No Fallbacks), ADR-0086 (Layer 1 Storage), ADR-0090 (Acceptance Suite Coverage Audit Tier A3)
+# sql.js Memory Fallback Removed
 
-## Context
+## Context and Problem Statement
 
 ADR-0075's "Upstream Creator Corrections (2026-04-06)" section records this
 claim:
@@ -51,50 +54,7 @@ consumers use it:
 
 None of these is the edge-environment memory fallback ADR-0075 described.
 
-## Decision
-
-1. The edge-environment memory fallback from ADR-0075's creator correction
-   **no longer exists in code**, and we explicitly accept that state.
-2. `@sparkleideas/cli` does **not** support edge environments (Vercel,
-   Cloudflare Workers, Docker minimal) without a working native
-   `better-sqlite3` binding. We do not ship a pure-JS memory path.
-3. ADR-0075's creator correction on this point is marked stale via an
-   in-place update note that points here. The original text stays — we do
-   not rewrite history.
-4. sql.js remains a transitive dependency only for the three non-memory
-   consumers listed above. This ADR documents that scope so the next audit
-   does not re-rediscover it.
-5. The three acceptance checks listed under **Enforcement** below are the
-   persistent guardrail: if `SqlJsBackend` is re-exported, if `sql.js` is
-   imported from the published memory path, or if a user-facing tool
-   description mentions sql.js, the acceptance suite fails loudly.
-
-## Consequences
-
-### Positive
-
-- ADR-0075 no longer lies about the memory backend matrix. A future audit
-  reads ADR-0091 and the sql.js question is answered.
-- Single memory codepath (`better-sqlite3` native + `rvf`) is simpler to
-  reason about, test, and debug than a three-way matrix.
-- Enforcement layer is named and tracked in one place, so accidental
-  reintroduction of `SqlJsBackend` trips CI instead of shipping.
-- Matches the ADR-0086 Debt 7 direction: remove SQLite fallbacks from the
-  memory path entirely, not add more.
-
-### Negative
-
-- We lose the edge-environment story. A user on Cloudflare Workers, Vercel
-  edge runtime, or a minimal Docker image without `better-sqlite3` wheel
-  coverage cannot run `@sparkleideas/cli`'s memory features. No one has
-  filed this as an issue in the months since the backend was removed, but
-  the capability gap is real.
-- If upstream revives an edge fallback later, we have to re-evaluate the
-  three enforcement checks and decide whether to unblock or keep guarding.
-  Revisit trigger: an upstream commit that adds a `'sqljs'` branch back to
-  `createDatabase` in `database-provider.ts`.
-
-## Alternatives Considered
+## Considered Options
 
 ### A3-RESTORE: restore `SqlJsBackend` and wire it into `DatabaseProvider`
 
@@ -129,6 +89,48 @@ needs to be able to find. Silent edits to a closed ADR leave no persistent
 record of why the enforcement checks exist. ADR-0091 captures the reasoning
 so the next audit can cite it directly.
 
+### A3-DELETE (chosen): accept the removal and document it
+
+Record that the edge-environment memory fallback no longer exists in code, mark ADR-0075's creator correction as stale, and codify the three enforcement checks as the permanent guardrail.
+
+## Decision Outcome
+
+Chosen option: "A3-DELETE — accept that the sql.js edge-environment memory fallback is gone and document it", because the architecture already diverged months ago with no edge-environment issue filed, `better-sqlite3` now has wide platform wheel coverage, and maintaining two memory backends would double the runtime test matrix forever (the exact silent-fallback risk ADR-0082 flags).
+
+1. The edge-environment memory fallback from ADR-0075's creator correction
+   **no longer exists in code**, and we explicitly accept that state.
+2. `@sparkleideas/cli` does **not** support edge environments (Vercel,
+   Cloudflare Workers, Docker minimal) without a working native
+   `better-sqlite3` binding. We do not ship a pure-JS memory path.
+3. ADR-0075's creator correction on this point is marked stale via an
+   in-place update note that points here. The original text stays — we do
+   not rewrite history.
+4. sql.js remains a transitive dependency only for the three non-memory
+   consumers listed above. This ADR documents that scope so the next audit
+   does not re-rediscover it.
+5. The three acceptance checks listed under **Enforcement** below are the
+   persistent guardrail: if `SqlJsBackend` is re-exported, if `sql.js` is
+   imported from the published memory path, or if a user-facing tool
+   description mentions sql.js, the acceptance suite fails loudly.
+
+### Consequences
+
+**Positive:**
+
+* Good, because ADR-0075 no longer lies about the memory backend matrix. A future audit reads ADR-0091 and the sql.js question is answered.
+* Good, because a single memory codepath (`better-sqlite3` native + `rvf`) is simpler to reason about, test, and debug than a three-way matrix.
+* Good, because the enforcement layer is named and tracked in one place, so accidental reintroduction of `SqlJsBackend` trips CI instead of shipping.
+* Good, because it matches the ADR-0086 Debt 7 direction: remove SQLite fallbacks from the memory path entirely, not add more.
+
+**Negative:**
+
+* Bad, because we lose the edge-environment story. A user on Cloudflare Workers, Vercel edge runtime, or a minimal Docker image without `better-sqlite3` wheel coverage cannot run `@sparkleideas/cli`'s memory features. No one has filed this as an issue in the months since the backend was removed, but the capability gap is real.
+* Bad, because if upstream revives an edge fallback later, we have to re-evaluate the three enforcement checks and decide whether to unblock or keep guarding. Revisit trigger: an upstream commit that adds a `'sqljs'` branch back to `createDatabase` in `database-provider.ts`.
+
+### Confirmation
+
+The decision is testable, not just declarative, via the three permanent enforcement acceptance checks (`check_adr0080_no_raw_sqljs`, `check_adr0065_no_sqljs_backend`, `check_no_sqljs_in_tool_descriptions`) detailed in the Enforcement section below. Removing or weakening any of these without replacing them is the ADR-0091 revisit trigger.
+
 ## Enforcement
 
 These three acceptance checks are the permanent guardrail and the reason
@@ -143,20 +145,15 @@ this ADR's decision is testable, not just declarative:
 Removing or weakening any of these without replacing them is the
 ADR-0091 revisit trigger.
 
-## References
+## More Information
 
-- ADR-0090 §"sql.js fallback — 0 of 9 behaviors covered; architecture
-  divergence" and §"Tier A3. Reconcile sql.js with upstream" — the audit
-  that surfaced this ADR
-- ADR-0075 §"Upstream Creator Corrections (2026-04-06)" — the stale claim
-  this ADR supersedes in part
-- ADR-0082 — "Test Integrity — No Fallbacks"; the no-silent-fallback
-  principle this ADR honors
-- ADR-0086 §"Debt 7" — `better-sqlite3` removed from CLI `package.json`;
-  this ADR extends that direction to sql.js
-- `@claude-flow/memory/src/database-provider.ts:21,192` — the provider
-  type and `createDatabase` switch that verify the absence
-- `@claude-flow/memory/src/sqlite-backend.ts:12` — the hard
-  `better-sqlite3` import with no try/catch
-- 4-agent ruflo swarm, 2026-04-15, sql.js fallback auditor task
-  `a2d8fc222c54ff8ec`
+Original status: "Implemented (as of 2026-04-15)", with a recorded Date of 2026-04-15. Scope: `@claude-flow/memory` database provider; ruflo-patch enforcement checks. This ADR partially supersedes ADR-0075's "Upstream Creator Corrections" — specifically the sql.js edge-fallback claim — and is related to ADR-0082 (Test Integrity — No Fallbacks), ADR-0086 (Layer 1 Storage), and ADR-0090 (Acceptance Suite Coverage Audit Tier A3).
+
+References:
+- ADR-0090 §"sql.js fallback — 0 of 9 behaviors covered; architecture divergence" and §"Tier A3. Reconcile sql.js with upstream" — the audit that surfaced this ADR
+- ADR-0075 §"Upstream Creator Corrections (2026-04-06)" — the stale claim this ADR supersedes in part
+- ADR-0082 — "Test Integrity — No Fallbacks"; the no-silent-fallback principle this ADR honors
+- ADR-0086 §"Debt 7" — `better-sqlite3` removed from CLI `package.json`; this ADR extends that direction to sql.js
+- `@claude-flow/memory/src/database-provider.ts:21,192` — the provider type and `createDatabase` switch that verify the absence
+- `@claude-flow/memory/src/sqlite-backend.ts:12` — the hard `better-sqlite3` import with no try/catch
+- 4-agent ruflo swarm, 2026-04-15, sql.js fallback auditor task `a2d8fc222c54ff8ec`

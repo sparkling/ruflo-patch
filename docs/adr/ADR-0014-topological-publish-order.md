@@ -1,10 +1,15 @@
-# ADR-0014: Topological Publish Order
+---
+status: accepted
+date: 2026-03-05
+tags: [publish, npm, dependencies, pipeline]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-## Status
+# Topological Publish Order
 
-Accepted
-
-## Context
+## Context and Problem Statement
 
 ### Specification (SPARC-S)
 
@@ -66,7 +71,16 @@ FUNCTION publishAll(levels, tag):
   RETURN SUCCESS
 ```
 
-## Decision
+## Considered Options
+
+* **Publish packages in a strict topological order derived from the dependency tree, sequentially with a 2-second delay, stopping on first failure (chosen).**
+* **Parallel publish within each level** -- Rejected for now. Packages within a level have no mutual dependencies, so parallel publish is theoretically safe. However, npm rate limiting makes this risky -- 5 concurrent publishes could trigger a 429. The sequential approach with 2-second delays is simple and reliable. Can be revisited if publish time becomes a bottleneck.
+* **Publish all at once, rely on npm to resolve** -- Rejected. npm's `npm publish` performs an integrity check that verifies dependencies exist in the registry. Publishing a package before its dependencies exist causes the publish to fail with `ETARGET` or similar errors. Even with `--no-dry-run`, consumers cannot install the package until its deps are available.
+* **Use a monorepo publish tool (Lerna, Changesets, Turborepo)** -- Rejected. These tools assume the packages are in a single workspace with a unified lockfile. Our packages span 3 upstream repos (ruflo, agentic-flow, ruv-FANN) that are built independently. Wiring them into a single workspace for the publish step adds complexity without benefit -- the topological order is static and known.
+
+## Decision Outcome
+
+Chosen option: "Publish packages in a strict topological order derived from the dependency tree", because bottom-up publishing eliminates `ETARGET` dependency-resolution failures, and sequential publishing with stop-on-failure prevents cascading errors from missing dependencies.
 
 ### Architecture (SPARC-A)
 
@@ -180,31 +194,16 @@ async function publishAll(tag) {
 }
 ```
 
-### Considered Alternatives
+### Consequences
 
-1. **Parallel publish within each level** -- Rejected for now. Packages within a level have no mutual dependencies, so parallel publish is theoretically safe. However, npm rate limiting makes this risky -- 5 concurrent publishes could trigger a 429. The sequential approach with 2-second delays is simple and reliable. Can be revisited if publish time becomes a bottleneck.
-
-2. **Publish all at once, rely on npm to resolve** -- Rejected. npm's `npm publish` performs an integrity check that verifies dependencies exist in the registry. Publishing a package before its dependencies exist causes the publish to fail with `ETARGET` or similar errors. Even with `--no-dry-run`, consumers cannot install the package until its deps are available.
-
-3. **Use a monorepo publish tool (Lerna, Changesets, Turborepo)** -- Rejected. These tools assume the packages are in a single workspace with a unified lockfile. Our packages span 3 upstream repos (ruflo, agentic-flow, ruv-FANN) that are built independently. Wiring them into a single workspace for the publish step adds complexity without benefit -- the topological order is static and known.
-
-## Consequences
-
-### Refinement (SPARC-R)
-
-**Positive:**
-
-- Deterministic publish order eliminates `ETARGET` resolution failures
-- Stop-on-failure prevents cascading errors from trying to publish packages with missing deps
-- GitHub Issue on failure provides immediate visibility and actionable context
-- 2-second delay is a conservative buffer that avoids npm rate limiting without significantly increasing total publish time
-- The level assignments are derived directly from the dependency tree -- no guesswork
-
-**Negative:**
-
-- If the dependency tree changes upstream (new packages, new cross-dependencies), the level assignments must be updated manually. This is mitigated by the fact that new packages are rare and the tree is relatively stable.
-- Sequential publish with delays means the publish phase takes ~52 seconds. This is acceptable for a build that runs every 6 hours.
-- A failure at level 1 blocks all 24 packages. This is the correct behavior -- partial publishes with missing deps are worse than no publish at all.
+* Good, because the deterministic publish order eliminates `ETARGET` resolution failures.
+* Good, because stop-on-failure prevents cascading errors from trying to publish packages with missing deps.
+* Good, because a GitHub Issue on failure provides immediate visibility and actionable context.
+* Good, because the 2-second delay is a conservative buffer that avoids npm rate limiting without significantly increasing total publish time.
+* Good, because the level assignments are derived directly from the dependency tree -- no guesswork.
+* Bad, because if the dependency tree changes upstream (new packages, new cross-dependencies), the level assignments must be updated manually. This is mitigated by the fact that new packages are rare and the tree is relatively stable.
+* Bad, because sequential publish with delays means the publish phase takes ~52 seconds. This is acceptable for a build that runs every 6 hours.
+* Bad, because a failure at level 1 blocks all 24 packages. This is the correct behavior -- partial publishes with missing deps are worse than no publish at all.
 
 **Trade-offs and edge cases:**
 
@@ -212,7 +211,9 @@ async function publishAll(tag) {
 - **Optional dependencies**: Many `@claude-flow/*` packages list others as `optionalDependencies`. npm does not fail if an optional dependency is missing from the registry. However, publishing bottom-up ensures optional deps are available if they exist in our scope.
 - **Orphaned prereleases**: If level 3 publishes 4 of 6 packages before the 5th fails, those 4 are on npm under the `prerelease` tag. They are installable but their level 3 siblings and all level 4-5 packages are missing. Users on `@latest` see the previous complete set. The orphaned prereleases are harmless and will be superseded by the next successful build.
 
-### Completion (SPARC-C)
+### Confirmation
+
+Completion (SPARC-C):
 
 - [x] Publish script implements the 5-level topological order
 - [x] Packages within each level publish sequentially with 2-second delay

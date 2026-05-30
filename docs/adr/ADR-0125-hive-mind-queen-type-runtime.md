@@ -1,15 +1,15 @@
-# ADR-0125: Hive-mind Queen-type runtime differentiation (Strategic / Tactical / Adaptive)
+---
+status: accepted
+date: 2026-05-02
+tags: [hive-mind, queen, prompt]
+supersedes: [ADR-0107]
+depends-on: [ADR-0116, ADR-0118]
+implements: []
+---
 
-- **Status**: **Implemented (2026-05-03)** per ADR-0118 §Status (T7 complete; fork 0748ed9e9 README + 9db6978d5 runtime). Supersedes ADR-0107 (full). Per §Reconciliation, "persist `queenType` across sessions" was a residual at proposal time; folded into T6/ADR-0124 §Specification (archive payload `queenType` field + live `state.queen.queenType` + `mcp__ruflo__hive-mind_status` surfacing).
-- **Date**: 2026-05-02
-- **Deciders**: Henrik Pettersen
-- **Depends on**: ADR-0116 (hive-mind marketplace plugin — provides the verification matrix audit), ADR-0118 (hive-mind runtime gaps tracker — owns this task as T7)
-- **Downstream**: ADR-0126 (T8 worker-type runtime — worker prompts cross-reference these queen prompt bodies)
-- **Supersedes implementation in**: ADR-0107 (Accepted 2026-04-29 with Option D recommended: per-type prose + CLI validation + state persistence + README correction). ADR-0107 framed the work as a single decision; ADR-0118 §T7 then folded it into the runtime-gaps program. This ADR keeps ADR-0107's Option D mechanism (per-type prompt prose) and discharges its remaining steps explicitly — see §Reconciliation with ADR-0107 below.
-- **Related**: ADR-0114 (substrate/protocol/execution architectural model — queen prompt is execution-layer)
-- **Scope**: Fork-side runtime work in `forks/ruflo/v3/@claude-flow/cli/src/commands/hive-mind.ts`. Closes ADR-0116 verification matrix row "3 Queen types" (currently ✗ partial).
+# Hive-mind Queen-type runtime differentiation (Strategic / Tactical / Adaptive)
 
-## Context
+## Context and Problem Statement
 
 ADR-0116's USERGUIDE-vs-implementation verification matrix surfaced that the `Queen Types` block (Strategic / Tactical / Adaptive) advertises three distinct behaviour columns but ships as a label only. ADR-0118 §T7 owns this gap as a single-PR task.
 
@@ -41,23 +41,39 @@ The label propagates into the queen's spawn prompt, but no downstream code path 
 - **(b) Separate template files per queen type loaded at runtime** — `templates/queen-strategic.md`, `templates/queen-tactical.md`, `templates/queen-adaptive.md` read via `fs` at spawn time, with a small interpolation pass.
 - **(c) Prompt composition from a base template + per-type addendum** — one shared base prompt body plus three small per-type addendum strings concatenated at substitution time.
 
-## Pros and Cons of the Options
-
-**(a) Inline branches**
-- Pros: single-file diff; easy review; no new file-loading code path; no I/O at spawn time; matches T7 ADR-0118 escalation expectation.
-- Cons: `hive-mind.ts` grows; per-variant prompt drift is hard to enforce mechanically — if one variant gains a `Tools you should reach for first` section heading, nothing flags the other two missing it (the unit test asserts presence per known sentinel, not section parity); a 4th queen type means refactoring all three sibling literals plus the switch and tests; cost of evolution is paid in three places.
-
-**(b) Separate template files**
-- Pros: each variant readable in isolation; supports designer/non-engineer iteration; trivially extensible to new queen types.
-- Cons: introduces runtime template loading + path resolution; new failure modes (missing template, packaging miss); over-engineered for three short variants today.
-
-**(c) Base + addendum composition**
-- Pros: minimises duplication; clean variant deltas.
-- Cons: hides the per-variant body across two strings; harder to diff a single variant's full text; sentinel-substring acceptance tests (Phase 4) become awkward.
-
 ## Decision Outcome
 
 **Chosen option: (a) inline branches**, because the three variants are short, the diff stays in a single file, no new code paths or failure modes are introduced, and the escalation criterion in ADR-0118 §T7 explicitly endorses inline as the default. If during Phase 1 the variants share less than ~40% of their prompt text, escalate to a follow-up ADR for option (b) per ADR-0118 §T7.
+
+**Replace the single `generateHiveMindPrompt` template with a queen-type-keyed prompt map.** Each variant carries:
+
+1. A different framing of the queen's primary mission (planning-first vs. execution-first vs. complexity-driven mode-switch)
+2. Different MCP tool emphasis surfaced in the prompt's "preferred tools" section
+3. Different per-type acceptance criteria the queen self-monitors against
+
+Inline-branch implementation (per ADR-0118 §T7 escalation criterion: "Promote if queen-type prompts diverge enough that they need their own template files (rather than inline branches)" — for this ADR, inline is sufficient).
+
+No API change: `hive-mind spawn --queen-type=<value>` already accepts the three values; only `generateHiveMindPrompt`'s body changes.
+
+### Consequences
+
+* Good, because of a single-file change in `forks/ruflo/v3/@claude-flow/cli/src/commands/hive-mind.ts`; review and revert are trivial.
+* Good, because sentinel substrings per variant give downstream T8 (ADR-0126) worker prompts stable anchors.
+* Good, because no protocol-layer change preserves ADR-0114 layering (queen prompt is execution-layer, not protocol).
+* Bad, because `hive-mind.ts` file size grows; if a fourth queen type is added later, or any single variant diverges further, refactor to per-template files (option b) is likely.
+* Bad, because inline branches push the readability ceiling; once any variant exceeds ~80 lines of prompt text, option (b) becomes the better fit.
+* Bad, because per-variant section parity must be policed by tests, not the type system — the unit test asserts each variant carries the headings `Tools you should reach for first` and `Before declaring done, verify`, otherwise drift can land silently.
+
+### Confirmation
+
+- **Unit** — `tests/unit/adr0125-queen-type-prompts.test.mjs`:
+  - `generateHiveMindPrompt-returns-pairwise-distinct-bodies` — three `queenType` values produce three pairwise-distinct strings.
+  - `generateHiveMindPrompt-emits-per-type-sentinels` — Strategic body contains `"written plan"`; Tactical contains `"spawned workers within"`; Adaptive contains `"named your chosen mode"`. Wrong-type sentinels absent in each.
+  - `generateHiveMindPrompt-section-parity` — every variant carries the headings `Tools you should reach for first` and `Before declaring done, verify`.
+  - `generateHiveMindPrompt-unknown-queen-type-throws` — `'unknown' as QueenType` raises `Error("unknown queenType: unknown")`; no fallback to `'strategic'` (per `feedback-no-fallbacks.md`).
+- **Integration** — same file, separate suite: end-to-end prompt-substitution path through the CLI command layer asserts per-type sentinels survive substitution.
+- **Acceptance** — `lib/acceptance-adr0125-queen-types.sh` wired into `scripts/test-acceptance.sh` (parallel-wave check list, using `$(_cli_cmd)` per `reference-cli-cmd-helper.md`): spawn each queen type in an init'd project; capture the emitted prompt; assert per-type sentinel substrings present and wrong-type sentinels absent.
+- **Acceptance — README copy** — same check script asserts the fork-root README (`forks/ruflo/README.md` — path verified during implementation) carries the prose-shaped framing ("Differentiation is prompt-shaped, not algorithmic") and no longer carries the bare "Strategic (planning), Tactical (execution), Adaptive (optimization)" string.
 
 ## Reconciliation with ADR-0107
 
@@ -73,17 +89,19 @@ ADR-0107 (Accepted 2026-04-29) recommended **Option D**: per-type prose blocks +
 
 The cross-reference contract for T8 (ADR-0126) — the three sentinel substrings — is new in this ADR; ADR-0107 did not name them.
 
-## Consequences
+## Pros and Cons of the Options
 
-**Positive**
-- Single-file change in `forks/ruflo/v3/@claude-flow/cli/src/commands/hive-mind.ts`; review and revert are trivial.
-- Sentinel substrings per variant give downstream T8 (ADR-0126) worker prompts stable anchors.
-- No protocol-layer change preserves ADR-0114 layering (queen prompt is execution-layer, not protocol).
+**(a) Inline branches**
+- Good, because of a single-file diff; easy review; no new file-loading code path; no I/O at spawn time; matches T7 ADR-0118 escalation expectation.
+- Bad, because `hive-mind.ts` grows; per-variant prompt drift is hard to enforce mechanically — if one variant gains a `Tools you should reach for first` section heading, nothing flags the other two missing it (the unit test asserts presence per known sentinel, not section parity); a 4th queen type means refactoring all three sibling literals plus the switch and tests; cost of evolution is paid in three places.
 
-**Negative**
-- `hive-mind.ts` file size grows; if a fourth queen type is added later, or any single variant diverges further, refactor to per-template files (option b) is likely.
-- Inline branches push the readability ceiling; once any variant exceeds ~80 lines of prompt text, option (b) becomes the better fit.
-- Per-variant section parity must be policed by tests, not the type system — the unit test asserts each variant carries the headings `Tools you should reach for first` and `Before declaring done, verify`, otherwise drift can land silently.
+**(b) Separate template files**
+- Good, because each variant is readable in isolation; supports designer/non-engineer iteration; trivially extensible to new queen types.
+- Bad, because it introduces runtime template loading + path resolution; new failure modes (missing template, packaging miss); over-engineered for three short variants today.
+
+**(c) Base + addendum composition**
+- Good, because it minimises duplication; clean variant deltas.
+- Bad, because it hides the per-variant body across two strings; harder to diff a single variant's full text; sentinel-substring acceptance tests (Phase 4) become awkward.
 
 ## Validation
 
@@ -95,18 +113,6 @@ The cross-reference contract for T8 (ADR-0126) — the three sentinel substrings
 - **Integration** — same file, separate suite: end-to-end prompt-substitution path through the CLI command layer asserts per-type sentinels survive substitution.
 - **Acceptance** — `lib/acceptance-adr0125-queen-types.sh` wired into `scripts/test-acceptance.sh` (parallel-wave check list, using `$(_cli_cmd)` per `reference-cli-cmd-helper.md`): spawn each queen type in an init'd project; capture the emitted prompt; assert per-type sentinel substrings present and wrong-type sentinels absent.
 - **Acceptance — README copy** — same check script asserts the fork-root README (`forks/ruflo/README.md` — path verified during implementation) carries the prose-shaped framing ("Differentiation is prompt-shaped, not algorithmic") and no longer carries the bare "Strategic (planning), Tactical (execution), Adaptive (optimization)" string.
-
-## Decision
-
-**Replace the single `generateHiveMindPrompt` template with a queen-type-keyed prompt map.** Each variant carries:
-
-1. A different framing of the queen's primary mission (planning-first vs. execution-first vs. complexity-driven mode-switch)
-2. Different MCP tool emphasis surfaced in the prompt's "preferred tools" section
-3. Different per-type acceptance criteria the queen self-monitors against
-
-Inline-branch implementation (per ADR-0118 §T7 escalation criterion: "Promote if queen-type prompts diverge enough that they need their own template files (rather than inline branches)" — for this ADR, inline is sufficient).
-
-No API change: `hive-mind spawn --queen-type=<value>` already accepts the three values; only `generateHiveMindPrompt`'s body changes.
 
 ## Implementation plan
 
@@ -226,13 +232,15 @@ T7 marked `complete`, with Owner/Commit naming the green-CI commit (covering the
 
 Per ADR-0118 §T7 escalation criterion: promote to its own ADR if queen-type prompts diverge enough that they need their own template files rather than inline branches. For this ADR the inline-branch approach is in scope; if Phase 1 implementation finds the three variants share less than ~40% of their prompt text, escalate to a follow-up ADR for template-file extraction.
 
-## Review notes
+## More Information
 
-1. **State persistence (ADR-0107 Option D step 3) is deferred without an owning ADR.** ADR-0107 §Implementation plan step 3 specifies persisting `queenType` to `.claude-flow/hive-mind/state.json` and surfacing via `mcp__ruflo__hive-mind_status`. ADR-0125 declares this out of scope for T7 (matrix row "3 Queen types" is closed by prompt differentiation alone), but no successor ADR yet owns the state-persistence step. Open question: does this fold into T6 (ADR-0124 session lifecycle) since `state.json` is the session-checkpoint surface, or does it need its own task ADR? Resolve before annotation lift on ADR-0107. — resolved (triage H6 / row 32: folded into T6/ADR-0124 per ADR-0118 §Open questions item 3; ADR-0124 §Specification has taken delivery)
-2. **Adaptive's `_consensus` rule for mid-run mode switch** assumes the consensus surface supports a "strategy switch" question. If T1 (ADR-0119 weighted consensus), T2 (gossip), T3 (CRDT) reshape the consensus surface, Adaptive's prompt instruction may reference a tool that no longer carries that semantic. Worth a cross-check after T1–T3 land. (triage row 34 — DEFER-TO-IMPL: cross-check after T1/T2/T3 land; implementer rewrites adaptive prompt's mode-switch instruction to match active consensus surface)
+Original status: **Implemented (2026-05-03)** per ADR-0118 §Status (T7 complete; fork 0748ed9e9 README + 9db6978d5 runtime). Supersedes ADR-0107 (full). Per §Reconciliation, "persist `queenType` across sessions" was a residual at proposal time; folded into T6/ADR-0124 §Specification (archive payload `queenType` field + live `state.queen.queenType` + `mcp__ruflo__hive-mind_status` surfacing).
 
-## References
+This ADR depends on ADR-0116 (hive-mind marketplace plugin — provides the verification matrix audit) and ADR-0118 (hive-mind runtime gaps tracker — owns this task as T7). Downstream: ADR-0126 (T8 worker-type runtime — worker prompts cross-reference these queen prompt bodies). It supersedes the implementation in ADR-0107 (Accepted 2026-04-29 with Option D recommended: per-type prose + CLI validation + state persistence + README correction). ADR-0107 framed the work as a single decision; ADR-0118 §T7 then folded it into the runtime-gaps program. This ADR keeps ADR-0107's Option D mechanism (per-type prompt prose) and discharges its remaining steps explicitly — see §Reconciliation with ADR-0107. It is related to ADR-0114 (substrate/protocol/execution architectural model — queen prompt is execution-layer).
 
+Scope: Fork-side runtime work in `forks/ruflo/v3/@claude-flow/cli/src/commands/hive-mind.ts`. Closes ADR-0116 verification matrix row "3 Queen types" (currently ✗ partial).
+
+References:
 - Task definition: ADR-0118 §T7
 - Prior decision: ADR-0107 (Accepted 2026-04-29) — Option D mechanism inherited; remaining steps tracked in §Reconciliation
 - Verification matrix audit: ADR-0116 §USERGUIDE-vs-implementation verification matrix, row "3 Queen types"
@@ -240,3 +248,8 @@ Per ADR-0118 §T7 escalation criterion: promote to its own ADR if queen-type pro
 - Architectural constraints: ADR-0114 (substrate/protocol/execution layering — the queen-prompt is execution-layer, not protocol)
 - USERGUIDE Hive Mind contract: substring anchor `**Queen Types:**` in `/Users/henrik/source/ruvnet/ruflo/docs/USERGUIDE.md`
 - Fork-side patch policy: `feedback-patches-in-fork.md` memory
+
+### Review notes
+
+1. **State persistence (ADR-0107 Option D step 3) is deferred without an owning ADR.** ADR-0107 §Implementation plan step 3 specifies persisting `queenType` to `.claude-flow/hive-mind/state.json` and surfacing via `mcp__ruflo__hive-mind_status`. ADR-0125 declares this out of scope for T7 (matrix row "3 Queen types" is closed by prompt differentiation alone), but no successor ADR yet owns the state-persistence step. Open question: does this fold into T6 (ADR-0124 session lifecycle) since `state.json` is the session-checkpoint surface, or does it need its own task ADR? Resolve before annotation lift on ADR-0107. — resolved (triage H6 / row 32: folded into T6/ADR-0124 per ADR-0118 §Open questions item 3; ADR-0124 §Specification has taken delivery)
+2. **Adaptive's `_consensus` rule for mid-run mode switch** assumes the consensus surface supports a "strategy switch" question. If T1 (ADR-0119 weighted consensus), T2 (gossip), T3 (CRDT) reshape the consensus surface, Adaptive's prompt instruction may reference a tool that no longer carries that semantic. Worth a cross-check after T1–T3 land. (triage row 34 — DEFER-TO-IMPL: cross-check after T1/T2/T3 land; implementer rewrites adaptive prompt's mode-switch instruction to match active consensus surface)

@@ -1,14 +1,10 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-12
-accepted: 2026-05-28
-implemented: 2026-05-23
-tags: [substrate, rvf, agentdb, axis-substrate, vision-alignment, supersedes-divergent-direction, cognitive-container]
+tags: [substrate, rvf, agentdb]
 supersedes: [ADR-0170, ADR-0174, ADR-0175]
 depends-on: [ADR-0068, ADR-0073, ADR-0086, ADR-0102]
 implements: []
-references-upstream: [ruvnet/agentdb:README, ruvnet/agentdb:ADR-002, ruvnet/agentdb:ADR-003, ruvnet/agentdb:ADR-004, ruvnet/agentdb:ADR-005, ruvnet/agentdb:ADR-006, ruvnet/agentdb:ADR-007, ruvnet/agentdb:ADR-008, ruvnet/agentdb:ADR-009, ruvnet/agentdb:ADR-010, ruvnet/RuVector:ADR-029]
 ---
 
 > **Status note (2026-05-28)**: All Phase 0 confirmation criteria met
@@ -357,6 +353,8 @@ This is what makes "search smarter over time" — the +36% lift the README claim
 * Bad, because this extension doesn't exist. ADR-006 names it as future work; no upstream PR proposes it; building it is a multi-month research project well outside fork's bundle-release scope.
 
 ## More Information
+
+Original status: accepted 2026-05-28, implemented 2026-05-23, completed. This ADR references upstream sources `ruvnet/agentdb:README`, `ruvnet/agentdb:ADR-002` through `ADR-010`, and `ruvnet/RuVector:ADR-029`.
 
 ### Relationship to ADR-0068 (Unified config chain)
 

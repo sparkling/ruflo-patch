@@ -1,13 +1,15 @@
-# ADR-0090: Acceptance Test Suite Coverage Audit — Database Backend Paths
+---
+status: accepted
+date: 2026-04-15
+tags: [testing, acceptance, audit, storage]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: Implemented (Tier A) — 2026-04-15
-- **Date**: 2026-04-15
-- **Scope**: `ruflo-patch/lib/acceptance-*.sh` and `scripts/test-acceptance.sh`
-- **Methodology**: 4-agent ruflo swarm audit (RVF backend, SQLite/agentdb, sql.js fallback, JSON state files)
-- **Supersedes (partial)**: ADR-0082 "Partially Implemented" status — refreshed with post-ADR-0086/0088 findings
-- **Related**: ADR-0075 (ideal state layers), ADR-0082 (Test Integrity — No Fallbacks), ADR-0086 (Layer 1 Storage), ADR-0088 (Daemon Scope), ADR-0089 (Controller Intercept Permanent)
+# Acceptance Test Suite Coverage Audit — Database Backend Paths
 
-## Context
+## Context and Problem Statement
 
 During the ADR-0088 validation session (2026-04-15), an audit of acceptance
 coverage by ideal-state layer revealed that Layer 2 was stuck at 75%
@@ -429,8 +431,11 @@ Just fix the 4 Tier A items.
 
 This shape.
 
-## References
+## More Information
 
+Original status: "Implemented (Tier A) — 2026-04-15", with a recorded Date of 2026-04-15. Scope: `ruflo-patch/lib/acceptance-*.sh` and `scripts/test-acceptance.sh`. Methodology: 4-agent ruflo swarm audit (RVF backend, SQLite/agentdb, sql.js fallback, JSON state files). This ADR partially supersedes ADR-0082's "Partially Implemented" status — refreshed with post-ADR-0086/0088 findings — and is related to ADR-0075 (ideal state layers), ADR-0082 (Test Integrity — No Fallbacks), ADR-0086 (Layer 1 Storage), ADR-0088 (Daemon Scope), and ADR-0089 (Controller Intercept Permanent).
+
+References:
 - 4-agent ruflo swarm, 2026-04-15 (swarm ID `swarm-1776284919158-2zg8bi`):
   - RVF auditor task: `a777de03cf4172501`
   - SQLite/agentdb auditor task: `a824a24f77fb11046`

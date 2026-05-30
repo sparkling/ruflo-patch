@@ -1,4 +1,17 @@
-# ADR-0094 Implementation Log (sibling to ADR-0094)
+---
+status: accepted
+date: 2026-04-17
+tags: [acceptance, coverage, log]
+supersedes: []
+depends-on: []
+implements: []
+---
+
+# Implementation Log (sibling to ADR-0094)
+
+## Context and Problem Statement
+
+This is the append-only Implementation Log for ADR-0094 (the 100% Acceptance Test Coverage Plan). It tracks every coverage change, discovered bug, pass/fail transition, and score shift so the parent decision ADR can stay a dated snapshot.
 
 **Append-only.** Every coverage change, discovered bug, pass/fail transition, or score shift lives here. The parent ADR (`ADR-0094-100-percent-acceptance-coverage-plan.md`) stays as a dated decision snapshot with ≤500 lines and points to this file for running state.
 

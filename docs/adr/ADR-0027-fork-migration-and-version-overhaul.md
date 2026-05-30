@@ -1,17 +1,13 @@
-# ADR-0027: Fork Migration and Version Overhaul
+---
+status: accepted
+date: 2026-03-08
+tags: [fork, versioning, pipeline, codemod]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: Accepted
-- **Date**: 2026-03-08
-- **Deciders**: ruflo-patch maintainers
-- **Methodology**: SPARC + MADR
-
-## Decision Drivers
-
-- 6 active patches target compiled JS via string matching — silent failures when upstream changes patched files (3-6h/month maintenance)
-- Upstream declares unresolvable dependency ranges — `@ruvector/ruvllm: "^0.2.3"` (actual: `2.5.2`), `ruvector: "^0.1.85"` (actual: `0.2.11`), `flow-nexus: "^1.0.0"` (actual: `0.1.128`), `agentdb: "2.0.0-alpha.3.7"` (nonexistent)
-- Tag-to-HEAD drift: ruflo has 933 unpublished commits, agentic-flow 540 — dep ranges written for tag-time code don't match HEAD
-- `"*"` wildcard replacement and `bumpLastSegment` versioning are workarounds that obscure the actual version relationship to upstream
-- Patch system requires understanding 15-phase pipeline, compiled JS string matching, and 7 config files — high cognitive load for contributors
+# Fork Migration and Version Overhaul
 
 ## Context and Problem Statement
 
@@ -68,7 +64,15 @@ every 6h:
   manual: operator reviews PR → merges to main
 ```
 
-### Considered Options
+## Decision Drivers
+
+- 6 active patches target compiled JS via string matching — silent failures when upstream changes patched files (3-6h/month maintenance)
+- Upstream declares unresolvable dependency ranges — `@ruvector/ruvllm: "^0.2.3"` (actual: `2.5.2`), `ruvector: "^0.1.85"` (actual: `0.2.11`), `flow-nexus: "^1.0.0"` (actual: `0.1.128`), `agentdb: "2.0.0-alpha.3.7"` (nonexistent)
+- Tag-to-HEAD drift: ruflo has 933 unpublished commits, agentic-flow 540 — dep ranges written for tag-time code don't match HEAD
+- `"*"` wildcard replacement and `bumpLastSegment` versioning are workarounds that obscure the actual version relationship to upstream
+- Patch system requires understanding 15-phase pipeline, compiled JS string matching, and 7 config files — high cognitive load for contributors
+
+## Considered Options
 
 **Option A: Keep current model (build-time transform)**
 - Continue patching compiled JS, `"*"` wildcards, `bumpLastSegment`
@@ -98,7 +102,9 @@ every 6h:
 - Pro: More readable patches
 - Con: Still fragile string matching, same pipeline complexity — rejected
 
-## Decision
+## Decision Outcome
+
+Chosen option: "Option B: Fork all repos, keep codemod for scope rename", because patches become type-checked, IDE-navigable, and compiler-validated; scope-rename merge conflicts are eliminated; patch infrastructure is removed; and contributors work with a standard git workflow — accepting a one-time 2-3 day migration and 1-4 merge conflicts/week on upstream sync.
 
 ### Architecture (SPARC-A)
 
@@ -391,33 +397,38 @@ tests/03-mc001-mcp-autostart.test.mjs
 
 **Update**: preflight (remove patch checks), test counts, add unit tests for `fork-version.mjs`, CLAUDE.md (fork patch rules), MEMORY.md.
 
-## Consequences
+### Consequences
 
-### Completion (SPARC-C)
+#### Completion (SPARC-C)
 
-**Positive**:
-- Patches are type-checked, IDE-navigable, and compiler-validated — eliminates silent "pattern not found" failures entirely
-- Dependency ranges are correct and explicit — no `"*"` wildcards, no build-time version computation
-- Version scheme (`-patch.N`) is unambiguous and traceable to upstream
-- Pipeline simplified from 15 phases to ~10; patch infrastructure (6 scripts, 8 dirs, 3 test files) eliminated
-- Contributor ramp-up drops from 1-2 days to 2-4 hours (standard git workflow)
-- Failures are loud — merge conflicts, compile errors, and test failures all block publishing
-- Branch + PR gate prevents accidental publishes; operator reviews every change
-- Monthly maintenance estimated at 3-6h (down from 5-12h)
-
-**Negative**:
-- 2-3 day migration effort (one-time)
-- Merge conflicts on upstream sync (1-4/week), though scope rename conflicts are eliminated
-- Three git forks to maintain instead of zero
-- Up to 6h delay between merging PR and auto-publish (systemd timer poll interval)
-
-**Neutral**:
-- Codemod still required for scope rename (`@claude-flow/*` → `@sparkleideas/*`)
-- Topological publish ordering unchanged (5 levels)
-- Verdaccio test gate unchanged
-- Prerelease → acceptance → promote flow unchanged
+* Good, because patches are type-checked, IDE-navigable, and compiler-validated — eliminates silent "pattern not found" failures entirely
+* Good, because dependency ranges are correct and explicit — no `"*"` wildcards, no build-time version computation
+* Good, because version scheme (`-patch.N`) is unambiguous and traceable to upstream
+* Good, because pipeline simplified from 15 phases to ~10; patch infrastructure (6 scripts, 8 dirs, 3 test files) eliminated
+* Good, because contributor ramp-up drops from 1-2 days to 2-4 hours (standard git workflow)
+* Good, because failures are loud — merge conflicts, compile errors, and test failures all block publishing
+* Good, because branch + PR gate prevents accidental publishes; operator reviews every change
+* Good, because monthly maintenance estimated at 3-6h (down from 5-12h)
+* Bad, because 2-3 day migration effort (one-time)
+* Bad, because merge conflicts on upstream sync (1-4/week), though scope rename conflicts are eliminated
+* Bad, because three git forks to maintain instead of zero
+* Bad, because up to 6h delay between merging PR and auto-publish (systemd timer poll interval)
+* Neutral, because codemod still required for scope rename (`@claude-flow/*` → `@sparkleideas/*`)
+* Neutral, because topological publish ordering unchanged (5 levels)
+* Neutral, because Verdaccio test gate unchanged
+* Neutral, because prerelease → acceptance → promote flow unchanged
 
 **Break-even**: ~3-4 months (monthly savings ~4-6h, migration cost ~18h).
+
+### Confirmation
+
+#### Verification
+
+1. Each fork: `tsc --noEmit` — patches compile
+2. `npm run preflight && npm run test:unit` — L0+L1 pass
+3. `npm test` — L0+L1+L2 pass
+4. `npm run build --force && npm run test:rq` — L3 passes with `-patch.N` versions
+5. Spot-check published `package.json`: deps show exact versions, no `"*"` wildcards
 
 ## Implementation Steps
 
@@ -441,20 +452,8 @@ tests/03-mc001-mcp-autostart.test.mjs
 18. Update CLAUDE.md: replace patch rules with fork patch rules, add manual trigger commands
 19. Update MEMORY.md: replace patch workflow, version scheme, publish model, npm scripts
 
-## Verification
+## More Information
 
-1. Each fork: `tsc --noEmit` — patches compile
-2. `npm run preflight && npm run test:unit` — L0+L1 pass
-3. `npm test` — L0+L1+L2 pass
-4. `npm run build --force && npm run test:rq` — L3 passes with `-patch.N` versions
-5. Spot-check published `package.json`: deps show exact versions, no `"*"` wildcards
+This decision relates to several prior records: ADR-0006 (npm scope naming `@sparkleideas/*`), ADR-0010 (prerelease → promote publishing gate), ADR-0012 (version numbering, superseded by `-patch.N`), ADR-0013 (codemod implementation — scope rename kept, wildcard loop removed), ADR-0014 (topological publish ordering, unchanged), ADR-0024 (patch deployment model, superseded — patches move to fork), and ADR-0026 (build stage decoupling, build caching unchanged).
 
-## Relates To
-
-- **ADR-0006**: npm scope naming (`@sparkleideas/*`)
-- **ADR-0010**: Prerelease → promote publishing gate
-- **ADR-0012**: Version numbering (superseded by `-patch.N`)
-- **ADR-0013**: Codemod implementation (scope rename kept, wildcard loop removed)
-- **ADR-0014**: Topological publish ordering (unchanged)
-- **ADR-0024**: Patch deployment model (superseded — patches move to fork)
-- **ADR-0026**: Build stage decoupling (build caching unchanged)
+This record originally used the SPARC + MADR methodology, with section headings (Specification / Pseudocode / Architecture / Refinement / Completion) remapped to the canonical MADR sections during the ADR-0271 migration, preserving all content. Original status: "Accepted".

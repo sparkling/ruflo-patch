@@ -1,12 +1,9 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-24
-accepted: 2026-05-28
-implemented: 2026-05-28
 tags: [pipeline, wasm, rebuild, ruvector, build]
 supersedes: []
-depends-on: [0150, 0231]
+depends-on: [ADR-0150, ADR-0231]
 implements: []
 ---
 
@@ -274,6 +271,8 @@ publish-target WASM crate added to a fork either lands in `WASM_PACKAGES`
   bytes — today it would publish stale bytes from the canonical dir).
 
 ## More Information
+
+This decision was completed; accepted and implemented on 2026-05-28.
 
 ### Open questions for implementation
 

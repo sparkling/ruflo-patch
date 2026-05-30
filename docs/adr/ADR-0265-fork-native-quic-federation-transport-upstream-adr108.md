@@ -1,18 +1,15 @@
 ---
 status: accepted
-completed: true
-implemented: 2026-05-28
 date: 2026-05-27
-amended: 2026-05-28
-tags: [upstream-sync, quic, federation, transport, native-binding, napi, ADR-108, design-gate]
+tags: [quic, federation, transport, native-binding]
 supersedes: []
 depends-on: [ADR-0186, ADR-0199, ADR-0200, ADR-0201, ADR-0217]
-implements: [ADR-108]
+implements: []
 ---
 
 # Fork-native QUIC federation transport — upstream ADR-108 implementation
 
-## Context
+## Context and Problem Statement
 
 Upstream [ruvnet/ruflo `v3/docs/adr/ADR-108-native-quic-binding.md`](https://github.com/ruvnet/ruflo) proposes a native QUIC binding for federation transport. Status upstream: **`Proposed — gated on upstream agentic-flow Phase-1`** (2026-05-09). The gate is upstream issues `ruvnet/agentic-flow#15-21` — 7 Phase-1 tickets (foundation impl, WASM deps, TS wrapper, integration tests, benchmark, wasm-pack pipeline, validation).
 
@@ -82,6 +79,14 @@ Why A over B:
 Why A over C:
 - Fork policy bans upstream donate-backs.
 - Convergence with upstream happens at the Rust-crate consumption layer, not at the N-API wrapper layer (which is a fork-side concern by design).
+
+### Consequences
+
+* Good, because matching upstream's direction of travel directly minimizes future merge tax, and real native QUIC unlocks the documented capabilities (verified by benchmark in the §Aspirational table).
+* Good, because the loader pattern already in fork from ADR-0186 auto-upgrades when Phase 3 rewires the return, and WS fallback retention preserves browser / UDP-blocked-firewall paths.
+* Bad, because the implementation surface is multi-phase (Rust + N-API + cross-compile CI + integration tests + verification routine).
+* Bad, because upstream Phase-1 (#15-21) work overlaps; the fork may need to land changes that upstream later supersedes (merge tax inverted).
+* Neutral, because convergence with upstream happens at the Rust-crate consumption layer, not the N-API wrapper layer, which is a fork-side concern by design; Option C (donate-back) was rejected on fork policy and Option B (defer) failed the user-direct mandate.
 
 ## Pre-flight (D.0) — Upstream Phase-1 verification
 
@@ -274,7 +279,9 @@ Implementation agents MUST respect 13 fork-side invariants surfaced by the D.1 f
 | Multi-writer agentdb-sync gets re-requested ([[ADR-0217]] territory) | This ADR explicitly scopes to federation-transport; agentdb-sync requests route to [[ADR-0217]]'s evidence-trigger predicate. C7.b codemod guard enforces at release-time. |
 | WebSocket fallback drift — QUIC code paths bug-fix while WS path goes stale | Smokes test BOTH backends per C4; CI runs both env-on and env-off branches |
 
-## Cross-references
+## More Information
+
+Original status: accepted 2026-05-27; amended and implemented 2026-05-28 (`completed: true`). This ADR reimplements the vision of upstream ADR-108 (native QUIC binding); ADR-108 is an upstream design doc, not a fork-corpus ADR, so it is referenced in prose rather than via the `implements` frontmatter slot.
 
 * Upstream ADR-108 (`ruvnet/ruflo/v3/docs/adr/ADR-108-native-quic-binding.md`) — the design this ADR picks up; upstream remains `Proposed — gated`. INTEGRATION-LEDGER row to land same-commit as ratification: disposition `reimplemented-via-adr-0265`
 * Upstream ADR-104 (federation wire transport loader pattern) — fork inherited via [[ADR-0186]] row 266. **This ADR closes ADR-104's own TODO Phase-2** ("Federation plugin wiring — `agentic-flow/transport/loader` integration"); ledger row 107 cross-ref to be added

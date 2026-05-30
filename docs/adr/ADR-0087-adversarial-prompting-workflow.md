@@ -1,19 +1,29 @@
-# ADR-0087: Adversarial Prompting Workflow
+---
+status: accepted
+date: 2026-04-13
+tags: [workflow, review, ai-assisted]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: Implemented (Phases 1-3 complete, all principles active)
-- **Date**: 2026-04-13
-- **Phase 1**: 2026-04-13 — Adversarial prompting hook (`.claude/helpers/adversarial.cjs`)
-- **Phase 2**: 2026-04-13 — Parallel thinking sessions (`recommendSessions()`, `sessionAdvisory()`)
-- **Phase 3**: 2026-04-13 — AI-first review (`reviewChecklist()`, `reviewAdvisory()`)
-- **Source**: Michael Truell (Cursor co-founder), Lenny's Podcast, late 2025; Medium article by Adi Insights and Innovations, Mar 21 2026
+# Adversarial Prompting Workflow
 
-## Context
+## Context and Problem Statement
 
 AI-assisted development defaults to an "autocomplete" pattern: describe what you want, accept or reject what the AI writes. The feedback loop runs in one direction — developer instructs, AI executes. This produces code that does exactly what was asked for, which is the failure mode: **you asked for the wrong thing**.
 
 Michael Truell (Cursor, $300M ARR, $9.9B valuation) ships 10x faster than his own engineers using a workflow built on three principles that challenge this default.
 
-## Decision
+## Considered Options
+
+* **Adopt five adversarial AI-assisted development practices: adversarial prompting before implementation, parallel thinking sessions, a living constitution (CLAUDE.md), prototypes over specifications, and AI-first review (chosen).**
+
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "Adopt the five adversarial AI-assisted development practices", because using AI to be less wrong (not just faster) reduces wrong-direction implementations, and the Cursor team metrics demonstrate large gains in cycle time, review turnaround, and bug re-introduction rate.
 
 Adopt the following practices for AI-assisted development in this project:
 
@@ -69,6 +79,18 @@ The bottleneck in AI-assisted development is **reviewing** code, not writing it.
 - Verifies test coverage at all levels (`test-coverage`)
 - Assesses backward compatibility and migration impact (`compatibility`)
 - Reduces human review to judgment calls only
+
+### Consequences
+
+* Bad, because there is a slightly slower start to implementation (adversarial pass adds 5-10 minutes).
+* Good, because there are significantly fewer wrong-direction implementations.
+* Good, because CLAUDE.md becomes an increasingly valuable asset over time.
+* Neutral, because the review bottleneck shifts from human throughput to AI context quality.
+* Good, because (2026-04-17 addendum) swarm fix verification time grows only modestly (one extra probe per fix) while false-confidence rate drops — measurable by the ratio of "swarm declared fix; real test still fails" events, target zero going forward.
+
+### Confirmation
+
+Implemented across Phases 1-3 (all 2026-04-13): Phase 1 adversarial prompting hook (`.claude/helpers/adversarial.cjs`), Phase 2 parallel thinking sessions (`recommendSessions()`, `sessionAdvisory()`), Phase 3 AI-first review (`reviewChecklist()`, `reviewAdvisory()`). Phase 3 was validated by an 8-agent swarm (applying its own AI-first review principle to itself) — see the Phase 3 Validation section below for the per-agent verdicts and fixes applied.
 
 ## Measured Impact (Cursor team metrics)
 
@@ -146,10 +168,6 @@ A targeted test with a shared architectural premise merely confirms the premise.
 - ADR-0094a-log.md will carry a `### <date> — <bug-id> out-of-scope probe` subsection for each swarm-discovered bug.
 - ADR-0097 (Check-Code Quality Program) lint rule L-future: reject a fix commit that touches a scripts/diag-*.mjs file without a matching "opposite-assumption" assertion (manual review, not automated).
 
-## Consequences
+## More Information
 
-- Slightly slower start to implementation (adversarial pass adds 5-10 minutes)
-- Significantly fewer wrong-direction implementations
-- CLAUDE.md becomes an increasingly valuable asset over time
-- Review bottleneck shifts from human throughput to AI context quality
-- (2026-04-17 addendum) Swarm fix verification time grows modestly (one extra probe per fix); false-confidence rate drops — measurable by the ratio of "swarm declared fix; real test still fails" events, target zero going forward.
+Original status: "Implemented (Phases 1-3 complete, all principles active)", recorded Date 2026-04-13. Phase 1 (2026-04-13): adversarial prompting hook (`.claude/helpers/adversarial.cjs`). Phase 2 (2026-04-13): parallel thinking sessions (`recommendSessions()`, `sessionAdvisory()`). Phase 3 (2026-04-13): AI-first review (`reviewChecklist()`, `reviewAdvisory()`). Source: Michael Truell (Cursor co-founder), Lenny's Podcast, late 2025; Medium article by Adi Insights and Innovations, Mar 21 2026.

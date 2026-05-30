@@ -1,12 +1,19 @@
-# ADR-0059: RVF Native Storage Backend
+---
+status: accepted
+date: 2026-04-03
+tags: [rvf, storage, memory, hooks]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: Implemented (Phase 1-4 complete)
-- **Date**: 2026-04-03
-- **Updated**: 2026-04-04 (v14 — Phase 3+4 implemented)
-- **Deciders**: ruflo-patch maintainers
-- **Methodology**: SPARC + multi-agent swarm analysis (8 hives, 30+ experts)
+# RVF Native Storage Backend
 
-## Architecture
+## Context and Problem Statement
+
+`auto-memory-hook.mjs` `createBackend()` instantiates `AgentDBBackend`, which does `import('@sparkleideas/agentdb')` — a cross-package dynamic import that fails silently in the hook subprocess. Data writes to an in-memory `Map`, lost on process exit. The `.rvf` file is never created. The session-boundary drain (upstream-ruflo:ADR-048) has never worked.
+
+### Architecture
 
 Two stores, one bridge, zero in-process reconciliation.
 
@@ -26,10 +33,6 @@ Both → AutoMemoryBridge → MEMORY.md              (session-boundary reconcili
 This is the upstream-intended architecture per upstream-ruflo:ADR-048 (auto-memory bridge), upstream-ruflo:ADR-057 (RVF for vectors), and upstream-agentic:ADR-057 ("Full SQLite + RuVector").
 
 > **Two `RvfBackend` classes exist.** The `@claude-flow/memory` version (pure-TS, `IMemoryBackend`) is used here. The `agentdb` version (N-API/WASM wrapper) is a different class in a different package. All references below mean the memory-package version.
-
-## Problem
-
-`auto-memory-hook.mjs` `createBackend()` instantiates `AgentDBBackend`, which does `import('@sparkleideas/agentdb')` — a cross-package dynamic import that fails silently in the hook subprocess. Data writes to an in-memory `Map`, lost on process exit. The `.rvf` file is never created. The session-boundary drain (upstream-ruflo:ADR-048) has never worked.
 
 ### Root Cause Chain
 
@@ -60,9 +63,15 @@ Even if all three were fixed, `AgentDBBackend` would pull in 18MB sql.js + embed
 - **MEMORY.md is the designed reconciliation layer** — curated at session-end, imported at session-start
 - **The stores were ALWAYS separate** — `AgentDBBackend` writes to `.swarm/agentdb-memory.rvf`, CLI reads `.swarm/memory.db`. The swap doesn't create a new split; it makes the existing one work.
 
-## Decision
+## Considered Options
 
-Swap `AgentDBBackend` for `RvfBackend` in `auto-memory-hook.mjs` `createBackend()`.
+* **Swap `AgentDBBackend` for `RvfBackend` in `createBackend()`** (chosen) — same-package, pure-TS, atomic-persist, zero native deps.
+* **Fix `AgentDBBackend`** — would require adding `agentdb` as a dependency (18MB sql.js in a 50ms hook), and even with all three of its problems fixed it pulls in embeddings + 44 controllers for 5 basic `IMemoryBackend` calls.
+* **Skip straight to the daemon (Phase 4) architecture** — investigated as a serious candidate (4-expert hive); rejected as a replacement because the daemon has no IPC API today (~265 lines to build), must be running before hooks fire (else data loss returns), and needs Phase 1's RvfBackend as its offline fallback anyway.
+
+## Decision Outcome
+
+Chosen option: "Swap `AgentDBBackend` for `RvfBackend` in `auto-memory-hook.mjs` `createBackend()`", because `RvfBackend` lives in the same package (no cross-package import), implements the full `IMemoryBackend` interface as a drop-in replacement, persists atomically with zero native dependencies, and never silently degrades — making the long-broken session-boundary drain finally work.
 
 `RvfBackend` from `@sparkleideas/memory`:
 - Implements full `IMemoryBackend` interface (17 methods) — drop-in replacement
@@ -111,13 +120,13 @@ throw new Error(
 
 > **Verify before implementing**: confirm `RvfBackend` constructor parameter is `databasePath` by checking `@claude-flow/memory/src/rvf-backend.ts` constructor signature.
 
-### Acceptance Criteria
+### Consequences
 
-1. After `doImport()`: `.swarm/agentdb-memory.rvf` exists on disk with size > 0
-2. After `doSync()`: entries persist (re-read returns stored data)
-3. Entries survive process restart
-4. `npm run test:acceptance` passes (ADR-0059 group: 12/12)
-5. Hook subprocess does not load sql.js (no 18MB WASM overhead)
+* Good, because the hook store persists to `.swarm/agentdb-memory.rvf` atomically, so session data survives process exit (the previously-broken drain now works).
+* Good, because the swap stays within `@sparkleideas/memory` — no cross-package dynamic import to fail silently.
+* Good, because the hook subprocess no longer loads 18MB sql.js + 44 controllers for 5 basic `IMemoryBackend` calls.
+* Good, because `RvfBackend` never silently degrades, and the fallback chain (RvfBackend → AgentDBBackend → JsonFileBackend) keeps older installations working.
+* Neutral, because there are risks (export presence, constructor parameter name, stale empty `.rvf` files, `HnswLite` vs native HNSW) — see Risks.
 
 ### Where Fixes Live
 
@@ -131,11 +140,21 @@ All fixes are in the **ruflo fork** at `v3/@claude-flow/cli/.claude/helpers/`:
 
 The build pipeline copies from fork → codemod → build → publish. Users get the fixes via `npx @sparkleideas/cli init --full`.
 
-### Test Inventory
+### Confirmation
+
+#### Acceptance Criteria
+
+1. After `doImport()`: `.swarm/agentdb-memory.rvf` exists on disk with size > 0
+2. After `doSync()`: entries persist (re-read returns stored data)
+3. Entries survive process restart
+4. `npm run test:acceptance` passes (ADR-0059 group: 12/12)
+5. Hook subprocess does not load sql.js (no 18MB WASM overhead)
+
+#### Test Inventory
 
 Tests verify the **published packages from the fork**, not local ruflo-patch copies.
 
-#### Acceptance Tests (`lib/acceptance-adr0059-checks.sh`) — 12 checks
+##### Acceptance Tests (`lib/acceptance-adr0059-checks.sh`) — 12 checks
 
 All checks run against a fresh project created by `$CLI_BIN init --full` using packages published from the fork to Verdaccio. Runner: `npm run test:acceptance` (cascades through build → publish → init → test).
 
@@ -154,13 +173,13 @@ All checks run against a fresh project created by `$CLI_BIN init --full` using p
 | 11 | `hook_full_lifecycle` | Hooks | Import → 3 post-edits → sync — complete session round-trip |
 | 12 | `no_id_collisions` | Integrity | All IDs in ranked-context.json are unique (Phase 2a: index suffix) |
 
-#### Acceptance Test Design Notes
+##### Acceptance Test Design Notes
 
 - **Fresh project problem**: `intelligence.cjs` uses `process.cwd()` for data paths. `init()` returns early with `{ nodes: 0 }` when there's no memory data in a fresh `init --full` project — `graph-state.json` and `ranked-context.json` are never created. All inline node scripts guard file reads with `existsSync` and handle the 0-node case as a valid outcome for fresh projects.
 - **CLI API**: `memory retrieve --key X` may not return data in the same format across versions. Checks use `memory list --namespace X` instead, which is proven reliable.
 - **Parallel execution**: All 12 checks run via `run_check_bg` + `collect_parallel` for speed.
 
-### Bonus Fix (Found During Testing)
+#### Bonus Fix (Found During Testing)
 
 `init()` in `intelligence.cjs` was building ranked entries from the raw store (4,482 duplicates) instead of the deduplicated set (158 unique). Fixed in fork: `store.map(...)` → `deduped.map(...)` (both occurrences at init and consolidate).
 
@@ -572,3 +591,7 @@ Modified `memory-bridge.ts` to query both SQLite and RVF stores:
 | 7 | 58/69 | 12/12 | Fork hygiene: LLMRouter + index.ts barrel reverted to upstream — too aggressive, lost controller exports |
 | 8 | 59/69 | 12/12 | Fixed barrel: fork exports + default export restored |
 | 9 | pending | — | Restored fork LLMRouter (getEmbeddingConfig + lazy dotenv) — full revert was too aggressive |
+
+## More Information
+
+This decision was recorded by the ruflo-patch maintainers using SPARC + multi-agent swarm analysis (8 hives, 30+ experts). Original status: "Implemented (Phase 1-4 complete)"; dated 2026-04-03; updated 2026-04-04 (v14 — Phase 3+4 implemented).

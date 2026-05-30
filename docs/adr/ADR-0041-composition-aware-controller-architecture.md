@@ -1,28 +1,31 @@
-# ADR-0041: Composition-Aware Controller Architecture
+---
+status: accepted
+date: 2026-03-16
+tags: [agentdb, controllers, architecture, composition]
+supersedes: []
+depends-on: [ADR-0033, ADR-0039a, ADR-0040]
+implements: []
+---
 
-## Status
+# Composition-Aware Controller Architecture
 
-Implemented
-
-## Date
-
-2026-03-16
-
-## Deciders
-
-sparkling team
-
-## Methodology
-
-SPARC + MADR
-
-## Context
+## Context and Problem Statement
 
 A swarm wiring audit (ADR-0039) discovered that many upstream controllers are composites that create sub-components internally. Wiring them separately in ControllerRegistry would create duplicate instances with lifecycle conflicts. This ADR defines the composition-aware integration pattern: wire only top-level entries and let composites manage their children.
 
-## Decision: Specification (SPARC-S)
+## Considered Options
 
-### Three composites and their children
+* **Wire only top-level controllers and let composites manage their children, with explicit exceptions and 8 safeguards (chosen)**.
+
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "Wire only top-level controllers and let composites manage their children, with explicit exceptions and 8 safeguards", because composites create their sub-components internally — so wiring children separately would duplicate instances and cause lifecycle conflicts; wiring only the parents delivers 50 controllers from 42 registry entries and cuts effort 30% (115h to 70h).
+
+### Specification (SPARC-S)
+
+#### Three composites and their children
 
 **A6 (SelfLearningRvfBackend)** creates 6 children via `initComponents()` lazy import:
 
@@ -39,13 +42,13 @@ A swarm wiring audit (ADR-0039) discovered that many upstream controllers are co
 
 **D6 (CircuitBreaker)** wraps other controller calls at the registry level.
 
-### Exceptions requiring separate wiring
+#### Exceptions requiring separate wiring
 
 - **B4 NativeAccelerator**: Global singleton used by A6, A5, B2, A7 -- must be shared.
 - **B3 IndexHealthMonitor**: Eager-loaded in A6 but independently useful for health reporting.
 - **A8 SONA**: A6 creates one internally; CLI also has independent `sona-optimizer.ts` (842 lines).
 
-### Updated init levels (42 entries + 8 via composite = 50 controllers)
+#### Updated init levels (42 entries + 8 via composite = 50 controllers)
 
 | Level | Entries | New additions |
 |-------|:-------:|---------------|
@@ -57,9 +60,9 @@ A swarm wiring audit (ADR-0039) discovered that many upstream controllers are co
 | 5 | 6 | (unchanged) |
 | 6 | 2 | (unchanged) |
 
-## Decision: Pseudocode (SPARC-P)
+### Pseudocode (SPARC-P)
 
-### Integration pattern for top-level controllers (7 steps)
+#### Integration pattern for top-level controllers (7 steps)
 
 ```
 1. Add to ControllerRegistry type unions (AgentDBControllerName or CLIControllerName)
@@ -71,11 +74,11 @@ A swarm wiring audit (ADR-0039) discovered that many upstream controllers are co
 7. tsc --noEmit -> npm run preflight -> commit -> push -> deploy
 ```
 
-### Simplified pattern for composite sub-components (8 items)
+#### Simplified pattern for composite sub-components (8 items)
 
 Skip steps 1-4. The parent composite creates them internally. Bridge functions call the parent's API (e.g., `a6.search()`, `b9.insert()`). MCP tools expose parent-level operations, not sub-component methods.
 
-### Composite factory example
+#### Composite factory example
 
 ```
 case 'selfLearningRvfBackend':
@@ -86,9 +89,9 @@ case 'selfLearningRvfBackend':
   // A7, A8, B1, B2 created internally by initComponents()
 ```
 
-## Decision: Architecture (SPARC-A)
+### Architecture (SPARC-A)
 
-### 8 safeguards for all new integrations
+#### 8 safeguards for all new integrations
 
 1. **try-catch + 2s timeout** on every new bridge call
 2. **Cold-start guard** where applicable (skip reads until sufficient data)
@@ -99,13 +102,20 @@ case 'selfLearningRvfBackend':
 7. **A5 mechanism gating**: Flash, MoE, GraphRoPE enabled (JS works); Hyperbolic only when NativeAccelerator reports `simdAvailable: true`
 8. **No duplicate instances**: Sub-components created by parents only; bridge accesses through parent API
 
-## Decision: Refinement (SPARC-R)
+### Refinement (SPARC-R)
 
 Of 31 candidates: 18 wired separately, 8 via composite, 6 deferred, 1 dropped. Effort reduced from 115h to 70h by respecting composition.
 
-## Decision: Completion (SPARC-C)
+### Consequences
 
-### Checklist
+#### Completion (SPARC-C)
+
+* Good, because 8 fewer registry entries; A6 delivers 6 sub-systems, B9 delivers full quantization stack
+* Good, because no duplicate instances or lifecycle conflicts; 30% effort reduction (115h to 70h)
+* Bad, because sub-components only accessible through parent APIs; A6 observable only via `getStats()`
+* Neutral, because (risk) A6's lazy `initComponents()` may silently fail (all try-catch); B9 cannot switch quantization method without re-creation
+
+#### Checklist
 
 - [x] Define TypeScript interfaces for composite parent APIs (~20 lines each for A6, B9, D6)
 - [x] Define init level assignments for all 18 new top-level entries (~40 lines)
@@ -117,7 +127,9 @@ Of 31 candidates: 18 wired separately, 8 via composite, 6 deferred, 1 dropped. E
 - [x] Wire B9 QuantizedVectorStore composite factory (~25 lines)
 - [x] Add validation: `agentdb_health` reports composite children via parent stats (~15 lines)
 
-### Testing
+### Confirmation
+
+#### Testing
 
 ```js
 import { describe, it } from 'node:test';
@@ -172,28 +184,15 @@ describe('ADR-0041 composition-aware architecture', () => {
 });
 ```
 
-### Success Criteria
+#### Success Criteria
 
 - Composite parents (A6, B9) create children internally -- no separate registry entries for A7, A8, B1, B2, B7, B8
 - B4 NativeAccelerator shared across all consumers (single instance)
 - D6 CircuitBreaker wraps all `get()` calls at registry level
 - `agentdb_health` reports 50 total controllers (42 registry + 8 via composite)
 
-## Consequences
+## More Information
 
-### Positive
-- 8 fewer registry entries; A6 delivers 6 sub-systems, B9 delivers full quantization stack
-- No duplicate instances or lifecycle conflicts; 30% effort reduction (115h to 70h)
+This decision relates to ADR-0033 (original controller activation), ADR-0039 (upstream controller integration roadmap — parent, superseded), and ADR-0040 (ADR-0033 wiring remediation — prerequisite). It also references upstream ADR-006 (Unified Self-Learning RVF Integration — defines A6 composition).
 
-### Negative
-- Sub-components only accessible through parent APIs; A6 observable only via `getStats()`
-
-### Risks
-- A6's lazy `initComponents()` may silently fail (all try-catch); B9 cannot switch quantization method without re-creation
-
-## Related
-
-- **ADR-0033**: Original controller activation
-- **ADR-0039**: Upstream controller integration roadmap (parent, superseded)
-- **ADR-0040**: ADR-0033 wiring remediation (prerequisite)
-- **ADR-006** (upstream): Unified Self-Learning RVF Integration (defines A6 composition)
+This record used the SPARC + MADR methodology, with section headings (Specification / Pseudocode / Architecture / Refinement / Completion) remapped to the canonical MADR sections during the ADR-0271 migration, preserving all content. The deciders were the sparkling team. Original status: "Implemented".

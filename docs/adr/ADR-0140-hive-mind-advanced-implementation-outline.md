@@ -1,21 +1,15 @@
-# ADR-0140: hive-mind-advanced — implementation outline grounded in pre-regression working version
+---
+status: accepted
+date: 2026-05-04
+tags: [hive-mind, skills, council, consensus]
+supersedes: []
+depends-on: [ADR-0139]
+implements: []
+---
 
-- **Status**: **[RECONCILED 2026-05-29 → DONE; see [[ADR-0270]]]** Piece 1 (the rewritten SKILL.md) shipped (`d3fbfccee`) and **Piece 2 (the two `templates/` files — `generic-council-protocol.md` + `worker-contract.md`) shipped 2026-05-29** in both `.claude/skills/hive-mind-advanced/templates/` and `plugins/ruflo-hive-mind/skills/hive-mind-advanced/templates/` (closing the broken-reference defect ADR-0270 §Confirmation #3 + ADR-0114 §Done U5). **Piece 5 (handler-invocation tests) executed 2026-05-29** (fork `e69683975` — `_join/_leave/_broadcast` added; `_memory` was already covered by ADR-0122/0123/0131; awaiting the CI vitest verdict). **Piece 6 (substrate-dictated team binding) DECLINED 2026-05-29** (see [[ADR-0270]]): team coordination is a **swarm** concern — already provided by `swarm-init` (`TeamCreate`/`Agent`/`SendMessage`) — and binding hive workers to a team would break the dialectic independence the Council/Consensus patterns depend on; it also mutated the shared `hive-mind_*` MCP return surface. No open residuals remain. Original status preserved below. — Proposed (2026-05-04). Outlines what the `hive-mind-advanced` skill should actually contain and how the surrounding fork-side code should support it, grounded in three independent evidence sources that pre-date the late-March 2026 regression. **Does not** modify ADR-0139's spec — extends it with implementation guidance.
-- **Date**: 2026-05-04
-- **Deciders**: Henrik Pettersen
-- **Builds on**:
-  - ADR-0139 (canonical spec from upstream guidance registry — what the capability is *supposed to do*)
-  - ADR-0114 §Done U5 (council protocol delivery gap — already identified)
-  - ADR-0125 (queen disposition), ADR-0131 (worker failure protocol), ADR-0132 (sub-queen escalation) — already shipped
-  - ADR-0138 (shipping working council template — adjacent fork-side work)
-- **Diverges from upstream-canonical content**: the SKILL.md body at `forks/ruflo/plugins/ruflo-hive-mind/skills/hive-mind-advanced/SKILL.md` (713 lines, feature-catalogue style) is **upstream-authored** content, also shipped at `~/source/ruvnet/ruflo/.claude/skills/hive-mind-advanced/SKILL.md`, `~/source/ruvnet/ruflo/.agents/skills/hive-mind-advanced/SKILL.md`, `~/source/ruvnet/agentic-flow/.claude/skills/hive-mind-advanced/SKILL.md`, and `~/source/ruvnet/RuVector/.claude/skills/hive-mind-advanced/SKILL.md` (per ADR-0139 §Provenance Correction). Piece 1 of this ADR proposes a **fork-side divergence** — replacing that upstream brochure with a pattern-based template — not a rewrite of fork-authored content. Per memory `feedback-no-upstream-donate-backs.md`, the divergence stays fork-only.
-- **Related memory**:
-  - `reference-hive-runtime-crosstalk-pattern.md` — in-repo file-based fallback (validated 2026-05-04)
-  - `feedback-hive-orchestration-pattern.md` — designed pattern vs reality
-  - `feedback-hive-discussion-mechanics.md` — 5-point dialectic criteria
-  - `feedback-hive-mind-advanced-exists.md` — 11 SKILL.md paths, ADRs are fork-side
+# hive-mind-advanced — implementation outline grounded in pre-regression working version
 
-## Context
+## Context and Problem Statement
 
 ADR-0139 established the upstream-canonical spec for the `hive-mind` capability area: 6 MCP tools, 6 CLI commands, 5 consensus agents, 1 skill, one stated purpose ("multiple agents reach agreement on a proposition using BFT/Raft/CRDT"). It pinned **intent** but said nothing about implementation.
 
@@ -183,7 +177,15 @@ This is the **consensus primitive**. It does **not** in itself produce dialectic
 
 The capability area as upstream-defined provides the substrate; the council pattern emerges from composing the substrate with a protocol layer + Claude Code's Agent tool. **Three of these four exist; the protocol layer is the gap.**
 
-## Decision — implementation outline
+## Considered Options
+
+* **Ship four implementation pieces — pattern-based SKILL.md rewrite, generic protocol template, runtime gap fixes, README/U5 update (chosen)** — grounded in the pre-regression working version, with later additions (Piece 5 handler tests, Piece 6 team binding) tracked as follow-ups.
+
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "Ship four implementation pieces", because the evidence sources (pre-regression source + file-based crosstalk validation) converge on a single architecture — substrate-only queen prompt + protocol layer + one-round Agent spawn + queen-composed transcript — and implementing exactly that, no more, is the lowest-risk path.
 
 The fork should ship the following four implementation pieces. The first two are skill-side rewrites; the third is a CLI/runtime concern; the fourth is documentation hygiene. They are listed in dependency order — each builds on the prior.
 
@@ -944,6 +946,81 @@ Piece 6 is complete when all of:
 - The schemas for `requiredSetup` and `spawnTemplate` need to also serve a second substrate (e.g., swarm). When that happens, promote to a normative cross-substrate ADR. **This case has been pre-identified — see ADR-0146 (swarm-side application of the same pattern).** ADR-0146 references this Piece 6 as the canonical pattern definition.
 - Tools beyond `TeamCreate` need to land in `requiredSetup` (e.g., `TaskListInit`, `MailboxConfigure`). If the directive list grows, separate ADR may be warranted.
 
+### Consequences
+
+* Good, because the skill becomes a thing an assistant can actually follow. Removes the current trap where SKILL.md prose implies an autonomous runtime that doesn't exist.
+* Good, because fresh projects get usable council output without inventing a methodology.
+* Good, because ADR-0114 §Done U5 closes.
+* Good, because substrate vs protocol separation is finally codified in plugin documentation.
+* Good, because memory entries (`reference-hive-runtime-crosstalk-pattern.md`, `feedback-hive-discussion-mechanics.md`) are reduced from "tribal knowledge" status to "implemented in shipped skill" status.
+* Bad, because Piece 1 + Piece 2 are ~250-400 lines of new fork-side content + a 713 → ~150 line replacement. Real authoring effort, even though it's compression rather than expansion.
+* Bad, because gap 3a is a real bug; if not fixed in Piece 3, Path 5(c) (CLI-bridged hive_memory cross-talk) is blocked and only Paths 5(a)/5(b) work. That's acceptable — we ship with the limitation documented and fix later.
+* Bad, because some users may want the registry's "BFT consensus on a proposition" use case in isolation (without the council pattern). That's still possible — Path A/B with `--consensus byzantine` and no panellist personas. The rewritten SKILL.md should make this explicit so the consensus primitive isn't lost in the council pattern's larger surface.
+* Neutral, because the fork formally takes on ownership of the council pattern as an extension of the registry's consensus primitive. Memory `feedback-no-upstream-donate-backs.md` says we don't push back to ruvnet — fine, this lives fork-side.
+
+### Confirmation
+
+When the four Pieces have landed, the following should pass:
+
+```bash
+# 1a. Skill follows pattern-based template (4 Pattern sections, mirroring swarm-advanced)
+grep -cE '^## Pattern [1-4]:' forks/ruflo/plugins/ruflo-hive-mind/skills/hive-mind-advanced/SKILL.md
+# Expected: 4
+
+# 1b. Skill uses MCP tools directly, not Bash/npx in queen contexts
+grep -cE 'mcp__ruflo__hive-mind_(init|spawn|consensus|memory|status|shutdown)' \
+  forks/ruflo/plugins/ruflo-hive-mind/skills/hive-mind-advanced/SKILL.md
+# Expected: ≥ 8 (each pattern uses init + spawn + consensus + memory at minimum)
+
+# 1c. Bash/npx invocations only in CLI-Fallback subsections (not in primary Workflow)
+awk '/^### CLI Fallback/,/^### |^## /' \
+  forks/ruflo/plugins/ruflo-hive-mind/skills/hive-mind-advanced/SKILL.md | \
+  grep -c 'npx ruflo'
+# Expected: ≥ 4 (one per Pattern, in fallback section only)
+
+awk '/^## Pattern/,/^### CLI Fallback/' \
+  forks/ruflo/plugins/ruflo-hive-mind/skills/hive-mind-advanced/SKILL.md | \
+  grep -cE 'Bash\("npx ruflo|npx ruflo hive-mind'
+# Expected: 0 in primary Workflow (all queen calls are MCP-direct)
+
+# 1d. Length in same order as swarm-advanced
+wc -l forks/ruflo/plugins/ruflo-hive-mind/skills/hive-mind-advanced/SKILL.md
+# Expected: ~600-800 (vs swarm-advanced's 973)
+
+# 2. Generic template ships
+ls forks/ruflo/plugins/ruflo-hive-mind/skills/hive-mind-advanced/templates/
+# Expected: generic-council-protocol.md, worker-contract.md
+
+# 3. Substrate flags persist correctly (Piece 3c)
+npx ruflo hive-mind init -t hierarchical-mesh -c byzantine -m 3 --memory-backend hybrid
+cat .claude-flow/hive-mind/state.json | jq '.topology, .config'
+# Expected: hierarchical-mesh persisted; consensus/memoryBackend persisted in config
+
+# 4. End-to-end run from inside Claude Code session, no project-supplied protocol
+#    Should produce 8-section transcript using the shipped generic template
+ToolSearch("select:mcp__ruflo__guidance_capabilities")
+# Then invoke /ruflo-hive-mind:hive-mind-advanced with a 3-agent council args
+# Expected: shipped generic-council-protocol.md drives the format; transcript file produced.
+
+# 5. ADR-0114 §Done U5 marked closed with reference to ADR-0140 + this verification
+grep -A 3 "Done U5" forks/ruflo/docs/adr/ADR-0114-*.md
+
+# 6. Council-surfaced regression checks (added 2026-05-05)
+# 6a. Pattern 4 wire bug — `consensus: "majority"` is not a valid _consensus.strategy enum value
+#     (Majority removed per ADR-0119; survives only as Raft's formula). The bare token
+#     `consensus: "majority"` should NOT appear in SKILL.md outside quorumPreset context.
+grep -nE 'consensus:\s*"majority"' \
+  forks/ruflo/plugins/ruflo-hive-mind/skills/hive-mind-advanced/SKILL.md
+# Expected: no match (regression check; fixed 2026-05-05 in Pattern 4 §Architecture)
+
+# 6b. Per Council Finding 2 — verify `_join/_leave/_broadcast/_memory` have dedicated
+#     handler-invocation tests (Piece 5 acceptance check; not yet implemented).
+grep -lE "describe.*hive-mind_(join|leave|broadcast|memory)" \
+  forks/ruflo/v3/@claude-flow/cli/__tests__/*.test.ts | wc -l
+# Expected after Piece 5: ≥ 4 (one describe block per tool)
+# Currently: 0 (smoke + lifecycle only — see ADR-0145 §D2 coverage matrix)
+```
+
 ## T1-T14 coverage in Piece 1 (added 2026-05-05)
 
 The 14 runtime tasks closed by ADR-0118 are exercised by the rewritten SKILL.md (Piece 1 authored 2026-05-05) as follows. This matrix is a contract: if Piece 1 ships without exercising a T-task whose runtime lands in `forks/ruflo/v3/...`, that feature becomes invisible to users invoking `/hive-mind-advanced`.
@@ -1073,89 +1150,6 @@ The council was conducted via file-based crosstalk transport (b). Reflection: th
 - **Procedure-shaped skill > brochure-shaped skill.** Other working skills in the same plugin set (`ruflo-rag-memory:memory-search`, `frontend-design:frontend-design`) are concrete numbered procedures. The current `hive-mind-advanced` is the only one in catalog form. Aligning with the rest of the plugin set is the cheapest readability win.
 - **Document-the-limitation > build-the-bridge for now.** Gap 3b (broadcast vs Agent-Teams) would take meaningful effort to fix and adds a runtime flow nobody has shipped a working version of. Documenting that single-round is canonical is honest, immediate, and matches every empirical working session.
 
-## Consequences
-
-### Positive
-
-- The skill becomes a thing an assistant can actually follow. Removes the current trap where SKILL.md prose implies an autonomous runtime that doesn't exist.
-- Fresh projects get usable council output without inventing a methodology.
-- ADR-0114 §Done U5 closes.
-- Substrate vs protocol separation is finally codified in plugin documentation.
-- Memory entries (`reference-hive-runtime-crosstalk-pattern.md`, `feedback-hive-discussion-mechanics.md`) are reduced from "tribal knowledge" status to "implemented in shipped skill" status.
-
-### Negative
-
-- Piece 1 + Piece 2 are ~250-400 lines of new fork-side content + a 713 → ~150 line replacement. Real authoring effort, even though it's compression rather than expansion.
-- Gap 3a is a real bug; if not fixed in Piece 3, Path 5(c) (CLI-bridged hive_memory cross-talk) is blocked and only Paths 5(a)/5(b) work. That's acceptable — we ship with the limitation documented and fix later.
-- Some users may want the registry's "BFT consensus on a proposition" use case in isolation (without the council pattern). That's still possible — Path A/B with `--consensus byzantine` and no panellist personas. The rewritten SKILL.md should make this explicit so the consensus primitive isn't lost in the council pattern's larger surface.
-
-### Neutral
-
-- The fork formally takes on ownership of the council pattern as an extension of the registry's consensus primitive. Memory `feedback-no-upstream-donate-backs.md` says we don't push back to ruvnet — fine, this lives fork-side.
-
-## Verification
-
-When the four Pieces have landed, the following should pass:
-
-```bash
-# 1a. Skill follows pattern-based template (4 Pattern sections, mirroring swarm-advanced)
-grep -cE '^## Pattern [1-4]:' forks/ruflo/plugins/ruflo-hive-mind/skills/hive-mind-advanced/SKILL.md
-# Expected: 4
-
-# 1b. Skill uses MCP tools directly, not Bash/npx in queen contexts
-grep -cE 'mcp__ruflo__hive-mind_(init|spawn|consensus|memory|status|shutdown)' \
-  forks/ruflo/plugins/ruflo-hive-mind/skills/hive-mind-advanced/SKILL.md
-# Expected: ≥ 8 (each pattern uses init + spawn + consensus + memory at minimum)
-
-# 1c. Bash/npx invocations only in CLI-Fallback subsections (not in primary Workflow)
-awk '/^### CLI Fallback/,/^### |^## /' \
-  forks/ruflo/plugins/ruflo-hive-mind/skills/hive-mind-advanced/SKILL.md | \
-  grep -c 'npx ruflo'
-# Expected: ≥ 4 (one per Pattern, in fallback section only)
-
-awk '/^## Pattern/,/^### CLI Fallback/' \
-  forks/ruflo/plugins/ruflo-hive-mind/skills/hive-mind-advanced/SKILL.md | \
-  grep -cE 'Bash\("npx ruflo|npx ruflo hive-mind'
-# Expected: 0 in primary Workflow (all queen calls are MCP-direct)
-
-# 1d. Length in same order as swarm-advanced
-wc -l forks/ruflo/plugins/ruflo-hive-mind/skills/hive-mind-advanced/SKILL.md
-# Expected: ~600-800 (vs swarm-advanced's 973)
-
-# 2. Generic template ships
-ls forks/ruflo/plugins/ruflo-hive-mind/skills/hive-mind-advanced/templates/
-# Expected: generic-council-protocol.md, worker-contract.md
-
-# 3. Substrate flags persist correctly (Piece 3c)
-npx ruflo hive-mind init -t hierarchical-mesh -c byzantine -m 3 --memory-backend hybrid
-cat .claude-flow/hive-mind/state.json | jq '.topology, .config'
-# Expected: hierarchical-mesh persisted; consensus/memoryBackend persisted in config
-
-# 4. End-to-end run from inside Claude Code session, no project-supplied protocol
-#    Should produce 8-section transcript using the shipped generic template
-ToolSearch("select:mcp__ruflo__guidance_capabilities")
-# Then invoke /ruflo-hive-mind:hive-mind-advanced with a 3-agent council args
-# Expected: shipped generic-council-protocol.md drives the format; transcript file produced.
-
-# 5. ADR-0114 §Done U5 marked closed with reference to ADR-0140 + this verification
-grep -A 3 "Done U5" forks/ruflo/docs/adr/ADR-0114-*.md
-
-# 6. Council-surfaced regression checks (added 2026-05-05)
-# 6a. Pattern 4 wire bug — `consensus: "majority"` is not a valid _consensus.strategy enum value
-#     (Majority removed per ADR-0119; survives only as Raft's formula). The bare token
-#     `consensus: "majority"` should NOT appear in SKILL.md outside quorumPreset context.
-grep -nE 'consensus:\s*"majority"' \
-  forks/ruflo/plugins/ruflo-hive-mind/skills/hive-mind-advanced/SKILL.md
-# Expected: no match (regression check; fixed 2026-05-05 in Pattern 4 §Architecture)
-
-# 6b. Per Council Finding 2 — verify `_join/_leave/_broadcast/_memory` have dedicated
-#     handler-invocation tests (Piece 5 acceptance check; not yet implemented).
-grep -lE "describe.*hive-mind_(join|leave|broadcast|memory)" \
-  forks/ruflo/v3/@claude-flow/cli/__tests__/*.test.ts | wc -l
-# Expected after Piece 5: ≥ 4 (one describe block per tool)
-# Currently: 0 (smoke + lifecycle only — see ADR-0145 §D2 coverage matrix)
-```
-
 ## Open follow-ups
 
 - **Piece 1 authoring** — actual rewrite of `forks/ruflo/plugins/ruflo-hive-mind/skills/hive-mind-advanced/SKILL.md`. Tracked separately. **Note (2026-05-05):** the rewrite now targets a fully-implemented fork runtime per ADR-0118 T1-T14 (all complete), not a partially-implemented one. Patterns 1-4's tool calls (`mcp__claude-flow__hive-mind_init`, `_spawn`, `_consensus`, `_memory`, etc.) all reach real fork-side runtime behaviour.
@@ -1176,3 +1170,13 @@ grep -lE "describe.*hive-mind_(join|leave|broadcast|memory)" \
 - **SKILL.md §Pattern 1 §Transports — selection guidance — DONE 2026-05-05.** Per Bonus finding + the 2026-05-05 confirmation that `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` is always set in ruflo environments: §Transports rewritten with 4 ranked options. **(a) queen-composed default** for one-round councils. **(b) `SendMessage` via Agent Teams** as the canonical runtime cross-talk transport when workers must revise — replaces the prior "file-based" recommendation. **(c) Direct MCP `_memory`** for durable typed-bucket cross-session work. **(d) File-based** demoted to fallback for environments without Agent Teams + MCP. Selection cheat-sheet table added. §Calling convention also updated to document `SendMessage` as the upstream-blessed inter-agent messaging primitive (USERGUIDE L1683).
 - **Validate sustained MCP crosstalk from sub-agent context.** Arm B (ADR-0144) verified single-call MCP works from sub-agent. No memory entry yet for sustained multi-call crosstalk via `mcp__claude-flow__hive-mind_memory` from sub-agent. A controlled experiment to fill that gap unblocks transport (c) as the default in future councils. Tracked separately.
 - **Piece 6 — Substrate-dictated team binding (Agent Teams integration) — PROPOSED 2026-05-05.** Surfaced by user follow-up on the council finding. Added as §Piece 6 above. Status: Proposed, not yet implemented. Implements substrate-dictated `requiredSetup` + `spawnTemplate` contract that the queen executes deterministically, unlocking 10 of the 15 `oq()`-gated Agent Teams behaviors for hive workers. ~135 LOC fork-side. Sequence: implement after Piece 1/2 ratification stabilises. Cross-references ADR-0146 (swarm-side application of the same pattern, blocked on Piece 6 implementation + validation).
+
+## More Information
+
+Original status: **[RECONCILED 2026-05-29 → DONE; see [[ADR-0270]]]** Piece 1 (the rewritten SKILL.md) shipped (`d3fbfccee`) and **Piece 2 (the two `templates/` files — `generic-council-protocol.md` + `worker-contract.md`) shipped 2026-05-29** in both `.claude/skills/hive-mind-advanced/templates/` and `plugins/ruflo-hive-mind/skills/hive-mind-advanced/templates/` (closing the broken-reference defect ADR-0270 §Confirmation #3 + ADR-0114 §Done U5). **Piece 5 (handler-invocation tests) executed 2026-05-29** (fork `e69683975` — `_join/_leave/_broadcast` added; `_memory` was already covered by ADR-0122/0123/0131; awaiting the CI vitest verdict). **Piece 6 (substrate-dictated team binding) DECLINED 2026-05-29** (see [[ADR-0270]]): team coordination is a **swarm** concern — already provided by `swarm-init` (`TeamCreate`/`Agent`/`SendMessage`) — and binding hive workers to a team would break the dialectic independence the Council/Consensus patterns depend on; it also mutated the shared `hive-mind_*` MCP return surface. No open residuals remain. Original status preserved below. — Proposed (2026-05-04). Outlines what the `hive-mind-advanced` skill should actually contain and how the surrounding fork-side code should support it, grounded in three independent evidence sources that pre-date the late-March 2026 regression. **Does not** modify ADR-0139's spec — extends it with implementation guidance.
+
+This ADR builds on ADR-0139 (canonical spec from upstream guidance registry — what the capability is *supposed to do*), ADR-0114 §Done U5 (council protocol delivery gap — already identified), ADR-0125 (queen disposition), ADR-0131 (worker failure protocol), ADR-0132 (sub-queen escalation) — already shipped, and ADR-0138 (shipping working council template — adjacent fork-side work).
+
+Diverges from upstream-canonical content: the SKILL.md body at `forks/ruflo/plugins/ruflo-hive-mind/skills/hive-mind-advanced/SKILL.md` (713 lines, feature-catalogue style) is **upstream-authored** content, also shipped at `~/source/ruvnet/ruflo/.claude/skills/hive-mind-advanced/SKILL.md`, `~/source/ruvnet/ruflo/.agents/skills/hive-mind-advanced/SKILL.md`, `~/source/ruvnet/agentic-flow/.claude/skills/hive-mind-advanced/SKILL.md`, and `~/source/ruvnet/RuVector/.claude/skills/hive-mind-advanced/SKILL.md` (per ADR-0139 §Provenance Correction). Piece 1 of this ADR proposes a **fork-side divergence** — replacing that upstream brochure with a pattern-based template — not a rewrite of fork-authored content. Per memory `feedback-no-upstream-donate-backs.md`, the divergence stays fork-only.
+
+Related memory: `reference-hive-runtime-crosstalk-pattern.md` (in-repo file-based fallback, validated 2026-05-04), `feedback-hive-orchestration-pattern.md` (designed pattern vs reality), `feedback-hive-discussion-mechanics.md` (5-point dialectic criteria), and `feedback-hive-mind-advanced-exists.md` (11 SKILL.md paths, ADRs are fork-side).

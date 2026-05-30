@@ -1,10 +1,9 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-24
 tags: [validation, wasm, rust, error-handling]
 supersedes: []
-depends-on: [0201, 0231, 0233]
+depends-on: [ADR-0201, ADR-0231, ADR-0233]
 implements: []
 ---
 

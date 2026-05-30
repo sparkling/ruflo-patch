@@ -1,11 +1,9 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-20
-implemented-date: 2026-05-22
 tags: [memory, controllers, fail-loud, no-fallbacks, agentdb, audit-followup]
 supersedes: []
-depends-on: [0201]
+depends-on: [ADR-0201]
 implements: []
 ---
 
@@ -218,6 +216,8 @@ is appropriate. Note: the ADR's `:534-541` citation for F-04-001 points at the
 inner `UPDATE` SQL; the enclosing `updatePatternStats` is `:529-547`.
 
 ## More Information
+
+This decision was completed; implemented on 2026-05-22.
 
 - **Audit source:** `docs/audits/2026-05-19-soundness-audit/04-controllers-memory.md`
   findings F-04-001 / F-04-002 / F-04-003 (HIGH cluster); README

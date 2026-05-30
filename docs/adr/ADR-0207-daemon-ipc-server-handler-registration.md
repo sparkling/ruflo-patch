@@ -1,11 +1,9 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-20
-implemented-date: 2026-05-21
-tags: [daemon, ipc, rpc, dead-code, ADR-0201, ADR-0088, ADR-0202, ADR-0059, follow-up, swarm-reviewed]
+tags: [daemon, ipc, rpc, dead-code]
 supersedes: []
-depends-on: [0201, 0202]
+depends-on: [ADR-0201, ADR-0202]
 implements: []
 ---
 
@@ -209,6 +207,8 @@ Standing recommendations (outside this ADR): the audit's F-13-001 severity is in
 * Bad, because that need is met by `daemon-state.json` without keeping a socket (and its DoS/Windows-path costs) alive for a single read.
 
 ## More Information
+
+Lifecycle dates from the original record: accepted 2026-05-20, implemented 2026-05-21. This ADR was swarm-reviewed and is a follow-up that also bears on ADR-0088 and ADR-0059.
 
 * ADR-0201 §F-10-001 (CRITICAL) — `docs/audits/2026-05-19-soundness-audit/10-daemon.md` — zero handlers
 * ADR-0201 §F-10-002 (CRITICAL) — file header advertises a removed/never-upstream contract

@@ -1,11 +1,9 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-20
-implemented-date: 2026-05-23
 tags: [daemon, ipc, hooks, dispatch-queue, fork-regression, upstream-sync, no-fallbacks, ADR-0207, follow-up, swarm-reviewed]
 supersedes: []
-depends-on: [0207]
+depends-on: [ADR-0207]
 implements: []
 ---
 
@@ -446,6 +444,8 @@ byte-identical-consumer / exact-payload / demand-real / 0207-coupling /
 CRITICAL 0202, with/after 0207). State: producer work 0% done (clean slate).
 
 ## More Information
+
+This decision was completed; implemented on 2026-05-23.
 
 * **Discovery:** ADR-0207 swarm review (2026-05-20), IPC-architect finding.
 * **Upstream reference (the fix to port):**

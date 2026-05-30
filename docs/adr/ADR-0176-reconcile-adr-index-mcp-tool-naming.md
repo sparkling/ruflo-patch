@@ -1,13 +1,10 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-12
-closed-on: 2026-05-18
-tags: [mcp, skill, naming, agentdb, adr-index, skill-stability]
+tags: [mcp, skill, naming, agentdb]
 supersedes: []
 depends-on: [ADR-0174]
 implements: []
-references-upstream: []
 ---
 
 # Reconcile `/adr-index` MCP tool naming with fork's agentdb-tools.ts
@@ -170,6 +167,8 @@ Any consumer using the underscore name has to be updated. Expected: zero hits, s
 
 ## More Information
 
+Original status: completed, closed on 2026-05-18.
+
 ### Relationship to ADR-0174 (graph_* axis introduction)
 
 ADR-0174 establishes the "Skill manifest stability" decision driver (line 65) and Phase C's no-skill-changes commitment (line 168). This ADR is a concrete application of that driver: when fork tooling diverges from skill expectations, fix the tooling, not the skill.
@@ -263,3 +262,47 @@ Method mirrors `lib/acceptance-adr0117-marketplace-mcp.sh` AC#4 (JSON-RPC
   Behaviour is exercised by the new check transitively (tools must
   exist for the skill to dispatch), but a dedicated end-to-end probe
   is not in place.
+
+### Amendment: `hierarchical-query` globbed the wrong column — defect + fix (2026-05-30)
+
+Surfaced during the ADR-0271 corpus migration: `agentdb_hierarchical-query`
+with path `adr/*` returned **zero** records while a bare `*` returned
+**everything** — the inverse of this ADR's Phase-3 §Confirmation acceptance
+("from a populated `adr/*` hierarchical store, calling
+`agentdb_hierarchical-query` with path `adr/*` returns all ADR records"). So
+that acceptance was **never actually met** by the implementation.
+
+**Root cause.** The logical key/path supplied at write time (`adr/ADR-NNNN`)
+is persisted by `hierarchicalStore` (`agentdb-orchestration.ts:314`) into
+`metadata.key` + `tags: [key]` only; the `content` column holds the *value*
+blob and the row `id` is a synthetic `mem-${Date.now()}-…`
+(`HierarchicalMemory.ts:244`). The `hierarchical_memory` schema has **no
+key/path column**. But `HierarchicalMemory.query()` globbed
+`WHERE content LIKE ?` (`HierarchicalMemory.ts:504`) — i.e. the value blob —
+so `adr/%` matched nothing (the blob starts with `{`), while `%` matched all.
+(The path was never written into `content`; it lives in `metadata.key`.)
+
+**Fix.** `query()` now globs the stored key:
+`WHERE json_extract(metadata, '$.key') LIKE ? ESCAPE '\'`
+(`forks/agentdb/src/controllers/HierarchicalMemory.ts`). This honours the
+existing on-disk data (no schema migration) and satisfies the Phase-3
+acceptance. Verified directly against SQLite: the old `content LIKE 'adr/%'`
+returns 0; the new `json_extract(metadata,'$.key') LIKE 'adr/%'` returns the
+record; bare `*` still matches.
+
+**Residual / notes.**
+- The stub-controller fallback (`agentdb-orchestration.ts:374`) also matches
+  on `content` (`e.content.startsWith(prefix)`); it is only reached when the
+  controller lacks `query()`, which the shipped controller does not — left as
+  a lower-priority follow-up.
+- `HierarchicalMemory` is a fork-only controller (no upstream `query()` /
+  path model), so there is no upstream behaviour to reconcile against — this
+  is a fork-internal contract whose own acceptance was unmet.
+- Deploying the fix requires a fork rebuild + republish + MCP-server restart;
+  the fork's `tsc` currently has pre-existing, unrelated type errors
+  (`benchmarks/`, `examples/`, and a few `src/` sites incl.
+  `HierarchicalMemory.ts:380` `manualSearch` tier typing) that predate this
+  change.
+- Bears on ADR-0271 Phase 3: purging `adr/*` index entries cannot rely on
+  path enumeration until this fix ships; purge by tag/metadata or wipe the
+  store instead.

@@ -1,12 +1,15 @@
-# ADR-0132: Hive-mind sub-queen failure escalation in hierarchical-mesh topology (R8 follow-up)
+---
+status: accepted
+date: 2026-05-03
+tags: [hive-mind, topology, sub-queen, failure]
+supersedes: []
+depends-on: [ADR-0109, ADR-0131, ADR-0128]
+implements: []
+---
 
-- **Status**: **Implemented (2026-05-03)** per ADR-0118 §Status (T14 complete; fork `b5692c127` runtime + `c277b2d81` prompt block bundled by merge race). subQueenFailed() handler at `forks/ruflo/v3/@claude-flow/swarm/src/queen-coordinator.ts` (+277 lines: types, state, public methods); SUB-QUEEN FAILURE PROTOCOL extension at `commands/hive-mind.ts:538-595` (sibling to T12 WORKER FAILURE PROTOCOL); integration test at `__tests__/sub-queen-failure.test.ts` (16 cases across 5 describe blocks).
-- **Date**: 2026-05-03
-- **Deciders**: Henrik Pettersen
-- **Depends on**: ADR-0109 (parent — original R8 paragraph identified this gap), ADR-0131 (T12 worker-failure prompt protocol — sibling shape this ADR extends), ADR-0128 (T10 hierarchical-mesh topology runtime — owns the sub-queen instantiation surface this ADR fails-handles)
-- **Scope**: Fork-side runtime work in `forks/ruflo/v3/@claude-flow/swarm/src/queen-coordinator.ts` (sub-queen-failure handler + reassignment logic) and `forks/ruflo/v3/@claude-flow/cli/src/commands/hive-mind.ts` (queen-prompt §6 WORKER FAILURE PROTOCOL extension covering sub-queen-failure escalation paths). Closes ADR-0109 R8 only; does not generalise to multi-level recursion or cross-hive sub-queen migration.
+# Hive-mind sub-queen failure escalation in hierarchical-mesh topology (R8 follow-up)
 
-## Context
+## Context and Problem Statement
 
 ADR-0128 (T10) wired `hierarchical-mesh` topology: workers partition into sub-hives, each with a sub-queen; sub-hives run `mesh` internally; sub-queens coordinate `hierarchical`-ly upward to the top-level queen. ADR-0128 §Refinement explicitly noted sub-queen failure as a new failure mode introduced by this topology and surfaced — but did not decide — three options: (a) promote a worker in the affected sub-hive to interim sub-queen, (b) fail the sub-hive's task and propagate absence to the top-tier queen, (c) absorb the orphaned workers into the top tier and continue.
 
@@ -45,6 +48,21 @@ The decision this ADR makes today is binary: the runtime *will* handle sub-queen
 
 Lineage tracking follows ADR-0131's pattern: `subQueenFailedAt: number | null` and `subQueenRetryOf: string | null` (or equivalent for absorption case) added to the sub-queen entry in `state.workers[]` (sub-queens are workers tagged with a `role: 'sub-queen'` field per ADR-0128's data model). One-way transition: `subQueenFailedAt: null → number` only.
 
+### Consequences
+
+* Good, because the runtime handles sub-queen failure with a named escalation path rather than silently stranding the sub-hive (per `feedback-no-fallbacks.md`).
+* Good, because the protocol reuses ADR-0131's detect → mark → decide → audit shape, keeping the failure-handling surface uniform across worker and sub-queen failure.
+* Good, because lineage tracking (`subQueenFailedAt`/`subQueenRetryOf`) preserves the audit trail for sub-queen replacements, mirroring the worker `retryOf` precedent.
+* Bad, because the (a)/(b)/(c) option choice is deferred — until implementation commits to one, the ADR records intent but not the concrete recovery mechanism.
+* Bad, because `state.workers[]` gains two more optional fields (five total once both ADR-0131 and ADR-0132 land), widening the per-worker shape (additive only, load-time defaults, no migration).
+* Neutral, because cascading multi-failure cascades, cross-hive sub-queen migration, sub-sub-queen failure, and adversarial sub-queen detection are all explicitly out of scope and left to separate follow-up ADRs.
+
+### Confirmation
+
+- Integration test simulates sub-queen failure in a `hierarchical-mesh` swarm (sub-queen Task returns error, or sub-queen never writes its sub-hive-summary memory key within 60s); verifies the chosen escalation path runs end-to-end. Implemented at `__tests__/sub-queen-failure.test.ts` (16 cases across 5 describe blocks).
+- Unit test asserts the prompt-protocol sentinel substrings and the `subQueenFailed` handler's reassignment logic against mocked I/O.
+- Acceptance check (new file `lib/acceptance-adr0132-sub-queen-failure.sh` wired into `scripts/test-acceptance.sh`) round-trips the behaviour via `init --full` project + published `@sparkleideas/cli`.
+
 ## Out of scope
 
 - **Cascading failures beyond a single sub-queen.** If a sub-queen and its replacement both fail, treat as escalation to (b) regardless of which Option above ships; no third-attempt promotion. Multi-failure cascades within a single hive are a separate ADR.
@@ -76,8 +94,15 @@ Lineage tracking follows ADR-0131's pattern: `subQueenFailedAt: number | null` a
 
 **Promote scope expansion if any of**: cascading multi-failure cascades become a real need (currently single-failure escalation only); sub-queen identity-verification across hives becomes a real need (federation prerequisite, already out of scope); two-level recursion (`sub-sub-queens`) becomes a real need (currently capped at one level per ADR-0128). Each is a separate follow-up ADR.
 
-## References
+## More Information
 
+Original status: **Implemented (2026-05-03)** per ADR-0118 §Status (T14 complete; fork `b5692c127` runtime + `c277b2d81` prompt block bundled by merge race). subQueenFailed() handler at `forks/ruflo/v3/@claude-flow/swarm/src/queen-coordinator.ts` (+277 lines: types, state, public methods); SUB-QUEEN FAILURE PROTOCOL extension at `commands/hive-mind.ts:538-595` (sibling to T12 WORKER FAILURE PROTOCOL); integration test at `__tests__/sub-queen-failure.test.ts` (16 cases across 5 describe blocks).
+
+This ADR depends on ADR-0109 (parent — original R8 paragraph identified this gap), ADR-0131 (T12 worker-failure prompt protocol — sibling shape this ADR extends), and ADR-0128 (T10 hierarchical-mesh topology runtime — owns the sub-queen instantiation surface this ADR fails-handles).
+
+Scope: Fork-side runtime work in `forks/ruflo/v3/@claude-flow/swarm/src/queen-coordinator.ts` (sub-queen-failure handler + reassignment logic) and `forks/ruflo/v3/@claude-flow/cli/src/commands/hive-mind.ts` (queen-prompt §6 WORKER FAILURE PROTOCOL extension covering sub-queen-failure escalation paths). Closes ADR-0109 R8 only; does not generalise to multi-level recursion or cross-hive sub-queen migration.
+
+References:
 - ADR-0109 — Worker failure handling (parent; R8 paragraph identifies this gap; carries forward to here)
 - ADR-0131 — Worker-failure prompt protocol + auto-status-transitions (T12; sibling shape this ADR extends; sub-queen failure was explicitly out-of-scope of T12)
 - ADR-0128 — Hive-mind topology runtime (T10; introduces `hierarchical-mesh` and sub-queen instantiation; surfaces sub-queen failure as new mode without deciding recovery)

@@ -1,11 +1,9 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-19
-implemented-date: 2026-05-22
-tags: [config, env-vars, init, canonicalization, swarm-reviewed]
+tags: [config, env-vars, init, canonicalization]
 supersedes: []
-depends-on: [0201, 0118]
+depends-on: [ADR-0201, ADR-0118]
 implements: []
 ---
 
@@ -119,6 +117,8 @@ A fresh 6-expert council re-verified ADR-0214. **Option A's remove-half re-affir
 * **`depends-on` += 0118** (its `CLAUDE_FLOW_*` convention is load-bearing for rejecting Option C). **Count clarified:** the F-14-003 main table has 14 dead-doc vars (under a "12" miscount heading); `LOG_LEVEL` is F-14-001-tagged but annotated, `CLAUDE_FLOW_TOKEN` is audit-omitted → the "5 annotate + 11 delete" partition holds. Minor: the `384`→`768` doc-fix is only the `EMBEDDING_DIM` row (`384` appears ~25× legitimately); 0195 has its own env var `STEP_LEVEL_FEEDBACK_ENABLED` (not a `GUIDANCE_*`).
 
 ## More Information
+
+Lifecycle dates from the original record: accepted 2026-05-19, implemented 2026-05-22. This ADR was swarm-reviewed.
 
 * **Evidence:** `docs/audits/2026-05-19-soundness-audit/14-config-soundness.md` (primary), `11-init-mcp-installation.md`, `00-README.md`.
 * **Sites (all corrected):** `forks/ruflo/v3/@claude-flow/cli/src/init/mcp-generator.ts:82-86` (`.mcp.json` writer), `settings-generator.ts:66-67` + `executor.ts:341-342` (`.claude/settings.json` writers of `HOOKS_ENABLED`/`V3_ENABLED` — the missed scope), `settings-generator.ts:69-77` (9 zero-consumer `GUIDANCE_*` vars in the same block — owned by ADR-0192/0193/0195), `USERGUIDE.md:7045` (`CLAUDE_FLOW_TOKEN`, audit-missed dead doc), `@claude-flow/shared/src/core/config/loader.ts:80,103,105,142,144` (readers + allowed sets), `integration/src/feature-flags.ts:425-435` (dynamic reader of `CLAUDE_FLOW_ENABLE_*`), `init/types.ts:219,223` (value unions — subset-consistent with loader), `memory/src/resolve-config.ts:267-271` (HNSW could-be-wired substrate), `USERGUIDE.md:3229,6932,6960-6993,7060,7073` (doc sites incl. writer-named topology @6975).

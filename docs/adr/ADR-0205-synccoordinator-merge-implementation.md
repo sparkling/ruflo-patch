@@ -1,10 +1,9 @@
 ---
 status: superseded
-completed: true
 date: 2026-05-19
-tags: [federation, sync-coordinator, merge, crdt, swarm-reviewed]
+tags: [federation, sync-coordinator, merge, crdt]
 supersedes: []
-depends-on: [0201, 0200]
+depends-on: [ADR-0201, ADR-0200]
 implements: []
 ---
 

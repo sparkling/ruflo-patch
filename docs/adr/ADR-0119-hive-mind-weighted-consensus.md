@@ -1,13 +1,15 @@
-# ADR-0119: Hive-mind weighted consensus (Queen 3x voting power)
+---
+status: accepted
+date: 2026-05-02
+tags: [hive-mind, consensus, protocol]
+supersedes: []
+depends-on: [ADR-0116, ADR-0118]
+implements: []
+---
 
-- **Status**: **Implemented (2026-05-03)** per ADR-0118 §Status (T1 complete; fork ca9e29e2c + ruflo-patch 74f29e7). In-handler dispatch at `hive-mind-tools.ts:241` (enum) + `:78-104, 134-163` (vote tally).
-- **Date**: 2026-05-02
-- **Deciders**: Henrik Pettersen
-- **Depends on**: ADR-0116 (hive-mind marketplace plugin — owns the verification matrix that flagged this gap), ADR-0118 (runtime gaps tracker — defines this as task T1)
-- **Related**: ADR-0114 (substrate/protocol/execution layering — weighted is a protocol-layer addition), ADR-0104 (queen orchestration — owns single-queen invariant the tally relies on)
-- **Scope**: Fork-side runtime work in `forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hive-mind-tools.ts` and the matching deep-test file. Closes ADR-0118 task T1 only; T2-T10 are separate.
+# Hive-mind weighted consensus (Queen 3x voting power)
 
-## Context
+## Context and Problem Statement
 
 ADR-0116's USERGUIDE-vs-implementation verification matrix surfaced a partial gap on the **3 voting modes** row. The USERGUIDE block headed `**Consensus Mechanisms:**` advertises a `Weighted` mode where the queen's vote carries 3x the weight of a worker's. The implementation supports only three of the four advertised modes:
 
@@ -37,39 +39,46 @@ ADR-0118's T1 row sized this as the smallest, most-isolated runtime gap (low ris
 - **Option B — Per-proposal configurable weights**. `hive-mind_consensus` accepts a `queenWeight: number` argument; `ConsensusProposal` persists the chosen weight; tally reads from the proposal.
 - **Option C — Role-based weight matrix from a config table**. A `consensusWeights: Record<HiveMemberRole, number>` map (queen, scout, coder, …) loaded from hive config; tally looks up each voter's role and multiplies accordingly.
 
-## Pros and Cons of the Options
-
-**Option A — Fixed 3x**
-- Pros: matches the USERGUIDE substring (`Queen 3x`) literally; single-file diff; zero new validation surface; `calculateRequiredVotes` signature stays backward-compatible via a defaulted parameter.
-- Cons: `queenWeight = 3` is a hardcoded constant — re-tuning (e.g. to 2x or 5x) requires a source change and a fork republish, not a config knob. The tally branch needs to look up `state.queen?.agentId` at vote time, which couples consensus tally to hive-state queen identity (currently the tally is queen-agnostic). And the contract is "what USERGUIDE says" rather than a derivation from BFT/Raft/quorum theory — if a future security review wants a derived weight, that's a follow-up ADR.
-
-**Option B — Per-proposal configurable**
-- Pros: flexible — supports asymmetric proposals (e.g. security-critical proposals with higher queen weight); avoids the rebuild-to-re-tune problem of Option A; surfaces the weight in the audit trail (each proposal records what weighting it used).
-- Cons: introduces propose-time authorization (who is allowed to set the weight?), input validation (clamp range, integer-only, reject negatives), persistence-shape change, and a tampering surface (stored weight could be mutated between propose and tally without an integrity check). Exceeds mechanical implementation per the ADR-0118 T1 escalation rule.
-
-**Option C — Role-based matrix**
-- Pros: extends naturally to weighted worker types (T8 may want this); centralises weighting in hive config rather than scattering constants across the codebase; one place to audit if security review questions the weights.
-- Cons: requires a hive-config schema change, config-validation tests, and migration for existing hive state files; couples T1 to T7/T8 work that the ADR-0118 dependency graph keeps independent.
-
 ## Decision Outcome
 
 Chosen option: **Option A (fixed 3x queen weight)**, because the USERGUIDE driver pins the ratio to 3x literally (so "flexibility" buys nothing the contract can use), the no-new-validation-surface driver excludes Option B's authorization/clamping/persistence work, and the ADR-0118 T1 escalation rule explicitly defers configurable weighting to a follow-up ADR. Options B and C remain viable as follow-up ADRs once a real use case emerges that justifies the validation/migration surface.
 
 **Queen-absent stance: throw, not permissive math.** When `'weighted'` strategy is invoked but `state.queen === undefined` at propose- or vote-time, the handler throws `MissingQueenForWeightedConsensusError` synchronously. Rationale: queen is process-bound (per ADR-0104); `state.queen === undefined` during a weighted round indicates a bug in the caller (init race, dangling shutdown, or queen nulled by an upstream error path). Surface loudly per the `feedback-no-fallbacks.md` spirit rather than degrading silently to a permissive denominator.
 
-## Consequences
+### Consequences
 
-**Positive**
-- USERGUIDE contract closed for the `Weighted` voting mode; ADR-0116 plugin README drops the `partial` annotation on next P1 materialise run.
-- Backward-compatible: existing `bft`/`raft`/`quorum` callers compile unchanged; `queenWeight` is an optional defaulted parameter on `calculateRequiredVotes`.
-- Single-file change footprint matches the ADR-0118 T1 sizing; no Tn dependencies disturbed.
+* Good, because the USERGUIDE contract is closed for the `Weighted` voting mode; ADR-0116 plugin README drops the `partial` annotation on next P1 materialise run.
+* Good, because the change is backward-compatible: existing `bft`/`raft`/`quorum` callers compile unchanged; `queenWeight` is an optional defaulted parameter on `calculateRequiredVotes`.
+* Good, because the single-file change footprint matches the ADR-0118 T1 sizing; no Tn dependencies disturbed.
+* Bad, because `queenWeight = 3` is a hardcoded constant — re-tuning requires editing source and republishing the fork, not a config change. If we later want 2x or 5x or any derived value, that's a follow-up ADR (see §Risks).
+* Bad, because the tally branch introduces a coupling between consensus and hive-state queen identity: the queen is identified by `state.queen?.agentId` at tally time. Previously the tally was queen-agnostic.
+* Bad, because weighted strategy is unusable until a queen is elected — explicit precondition. Callers must ensure `state.queen` is populated before invoking `hive-mind_consensus` with `strategy: 'weighted'`; otherwise `MissingQueenForWeightedConsensusError` is thrown.
+* Bad, because `tryResolveProposal`'s deadlock check (current line 154-160) sums raw vote counts, not weighted; the `'weighted'` branch must replace that arithmetic or risk false-deadlock rejections.
+* Neutral, because it adds one more case to `calculateRequiredVotes`; future `gossip` (T2) and `crdt` (T3) extensions share this branch structure.
 
-**Negative**
-- `queenWeight = 3` is a hardcoded constant — re-tuning requires editing source and republishing the fork, not a config change. If we later want 2x or 5x or any derived value, that's a follow-up ADR (see §Risks).
-- Tally branch introduces a coupling between consensus and hive-state queen identity: the queen is identified by `state.queen?.agentId` at tally time. Previously the tally was queen-agnostic.
-- Weighted strategy unusable until a queen is elected — explicit precondition. Callers must ensure `state.queen` is populated before invoking `hive-mind_consensus` with `strategy: 'weighted'`; otherwise `MissingQueenForWeightedConsensusError` is thrown.
-- `tryResolveProposal`'s deadlock check (current line 154-160) sums raw vote counts, not weighted; the `'weighted'` branch must replace that arithmetic or risk false-deadlock rejections.
-- Adds one more case to `calculateRequiredVotes`; future `gossip` (T2) and `crdt` (T3) extensions share this branch structure.
+### Confirmation
+
+Per `feedback-all-test-levels`, all three pyramid levels are mandatory and ship in the same commit:
+
+- **Unit** — `tests/unit/hive-mind-weighted-consensus.test.mjs` (London-school, mocked I/O): covers `ConsensusStrategy` extension, `calculateRequiredVotes('weighted', N, _, 3)` math, tally multiplier, queen-elected-but-abstaining behaviour, the unknown-strategy throw, and the missing-queen throw on `'weighted'`. Plus backward-compat denominators for `bft`/`raft`/`quorum`. Mirrors the cases in §Implementation plan step 9.
+- **Integration** — also `tests/unit/*.test.mjs` per CLAUDE.md pyramid (real I/O): drive `hive-mind_consensus` end-to-end through `propose → vote → tally`, with `loadHiveState`/`saveHiveState` writing to a tempdir, asserting on-disk proposal state and outcome through the resolution path.
+- **Acceptance** — `check_hive_mind_weighted_consensus` in `lib/acceptance-hive-mind-checks.sh`, wired into `scripts/test-acceptance.sh`. Round-trips a `hive-mind_consensus` invocation with `strategy: 'weighted'` against a fresh `init --full` project's published `@sparkleideas/cli`; asserts the returned outcome matches the queen-decisive scenario. Uses `_cli_cmd` per `reference-cli-cmd-helper.md`.
+
+ADR-0118 status table flips T1 to `complete` only after all three levels are green; ADR-0116 annotation lift is blocked until then per `feedback-no-fallbacks.md`.
+
+## Pros and Cons of the Options
+
+**Option A — Fixed 3x**
+- Good, because it matches the USERGUIDE substring (`Queen 3x`) literally; single-file diff; zero new validation surface; `calculateRequiredVotes` signature stays backward-compatible via a defaulted parameter.
+- Bad, because `queenWeight = 3` is a hardcoded constant — re-tuning (e.g. to 2x or 5x) requires a source change and a fork republish, not a config knob. The tally branch needs to look up `state.queen?.agentId` at vote time, which couples consensus tally to hive-state queen identity (currently the tally is queen-agnostic). And the contract is "what USERGUIDE says" rather than a derivation from BFT/Raft/quorum theory — if a future security review wants a derived weight, that's a follow-up ADR.
+
+**Option B — Per-proposal configurable**
+- Good, because it is flexible — supports asymmetric proposals (e.g. security-critical proposals with higher queen weight); avoids the rebuild-to-re-tune problem of Option A; surfaces the weight in the audit trail (each proposal records what weighting it used).
+- Bad, because it introduces propose-time authorization (who is allowed to set the weight?), input validation (clamp range, integer-only, reject negatives), persistence-shape change, and a tampering surface (stored weight could be mutated between propose and tally without an integrity check). Exceeds mechanical implementation per the ADR-0118 T1 escalation rule.
+
+**Option C — Role-based matrix**
+- Good, because it extends naturally to weighted worker types (T8 may want this); centralises weighting in hive config rather than scattering constants across the codebase; one place to audit if security review questions the weights.
+- Bad, because it requires a hive-config schema change, config-validation tests, and migration for existing hive state files; couples T1 to T7/T8 work that the ADR-0118 dependency graph keeps independent.
 
 ## Validation
 
@@ -272,8 +281,15 @@ T1 marked `complete` in ADR-0118 §Status, with Owner/Commit columns naming a gr
 
 **Promote scope expansion if queen weighting must be configurable per proposal** (currently constant 3x) — per ADR-0118's escalation criterion. Configurable weighting introduces validation, persistence, and security surface (who is allowed to set the weight at propose time?) that exceeds mechanical implementation. If a real use case lands, fold it into a follow-up ADR rather than retrofitting this one.
 
-## References
+## More Information
 
+Original status: **Implemented (2026-05-03)** per ADR-0118 §Status (T1 complete; fork ca9e29e2c + ruflo-patch 74f29e7). In-handler dispatch at `hive-mind-tools.ts:241` (enum) + `:78-104, 134-163` (vote tally).
+
+This ADR depends on ADR-0116 (hive-mind marketplace plugin — owns the verification matrix that flagged this gap) and ADR-0118 (runtime gaps tracker — defines this as task T1). It is related to ADR-0114 (substrate/protocol/execution layering — weighted is a protocol-layer addition) and ADR-0104 (queen orchestration — owns single-queen invariant the tally relies on).
+
+Scope: Fork-side runtime work in `forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hive-mind-tools.ts` and the matching deep-test file. Closes ADR-0118 task T1 only; T2-T10 are separate.
+
+References:
 - ADR-0106 — consensus algorithm enforcement (origin of the `bft` ↔ `byzantine` alias-mapping carry-forward, R1)
 - ADR-0116 — verification matrix, "3 voting modes" row (gap source)
 - ADR-0118 — runtime gaps tracker, T1 row (task index entry)
@@ -282,7 +298,7 @@ T1 marked `complete` in ADR-0118 §Status, with Owner/Commit columns naming a gr
 - USERGUIDE Hive Mind contract — substring anchor `**Consensus Mechanisms:**` in `/Users/henrik/source/ruvnet/ruflo/docs/USERGUIDE.md`
 - Implementation surface: `forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hive-mind-tools.ts:46,78-104,134-163,575` and `forks/ruflo/v3/@claude-flow/cli/__tests__/mcp-tools-deep.test.ts`
 
-## Review notes
+### Review notes
 
 Resolutions from triage (Q1-Q3 closed in this revision; Q4 confirmed in scope):
 

@@ -1,30 +1,13 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-28
-implemented: 2026-05-29
-tags: [learning, skills, reflexion, archivist, adr-0180-phase-9, upstream-vision, flywheel]
+tags: [learning, skills, reflexion, archivist, flywheel]
 supersedes: []
 depends-on: [ADR-0053, ADR-0082, ADR-0170, ADR-0177, ADR-0179, ADR-0180]
 implements: []
 ---
 
-> **Status (2026-05-29): `accepted` + `completed: true`.** The full
-> record→promote→retrieve flywheel is implemented and CI-verified — the
-> `adr0268-flywheel` acceptance smoke passes **5/5** (`hooks post-task` ×3 →
-> `session-end` promote → `pre-task` retrieve of the promoted skill),
-> satisfying the §Confirmation round-trip, with 0 acceptance regressions
-> (715/724, 9 pre-existing skip_accepted). A 4-validator swarm confirmed
-> correctness / fail-loud+data-loss soundness / upstream-fidelity; the final
-> amendment records the 3 closed blockers + the out-of-scope deferrals
-> (cohesion guard, within-session trigger, code-at-record, causal-on-task.type,
-> Phase B). This ADR realizes the autonomy residual handed to **ADR-0180
-> Phase 9** when [[ADR-0179]] was superseded — i.e. it builds the
-> autonomous feedback→skill-promotion flywheel that upstream designed but
-> deferred. A 5-expert design council (2026-05-28, parallel Agent fan-out)
-> produced the synthesis; every claim below is grounded in HEAD file:line.
-
-# ADR-0268 — Autonomous skill-promotion flywheel (ADR-0180 Phase 9 realization)
+# Autonomous skill-promotion flywheel (ADR-0180 Phase 9 realization)
 
 ## Context and Problem Statement
 
@@ -154,7 +137,7 @@ resolution knob: compound `${label}:${agentType}`.
 | #4 | session-end | Demote to batch backstop; fix the dead `consolidate()` + re-throw fatals. |
 | #5–7 | autopilot loop, post-edit/command, task_complete | Long-horizon replanning; finer recall; complementary. |
 
-## Consequences
+### Consequences
 
 * Good — the autonomous flywheel exists end-to-end (record→promote→retrieve);
   the `ebf73a5` mechanism gets fuel; the `agentdb_learner_run` tool stops lying.
@@ -214,6 +197,8 @@ built first, then cli, then `npm run release`.
 * Flip `completed: true` only when all of the above pass under `npm run release`.
 
 ## More Information
+
+Original status (2026-05-29): `accepted` + `completed: true` (implemented 2026-05-29). The full record→promote→retrieve flywheel is implemented and CI-verified — the `adr0268-flywheel` acceptance smoke passes **5/5** (`hooks post-task` ×3 → `session-end` promote → `pre-task` retrieve of the promoted skill), satisfying the §Confirmation round-trip, with 0 acceptance regressions (715/724, 9 pre-existing skip_accepted). A 4-validator swarm confirmed correctness / fail-loud+data-loss soundness / upstream-fidelity; the final amendment records the 3 closed blockers + the out-of-scope deferrals (cohesion guard, within-session trigger, code-at-record, causal-on-task.type, Phase B). This ADR realizes the autonomy residual handed to **ADR-0180 Phase 9** when [[ADR-0179]] was superseded — i.e. it builds the autonomous feedback→skill-promotion flywheel that upstream designed but deferred. A 5-expert design council (2026-05-28, parallel Agent fan-out) produced the synthesis; every claim below is grounded in HEAD file:line.
 
 * [[ADR-0179]] row 6 + Option-B amendment — the superseded residual this realizes.
 * [[ADR-0180]] §Re-entrancy / §Phase 9 — the tracker this closes.

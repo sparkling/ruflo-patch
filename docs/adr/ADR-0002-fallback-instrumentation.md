@@ -1,12 +1,15 @@
-# ADR-0002: Instrument silent fallback paths with diagnostic logging
+---
+status: accepted
+date: 2026-03-05
+tags: [logging, fallback, observability, patch]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-## Status
+# Instrument silent fallback paths with diagnostic logging
 
-Implemented
-
-## Context
-
-### Specification (SPARC-S)
+## Context and Problem Statement
 
 The `@claude-flow/cli` runtime and its local helper files contain numerous fallback code paths that silently degrade functionality. These paths use empty `catch {}` blocks, bare `.catch(() => null)` handlers, and fall-through logic with no diagnostic output. When features degrade — ONNX embeddings fall back to hash-based, HNSW search falls back to brute-force SQL scans, ControllerRegistry initialization fails, agentic-flow modules load as null — operators have no way to determine what degraded, when, or why.
 
@@ -28,7 +31,17 @@ FOR each file with silent fallback paths:
     PRESERVE original fallback behavior unchanged
 ```
 
-## Decision
+## Considered Options
+
+* **Add `console.warn('[RUFLO-FALLBACK] ...')` instrumentation at every silent fallback point across both layers (chosen).**
+* **External monitoring agent** — Rejected. Adds runtime dependency and complexity for what is fundamentally a logging gap.
+* **Debug flag gating** (`if (DEBUG) console.warn(...)`) — Rejected. The whole point is that these paths are invisible in production; gating behind a flag preserves the problem for anyone who hasn't set it.
+* **Structured logging framework** (winston, pino) — Rejected. These are upstream files in an npx cache; adding dependencies is not viable for a patch system.
+* **Patch only upstream OR only local** — Rejected. Both layers have the same problem and share helper code that gets copied during init. Patching one without the other leaves blind spots.
+
+## Decision Outcome
+
+Chosen option: "Add `console.warn('[RUFLO-FALLBACK] FB-0XX-NN: ...')` instrumentation at every silent fallback point across both layers", because the instrumentation is observation-only and restores diagnosability without changing any fallback behavior.
 
 ### Architecture (SPARC-A)
 
@@ -41,13 +54,6 @@ Add `console.warn('[RUFLO-FALLBACK] FB-0XX-NN: ...')` instrumentation at every s
 - `impact` — severity assessment (CRITICAL / MEDIUM / LOW)
 
 The instrumentation is **observation-only**: no control flow, return values, or error propagation is changed. The original fallback behavior is preserved exactly.
-
-### Considered Alternatives
-
-1. **External monitoring agent** — Rejected. Adds runtime dependency and complexity for what is fundamentally a logging gap.
-2. **Debug flag gating** (`if (DEBUG) console.warn(...)`) — Rejected. The whole point is that these paths are invisible in production; gating behind a flag preserves the problem for anyone who hasn't set it.
-3. **Structured logging framework** (winston, pino) — Rejected. These are upstream files in an npx cache; adding dependencies is not viable for a patch system.
-4. **Patch only upstream OR only local** — Rejected. Both layers have the same problem and share helper code that gets copied during init. Patching one without the other leaves blind spots.
 
 ### Scope
 
@@ -93,37 +99,31 @@ The instrumentation is **observation-only**: no control flow, return values, or 
 | FB-002-15 | learning-service.mjs | embedBatch failure, sequential fallback |
 | FB-002-16 | hook-handler.cjs | Keyword-fallback routing activation |
 
-## Consequences
+### Consequences
 
-### Refinement (SPARC-R)
+* Good, because every silent degradation now produces a structured log line filterable by `[RUFLO-FALLBACK]`.
+* Good, because operators can diagnose cascading failures (e.g., ONNX unavailable causing hash fallback causing low similarity scores causing keyword matching).
+* Good, because the `impact` field in each log provides immediate severity triage.
+* Good, because FB-002 patches both upstream source copies and local project copies, so instrumentation survives `repair-post-init.sh` rehydration.
+* Bad, because it adds `console.warn` calls to hot paths (e.g., FB-001-04 fires per-result during search) — minor performance cost.
+* Bad, because log volume may be high in environments where fallbacks are the norm (no ONNX runtime).
+* Bad, because upstream patches will be overwritten on `@claude-flow/cli` version upgrades; must be reapplied.
+* Neutral, because no behavioral changes — all fallback logic remains identical.
+* Neutral, because no new dependencies introduced.
+* Neutral, because patches are idempotent via `patch()` infrastructure.
 
-**Positive:**
+### Confirmation
 
-- Every silent degradation now produces a structured log line filterable by `[RUFLO-FALLBACK]`
-- Operators can diagnose cascading failures (e.g., ONNX unavailable causing hash fallback causing low similarity scores causing keyword matching)
-- The `impact` field in each log provides immediate severity triage
-- FB-002 patches both upstream source copies and local project copies, so instrumentation survives `repair-post-init.sh` rehydration
-
-**Negative:**
-
-- Adds `console.warn` calls to hot paths (e.g., FB-001-04 fires per-result during search) — minor performance cost
-- Log volume may be high in environments where fallbacks are the norm (no ONNX runtime)
-- Upstream patches will be overwritten on `@claude-flow/cli` version upgrades; must be reapplied
-
-**Neutral:**
-
-- No behavioral changes — all fallback logic remains identical
-- No new dependencies introduced
-- Patches are idempotent via `patch()` infrastructure
-
-### Completion (SPARC-C)
+Completion (SPARC-C):
 
 - Both patches implemented and verified via `bash patch-all.sh --global`
 - Idempotency confirmed (second apply reports "already present")
 - `bash check-patches.sh` passes
 - `npm run preflight` passes
 
-## Patch Reference
+## More Information
+
+Patch reference:
 
 - **Defect IDs**: FB-001, FB-002
 - **Patch directories**: `patch/020-FB-001-fallback-instrumentation/`, `patch/021-FB-002-local-helper-instrumentation/`

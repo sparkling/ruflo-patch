@@ -1,8 +1,7 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-25
-tags: [tsconfig, build-system, fork-hygiene, prime-radiant, deferred-followup]
+tags: [tsconfig, build-system, fork-hygiene, prime-radiant]
 supersedes: []
 depends-on: [ADR-0257]
 implements: []

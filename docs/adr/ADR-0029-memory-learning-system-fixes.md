@@ -1,14 +1,15 @@
-# ADR-0029: Memory & Learning System Fixes
+---
+status: accepted
+date: 2026-03-15
+tags: [memory, neural, learning, patches]
+supersedes: []
+depends-on: [ADR-0027, ADR-0028]
+implements: []
+---
 
-## Status
+# Memory & Learning System Fixes
 
-Accepted
-
-## Date
-
-2026-03-15
-
-## Context
+## Context and Problem Statement
 
 Diagnostic testing of `@sparkleideas/cli` v3.5.15-patch.24 revealed 7 issues in the memory, neural/learning, and initialization subsystems. While core memory operations (store, retrieve, search, delete) work correctly, several components are operating in fallback mode, one critical feature (`neural predict`) is broken, and the initialization pipeline has gaps that cause first-run failures.
 
@@ -26,7 +27,15 @@ These issues were discovered by running `init --full --force` on a clean project
 | ML-006 | P2 | init --full | graph-state.json bootstrapped with 195MB of unrelated project data |
 | ML-007 | P3 | neural patterns | 2.1MB pattern file, Int8 quantization available but not applied |
 
-## Decision
+## Considered Options
+
+* **Fix all 7 issues in the ruflo fork's TypeScript source, following the fork patch model (ADR-0027) (chosen)**.
+
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "Fix all 7 issues in the ruflo fork's TypeScript source, following the fork patch model (ADR-0027)", because the issues are concrete diagnostic findings against the published `@sparkleideas/cli`, each with an identified root cause and source location, and the fork patch model gives type-checked, traceable remediation.
 
 ### SPARC Specification
 
@@ -148,27 +157,21 @@ After initial fixes:
 - PR to ruflo-patch main with all fixes
 - `npm run deploy:dry-run` to validate publish pipeline
 
-## Consequences
+### Consequences
 
-### Positive
-- `neural predict` becomes functional — enables real pattern-based recommendations
-- First-run experience improved — no "Database not initialized" error
-- FlashAttention either works natively or degrades gracefully with clear logging
-- Hooks provide automated learning out of the box
-- Fresh projects get clean, project-scoped graph state
+* Good, because `neural predict` becomes functional — enables real pattern-based recommendations
+* Good, because first-run experience improved — no "Database not initialized" error
+* Good, because FlashAttention either works natively or degrades gracefully with clear logging
+* Good, because hooks provide automated learning out of the box
+* Good, because fresh projects get clean, project-scoped graph state
+* Bad, because 7 patches increase fork maintenance surface
+* Bad, because enabling hooks by default adds ~10ms overhead per operation
+* Bad, because Int8 quantization trades ~2% accuracy for 4x memory reduction
+* Neutral, because (risk) ML-001 root cause confirmed as cosine similarity truncation — fix is well-scoped
+* Neutral, because (risk) ML-006 bootstrap filtering may miss legitimate cross-project memories
 
-### Negative
-- 7 patches increase fork maintenance surface
-- Enabling hooks by default adds ~10ms overhead per operation
-- Int8 quantization trades ~2% accuracy for 4x memory reduction
+## More Information
 
-### Risks
-- ML-001 root cause confirmed as cosine similarity truncation — fix is well-scoped
-- ML-006 bootstrap filtering may miss legitimate cross-project memories
+This decision relates to ADR-0027 (fork migration and version overhaul) and ADR-0028 (build type safety). Tracking lives in GitHub issues #66-#72 (all labeled `patch`), and the originating diagnostic is `docs/reports/memory-learning-diagnostic-2026-03-15.md`.
 
-## Related
-
-- ADR-0027: Fork migration and version overhaul
-- ADR-0028: Build type safety
-- GitHub issues: #66-#72 (all labeled `patch`)
-- Diagnostic report: `docs/reports/memory-learning-diagnostic-2026-03-15.md`
+Original status: "Accepted".

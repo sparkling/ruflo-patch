@@ -1,27 +1,21 @@
 ---
 status: superseded
-completed: true
 date: 2026-05-11
-tags: [agentdb, postgres, pglite, ruvector, graph-node, substrate-replacement, fork-divergence]
+tags: [agentdb, postgres, pglite, substrate]
 supersedes: [ADR-0166]
-superseded-by: [ADR-0177]
 depends-on: [ADR-0073]
 implements: []
 ---
 
 # AgentDB substrate replacement — PostgreSQL primary (pglite embedded, postgres server); retire SQLite
 
-## Status
+## Context and Problem Statement
 
-**Superseded by ADR-0177 (2026-05-12).** The postgres substrate landed (Phases A.2 + B Wave 1a + C.1 + D step 5 on archive branch `pre-adr-0177-reset-2026-05-12`) and was reverted on `bd760f2` (2026-05-12) per ADR-0177's RVF-first single-node-fork decision. SQLite is restored as the `agentdb_*` primary; vectors mirror to RVF-backed sqlite-vec virtual tables per ADR-0166 Option F. The `PostgresBackend.ts` + `migrate-sqlite-to-pglite.ts` files survive as `@deprecated` museum scaffolding (forks/agentdb commit `4f1626d`) for a possible future `@ruvector` PG extension hook (ADR-0177 Open Follow-up #5). DO NOT wire either back without a new ADR.
+> **Superseded by ADR-0177 (2026-05-12).** The postgres substrate landed (Phases A.2 + B Wave 1a + C.1 + D step 5 on archive branch `pre-adr-0177-reset-2026-05-12`) and was reverted on `bd760f2` (2026-05-12) per ADR-0177's RVF-first single-node-fork decision. SQLite is restored as the `agentdb_*` primary; vectors mirror to RVF-backed sqlite-vec virtual tables per ADR-0166 Option F. The `PostgresBackend.ts` + `migrate-sqlite-to-pglite.ts` files survive as `@deprecated` museum scaffolding (forks/agentdb commit `4f1626d`) for a possible future `@ruvector` PG extension hook (ADR-0177 Open Follow-up #5). DO NOT wire either back without a new ADR.
 
-~~**Proposed (2026-05-11) — fork-leading substrate-replacement decision.**~~
-
-~~Supersedes ADR-0166's "SQLite primary, permanently" stance for the `agentdb_*` axis. PostgreSQL becomes the sole supported relational substrate going forward; SQLite is retired. The `memory_*` axis (RVF primary per ADR-0073) is unchanged.~~
+> ~~**Proposed (2026-05-11) — fork-leading substrate-replacement decision.**~~ ~~Supersedes ADR-0166's "SQLite primary, permanently" stance for the `agentdb_*` axis. PostgreSQL becomes the sole supported relational substrate going forward; SQLite is retired. The `memory_*` axis (RVF primary per ADR-0073) is unchanged.~~
 
 This is a deliberate, fork-initiated divergence from upstream. Standalone `ruvnet/agentdb@3.0.0-alpha.14` (updated 2026-05-11) ships on SQLite via `better-sqlite3`, and zero of its 9 published ADRs (002–010) propose PostgreSQL. The fork chooses this substrate on technical merits — not because upstream is going there. See §"Relationship to upstream agentdb" below.
-
-## Context and Problem Statement
 
 ADR-0166 settled the agentdb persistence question by framing the choice as "SQLite primary (current) vs RuVector substrate flip (retired)" and converging on Option F — `sqlite-vec` virtual table augmentation inside SQLite. The 8-persona dialectic council never considered PostgreSQL.
 
@@ -332,6 +326,8 @@ ADR-0170 promotes to `accepted` when Phase A + Phase B land green. The substrate
 4. **Upstream `ruvnet/agentdb` adopts a SQLite-replacement** (postgres, RVF-substrate, or any other) via a formal ADR — would trigger re-evaluation of fork-vs-upstream alignment on this axis. Today no such signal exists; the fork is leading, not tracking.
 
 ## More Information
+
+Original metadata: marked `completed: true`. This decision supersedes ADR-0166 and is itself superseded by ADR-0177 (2026-05-12, RVF-first single-node-fork reset).
 
 ### Substrate audit (2026-05-11)
 

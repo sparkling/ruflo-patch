@@ -1,16 +1,13 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-18
-implemented: 2026-05-18
-methodology: [MADR]
-decision-makers: [Henrik Pettersen]
-tags: [federation, transport, wireguard, upstream-adoption]
-related: [0097, 0104, 0162, 0186]
-audience: ai-executor
+tags: [federation, transport, wireguard]
+supersedes: []
+depends-on: []
+implements: []
 ---
 
-# ADR-0187: Adopt upstream ADR-111 (WireGuard mesh federation layer)?
+# Adopt upstream ADR-111 (WireGuard mesh federation layer)?
 
 ## Context and Problem Statement
 
@@ -90,22 +87,14 @@ three currently-known ADR-111 SHAs (`bcdeed8d`, `8f0d90032`,
 `70e233946`) are flipped from `pending` to `superseded-by-local` in
 `docs/upstream/INTEGRATION-LEDGER.md` as part of this decision.
 
-## Consequences
+### Consequences
 
-**If adopted (Option 1)**:
-* Multi-commit hand-port effort: 3+ SHAs, conflict resolution against
-  ADR-097 + ADR-104, possible adaptation of `wg-mesh-service.ts` to
-  consume our `federation-coordinator.ts` API.
-* Adds runtime dependency on `wg`/`wireguard` system tooling for
-  consumers using the opt-in mesh path.
-* Long-term: track upstream ADR-111 evolution in subsequent syncs.
+* Good, because declining (Option 2) means no federation feature gap surfaces today.
+* Good, because the stable SKIP-by-policy rule ("ADR-111 declined per ADR-0187") avoids re-debating the chain every sync wave.
+* Bad, because had we adopted (Option 1) it would be a multi-commit hand-port effort: 3+ SHAs, conflict resolution against ADR-097 + ADR-104, possible adaptation of `wg-mesh-service.ts` to consume our `federation-coordinator.ts` API.
+* Bad, because adopting (Option 1) adds a runtime dependency on `wg`/`wireguard` system tooling for consumers using the opt-in mesh path, plus a long-term burden to track upstream ADR-111 evolution in subsequent syncs.
+* Neutral, because under deferral (Option 3, the prior state) the ledger keeps the 3 ADR-111 SHAs as `pending` at a cost of one re-encounter per sync wave until decided.
 
-**If declined (Option 2)**:
-* No federation feature gap surfaces today.
-* Future re-encounter risk: every future upstream sync will list the
-  ADR-111 chain as `pending`; need a stable SKIP-by-policy rule
-  ("ADR-111 declined per ADR-0187") to avoid re-debating.
+## More Information
 
-**If deferred (Option 3 — current state)**:
-* Ledger keeps the 3 ADR-111 SHAs as `pending`.
-* Cost: one re-encounter per sync wave until decided.
+Original status: accepted, implemented, and completed 2026-05-18. Original frontmatter recorded `methodology: [MADR]`, `decision-makers: [Henrik Pettersen]`, `audience: ai-executor`, and `related: [0097, 0104, 0162, 0186]`. This decision arose from ADR-0186's Batch J audit of upstream `70e233946`.

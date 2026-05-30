@@ -1,11 +1,9 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-20
-implemented-date: 2026-05-22
 tags: [init, mcp, ruflo-wrapper, brand, no-fallbacks, audit-followup]
 supersedes: []
-depends-on: [0201]
+depends-on: [ADR-0201]
 implements: []
 ---
 
@@ -267,6 +265,8 @@ wrapper-`@latest` regression introduced. Sibling boundaries (0212/0213/0214)
 and the out-of-scope findings (F-11-003/006/007/008/009/010) are accurate.
 
 ## More Information
+
+This decision was completed; implemented on 2026-05-22.
 
 - **Audit source:** `docs/audits/2026-05-19-soundness-audit/11-init-mcp-installation.md`
   findings F-11-001 / F-11-002 / F-11-004 / F-11-005; README

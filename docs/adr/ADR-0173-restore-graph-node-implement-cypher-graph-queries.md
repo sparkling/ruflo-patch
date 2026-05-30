@@ -1,9 +1,7 @@
 ---
 status: superseded
-completed: true
 date: 2026-05-12
-superseded-by: ADR-0174
-tags: [graph-database, cypher, apache-age, pgvector, postgres-server, cycle-clause, council-deliberation, adr-0170, adr-0172]
+tags: [graph-database, cypher, apache-age, postgres]
 supersedes: []
 depends-on: [ADR-0170, ADR-0172]
 implements: []
@@ -181,6 +179,8 @@ Without one of these triggers, Option A stays deferred. `feedback-no-value-judge
 * Bad, because on its own, capability ceiling is real — every new graph workload re-derives semantics in SQL.
 
 ## More Information
+
+Original metadata: marked `completed: true`. This decision is superseded by ADR-0174 (which was itself superseded by ADR-0177); see the banner at the top and ADR-0177 for the current graph-workload strategy.
 
 ### Council deliberation
 

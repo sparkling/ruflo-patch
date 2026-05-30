@@ -1,10 +1,15 @@
-# ADR-078: Agent LLM Federation Plugin
+---
+status: proposed
+date: 2026-04-29
+tags: [federation, security, plugin, pii]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-## Status: PROPOSED
+# Agent LLM Federation Plugin
 
-## Date: 2026-04-29
-
-## Context
+## Context and Problem Statement
 
 Claude Flow v3.5 operates within single installations. Agents spawned on one machine cannot collaborate with agents on another machine, user, or organization. As multi-agent AI development matures, the need for cross-installation coordination becomes critical -- organizations running separate Claude Flow installations need agents that can discover each other, share context safely, and coordinate work across trust boundaries without leaking PII or allowing prompt injection attacks from untrusted peers.
 
@@ -48,9 +53,15 @@ Federation ships as **invisible infrastructure** -- agents discover and negotiat
 
 Enterprise compliance is the initial optimization target. Open network adoption follows once the trust model is proven in controlled environments.
 
-## Decision
+## Considered Options
 
-Build `@claude-flow/plugin-agent-federation` as a first-class Claude Flow plugin that enables cross-installation agent collaboration with security-first design.
+* **Build `@claude-flow/plugin-agent-federation` as a first-class Claude Flow plugin (chosen)** — cross-installation agent collaboration with security-first design.
+
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "Build `@claude-flow/plugin-agent-federation` as a first-class Claude Flow plugin", because it enables cross-installation agent collaboration with security-first design.
 
 ---
 
@@ -818,19 +829,23 @@ Phase 3: Recovery
 
 **Pass criteria:** All verify statements pass. This is the minimum bar for declaring Phase 3 (Secure Messaging) complete.
 
-## 12. Consequences
+### Consequences
 
 **Positive:**
-- Claude Flow becomes the first multi-agent framework with production-grade federated security
-- Organizations can safely collaborate across trust boundaries
-- HIPAA/SOC2/GDPR compliance is built-in, not bolted-on
-- PII protection operates at the protocol level
+* Good, because Claude Flow becomes the first multi-agent framework with production-grade federated security
+* Good, because organizations can safely collaborate across trust boundaries
+* Good, because HIPAA/SOC2/GDPR compliance is built-in, not bolted-on
+* Good, because PII protection operates at the protocol level
 
 **Negative:**
-- Increased complexity for single-node deployments (mitigated by plugin opt-in)
-- mTLS adds ~20ms latency per connection establishment
-- PII scanning adds ~5ms per message
+* Bad, because of increased complexity for single-node deployments (mitigated by plugin opt-in)
+* Bad, because mTLS adds ~20ms latency per connection establishment
+* Bad, because PII scanning adds ~5ms per message
 
 **Neutral:**
-- Requires ed25519 key management -- standard practice but new operational burden
-- Audit log storage grows linearly with message volume -- configurable retention
+* Neutral, because it requires ed25519 key management -- standard practice but new operational burden
+* Neutral, because audit log storage grows linearly with message volume -- configurable retention
+
+### Confirmation
+
+The decision is confirmed via the Validation Benchmark in Section 11: two independent nodes exchange 10,000 tasks with zero PII leaks while a malicious node is automatically detected and downgraded, plus the per-phase Success Criteria in Section 6 (unit, integration, acceptance, and load tests green).

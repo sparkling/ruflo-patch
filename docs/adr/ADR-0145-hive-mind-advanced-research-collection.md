@@ -1,13 +1,17 @@
-# ADR-0145: Hive-mind-advanced research collection and execution plan
+---
+status: accepted
+date: 2026-05-05
+tags: [hive-mind, research, skills]
+supersedes: []
+depends-on: [ADR-0139, ADR-0140, ADR-0118]
+implements: []
+---
 
-- **Status**: **Executed (2026-05-05)**. All 15 research agents returned successfully. Synthesis below replaces "deferred to follow-up authoring" placeholders with concrete findings. Research-only ADR — no code changes; outputs now ready to feed ADR-0140 Piece 1 (SKILL.md rewrite) and Piece 2 (templates) authoring.
-- **Date**: 2026-05-05
-- **Deciders**: Henrik Pettersen
-- **Depends on**: ADR-0139 (canonical spec), ADR-0140 (implementation outline), ADR-0118 (T1-T14 runtime closure)
-- **Feeds**: ADR-0140 Piece 1 + Piece 2 authoring
-- **Scope**: Read-only investigation across fork source, per-task ADRs, USERGUIDE, tests, and sister skills. Produces 15 narrow research artefacts ready for synthesis into a procedural SKILL.md.
+# Hive-mind-advanced research collection and execution plan
 
-## Context
+## Context and Problem Statement
+
+This is a research-only ADR — no code changes; its outputs feed ADR-0140 Piece 1 (SKILL.md rewrite) and Piece 2 (templates) authoring.
 
 ADR-0140 Piece 1 proposes rewriting the upstream-canonical hive-mind-advanced SKILL.md (a 700-line feature catalogue from a 2025-10-20 docs consolidation) as a pattern-based procedure mirroring `swarm-advanced`. Today (2026-05-05), the fork has independent grounds to author such a procedure:
 
@@ -253,3 +257,11 @@ Defence-in-depth: unknown type throws `Unknown worker-type for prompt: ${type}` 
 The research is materially complete. Next step is ADR-0140 Piece 1 authoring (rewrite of `forks/ruflo/plugins/ruflo-hive-mind/skills/hive-mind-advanced/SKILL.md` as a procedural skill mirroring swarm-advanced), consuming this synthesis directly. Estimated authoring scope: ~600-800 lines of SKILL.md + 2 templates (`generic-council-protocol.md`, `worker-contract.md`) per ADR-0140 Piece 2.
 
 Per the Phase 2 plan in §Execution plan above, the synthesis was originally to live at `docs/research/hive-mind-advanced-procedure-research.md`. **Decision (2026-05-05)**: keep the synthesis embedded in this ADR rather than splitting to a separate file. Rationale: the per-task tables above already function as the synthesis surface; a separate file would duplicate without adding structure. The "research" file is therefore subsumed into this ADR's §Findings synthesis.
+
+## More Information
+
+Original status: **Executed (2026-05-05)**. All 15 research agents returned successfully. Synthesis above replaces "deferred to follow-up authoring" placeholders with concrete findings. Research-only ADR — no code changes; outputs now ready to feed ADR-0140 Piece 1 (SKILL.md rewrite) and Piece 2 (templates) authoring.
+
+This ADR depends on ADR-0139 (canonical spec), ADR-0140 (implementation outline), and ADR-0118 (T1-T14 runtime closure). It feeds ADR-0140 Piece 1 + Piece 2 authoring.
+
+Scope: Read-only investigation across fork source, per-task ADRs, USERGUIDE, tests, and sister skills. Produces 15 narrow research artefacts ready for synthesis into a procedural SKILL.md.

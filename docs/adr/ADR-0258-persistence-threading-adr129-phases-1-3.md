@@ -1,8 +1,7 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-25
-tags: [upstream-sync, rvagent-wasm, persistence, ADR-129, design-gate]
+tags: [rvagent-wasm, persistence, design-gate]
 supersedes: []
 depends-on: [ADR-0254, ADR-0256]
 implements: []
@@ -142,26 +141,18 @@ When Phases 1-3 land (a separate implementation ADR), the implementer must:
 5. Confirm `PersistedAgent` interface is unchanged in shape (no new fields).
 6. Smoke `scripts/smoke-wasm-rvf-compose.mjs` must validate the returned base64 round-trips through `WasmRvfBuilder.validate()` — no `store.json` artifact created.
 
-## Consequences
+### Consequences
 
-### Positive
+* Good, because **Per-tool ambiguity is resolved.** Each of the 16 tools has a named pattern with an existing wrapper to copy. The persistence-threading work for Phases 1-3 becomes mechanical.
+* Good, because **`wasm_agent_compose` decision is explicit.** Ephemeral verdict closes the open question R-A surfaced. No schema change. No regret-prone "in case we need it later" carve-out.
+* Good, because **No new substrate seam.** The decision avoids introducing per-gallery cross-process persistence (which would be its own substrate and require its own lock/atomic-write story).
+* Good, because **Existing patterns reused.** Group 1 = `wasm_agent_files` pattern. Group 2 = `wasm_agent_prompt` pattern. Group 3 = `wasm_gallery_list` pattern. Group 4 = pure builder.
+* Bad, because **Gallery mutations don't survive across processes.** A `wasm_gallery_add_custom` call in process A is invisible to process B's gallery in the same project. This is the trade-off for not adding a gallery substrate; if a future use case requires cross-process gallery state, a follow-up ADR will introduce the substrate at that time.
+* Bad, because **`wasm_agent_compose` callers must explicitly manage RVF outputs.** No "the compose tool will remember it for you" affordance. The base64 lives in the caller's response; they must save it if they want it later.
+* Neutral, because **No code change in this ADR.** This is a decision-only ADR; Phases 1-3 implementation lands in a separate commit under its own implementation ADR. The classification table above is the implementer's spec.
+* Neutral, because **Three of the four gates remain.** [[ADR-0254]] Phases 1-3 gating list still has SAFE_MCP_TOOLS allowlist audit and the `loadRvf` signature typo. This ADR resolves only the persistence-threading gate. The other two are resolved by sibling ADRs.
 
-* **Per-tool ambiguity is resolved.** Each of the 16 tools has a named pattern with an existing wrapper to copy. The persistence-threading work for Phases 1-3 becomes mechanical.
-* **`wasm_agent_compose` decision is explicit.** Ephemeral verdict closes the open question R-A surfaced. No schema change. No regret-prone "in case we need it later" carve-out.
-* **No new substrate seam.** The decision avoids introducing per-gallery cross-process persistence (which would be its own substrate and require its own lock/atomic-write story).
-* **Existing patterns reused.** Group 1 = `wasm_agent_files` pattern. Group 2 = `wasm_agent_prompt` pattern. Group 3 = `wasm_gallery_list` pattern. Group 4 = pure builder.
-
-### Negative
-
-* **Gallery mutations don't survive across processes.** A `wasm_gallery_add_custom` call in process A is invisible to process B's gallery in the same project. This is the trade-off for not adding a gallery substrate; if a future use case requires cross-process gallery state, a follow-up ADR will introduce the substrate at that time.
-* **`wasm_agent_compose` callers must explicitly manage RVF outputs.** No "the compose tool will remember it for you" affordance. The base64 lives in the caller's response; they must save it if they want it later.
-
-### Neutral
-
-* **No code change in this ADR.** This is a decision-only ADR; Phases 1-3 implementation lands in a separate commit under its own implementation ADR. The classification table above is the implementer's spec.
-* **Three of the four gates remain.** [[ADR-0254]] Phases 1-3 gating list still has SAFE_MCP_TOOLS allowlist audit and the `loadRvf` signature typo. This ADR resolves only the persistence-threading gate. The other two are resolved by sibling ADRs.
-
-## Confirmation
+### Confirmation
 
 1. If Phases 1-3 land in a follow-up implementation ADR, that ADR's commit references this ADR for the per-tool persistence pattern.
 2. If a future ADR proposes cross-process gallery persistence, it cites this ADR for the "out-of-scope-for-129" framing it must amend.

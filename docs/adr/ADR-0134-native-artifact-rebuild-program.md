@@ -1,13 +1,15 @@
-# ADR-0134: Native artifact rebuild program — generalise beyond ruvector napi-arm64
+---
+status: superseded
+date: 2026-05-03
+tags: [native, build, pipeline, wasm, napi]
+supersedes: []
+depends-on: [ADR-0133]
+implements: []
+---
 
-- **Status**: **[RECONCILED 2026-05-29 → SUPERSEDED by [[ADR-0150]] (napi) + [[ADR-0232]] (wasm); see [[ADR-0270]]]** The goal — any-fork, source-change-triggered native rebuild — shipped via those two (`lib/napi-config.sh` + `scripts/wasm-rebuild.sh`/`lib/wasm-config.sh`), NOT via this ADR's `native-rebuild.sh`/`.native-targets.sh` design (never built; no corpus file cites ADR-0134). Original status preserved below. — **Proposed (2026-05-03)** — follow-up to ADR-0133. Extend the narrow napi-arm64 fix into a general "any-fork, any-native-artifact, source-change-triggered rebuild" pipeline phase.
-- **Date**: 2026-05-03
-- **Deciders**: Henrik Pettersen
-- **Depends on**: ADR-0133 (narrow fix landed in commit `bec5606` — covers ruvector napi-arm64 only via `scripts/napi-rebuild.sh`)
-- **Related**: ADR-0086 (Layer 1 storage; stale binaries can mask storage regressions), ADR-0095 (RVF inter-process convergence; the canonical example of a fix masked by stale binary), ADR-0027 (fork-patch model; checked-in artifacts are part of the fork's source-of-truth)
-- **Scope**: All 4 forks (`ruflo`, `agentic-flow`, `ruv-FANN`, `ruvector`). Local rebuild on dev host only (darwin-arm64 specifically). Cross-platform binaries handled by a separate CI-matrix design captured in §Out of scope.
+# Native artifact rebuild program — generalise beyond ruvector napi-arm64
 
-## Context
+## Context and Problem Statement
 
 ADR-0133 surfaced a **stale-native-artifact class of regression** where fork Rust source changes (e.g. cherry-picked d12 flock+refcount) were published as new package versions, but the .node binaries inside the published artifact stayed stale (April 6 2026 build), masking the fix and producing 0/5 trials passing on the inter-process convergence probe.
 
@@ -27,7 +29,15 @@ That fix is **scope-locked** to one fork × one binary class × one platform. Th
 
 Each row's stale-risk is the same shape as ADR-0133's: source updates land in the fork, version bumps publish a new package, but the actual native binary inside the package is whatever was last manually rebuilt and committed. A regression in any of these crates can be silently masked by a stale binary indistinguishable in version metadata from the new code.
 
-## Decision
+## Considered Options
+
+* **Generalise `napi-rebuild.sh` into `native-rebuild.sh` driven by per-fork bash-sourced manifests (chosen)** — a single pipeline phase covering any fork, any native artifact, source-change-triggered.
+
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "Generalise `napi-rebuild.sh` into `native-rebuild.sh`", because the same stale-binary regression mode is latent across multiple artifact classes and a single source-change-triggered phase closes them all at once.
 
 **Generalise `napi-rebuild.sh` into `native-rebuild.sh`** — a single phase invoked before `bump-versions` that:
 
@@ -47,6 +57,22 @@ ADR-0133's script auto-discovered napi crates via `package.json` script greps. T
 - Some targets have implicit transitive dependencies (rvf-node depends on rvf-runtime)
 
 A small per-fork manifest is more robust than per-pattern auto-discovery.
+
+### Consequences
+
+* Neutral, because keeping artifacts in the fork (vs an artifact registry like GitHub Releases or a CDN) is preserved — this ADR retains the current "binaries are checked-in fork artifacts" model.
+
+### Confirmation
+
+Acceptance criteria:
+
+- [ ] Phase 1: `lib/native-rebuild-helpers.sh` extracted; `scripts/native-rebuild.sh` reads per-fork manifest; `scripts/napi-rebuild.sh` either replaced or thin shim
+- [ ] Phase 1: manifest schema documented (probably in this ADR § appendix once finalised)
+- [ ] Phase 2: ruvector WASM crates rebuild on source change; acceptance test passes
+- [ ] Phase 3: agentic-flow rebuild integrated (with platform-skip handling); acceptance test passes
+- [ ] Phase 4: ruv-FANN WASM rebuild integrated; acceptance test passes
+- [ ] Phase 5: ruflo WASM rebuild integrated; acceptance test passes
+- [ ] Phase 1-5 combined: zero stale-binary regressions surface in `npm run test:acceptance` over the next month of releases (proxy: ADR-0094 close-criterion 3 consecutive green runs holds)
 
 ## Trigger architecture — four-layer skip cascade
 
@@ -191,16 +217,6 @@ Defer. ADR-0135 if prioritised. Likely options:
 - QEMU local rebuild for linux-x64 / linux-arm64 (slow but feasible)
 - Leave as today: manual rebuild when cross-platform regressions surface
 
-## Acceptance criteria
-
-- [ ] Phase 1: `lib/native-rebuild-helpers.sh` extracted; `scripts/native-rebuild.sh` reads per-fork manifest; `scripts/napi-rebuild.sh` either replaced or thin shim
-- [ ] Phase 1: manifest schema documented (probably in this ADR § appendix once finalised)
-- [ ] Phase 2: ruvector WASM crates rebuild on source change; acceptance test passes
-- [ ] Phase 3: agentic-flow rebuild integrated (with platform-skip handling); acceptance test passes
-- [ ] Phase 4: ruv-FANN WASM rebuild integrated; acceptance test passes
-- [ ] Phase 5: ruflo WASM rebuild integrated; acceptance test passes
-- [ ] Phase 1-5 combined: zero stale-binary regressions surface in `npm run test:acceptance` over the next month of releases (proxy: ADR-0094 close-criterion 3 consecutive green runs holds)
-
 ## Risks
 
 1. **Build time inflation.** Each new wasm-pack invocation adds 30-60s to the release pipeline cold-path. Mitigated by per-target source-change detection (only rebuild what changed) and per-target build cache (wasm-pack respects `target/` cache).
@@ -209,7 +225,17 @@ Defer. ADR-0135 if prioritised. Likely options:
 4. **Network dependency.** `wasm-pack build` may pull dependencies. Verdaccio is local but cargo registry is remote. Same as today's release; no new exposure.
 5. **Generalisation scope creep.** This ADR could balloon into "rewrite all build infra." §Phases bound it: incremental, one fork at a time, each with its own acceptance gate.
 
-## References
+## More Information
+
+Original status: **[RECONCILED 2026-05-29 → SUPERSEDED by [[ADR-0150]] (napi) + [[ADR-0232]] (wasm); see [[ADR-0270]]]** The goal — any-fork, source-change-triggered native rebuild — shipped via those two (`lib/napi-config.sh` + `scripts/wasm-rebuild.sh`/`lib/wasm-config.sh`), NOT via this ADR's `native-rebuild.sh`/`.native-targets.sh` design (never built; no corpus file cites ADR-0134). Original status preserved below. — **Proposed (2026-05-03)** — follow-up to ADR-0133. Extend the narrow napi-arm64 fix into a general "any-fork, any-native-artifact, source-change-triggered rebuild" pipeline phase.
+
+This ADR depends on ADR-0133 (narrow fix landed in commit `bec5606` — covers ruvector napi-arm64 only via `scripts/napi-rebuild.sh`). It superseded the general-rebuild goal to ADR-0150 (napi) and ADR-0232 (wasm).
+
+Related decisions recorded in the original: ADR-0086 (Layer 1 storage; stale binaries can mask storage regressions), ADR-0095 (RVF inter-process convergence; the canonical example of a fix masked by stale binary), and ADR-0027 (fork-patch model; checked-in artifacts are part of the fork's source-of-truth).
+
+Scope: All 4 forks (`ruflo`, `agentic-flow`, `ruv-FANN`, `ruvector`). Local rebuild on dev host only (darwin-arm64 specifically). Cross-platform binaries handled by a separate CI-matrix design captured in §Out of scope.
+
+References:
 
 - ADR-0133: the narrow fix this generalises
 - `scripts/napi-rebuild.sh`: the prototype implementation (commit `411cca1` + `bec5606`)

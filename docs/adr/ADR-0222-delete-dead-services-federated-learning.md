@@ -1,11 +1,9 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-20
-implemented-date: 2026-05-22
 tags: [dead-code, federation, fork-cleanup, agentdb, audit-followup]
 supersedes: []
-depends-on: [0201]
+depends-on: [ADR-0201]
 implements: []
 ---
 
@@ -175,7 +173,9 @@ the deletion also removes the registry key-plumbing (the type union at
 `:75/:107`, the list at `:514`, the gated enabled-case at `:1180`, and the
 lazy construct-case at `:2038-2045`).
 
-### Consequences (if Option A holds)
+### Consequences
+
+(if Option A holds)
 
 - Good, because 436 LOC of dead code disappears from `forks/agentdb/src/`.
 - Good, because CHANGELOG / MIGRATION-LOG stop advertising a non-existent
@@ -240,6 +240,8 @@ lazy construct-case at `:2038-2045`).
   deciding A vs retraction.
 
 ## More Information
+
+This decision was completed; implemented on 2026-05-22.
 
 - **Audit source (the "dead" verdict):**
   `docs/audits/2026-05-19-soundness-audit/06-controllers-graph-federation.md`

@@ -1,13 +1,15 @@
-# ADR-0110: Collective memory backend reconciliation
+---
+status: accepted
+date: 2026-04-29
+tags: [memory, rvf, sqlite, readme]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: Partially superseded by ADR-0122 (T4) + ADR-0123 (T5) + ADR-0130 (T11) — all complete in ADR-0118 §Status (2026-05-03). RVF confirmed primary (`resolve-config.ts:89` `DEFAULT_STORAGE_PROVIDER: 'rvf'`); SQLite branch unreachable from `storage-factory.ts:130-183`. **Option D (README delta — split hive shared-state vs general agent memory)** is the residual; verified 2026-05-03 against `forks/ruflo/README.md` (333 lines): zero "SQLite"/"WAL" mentions remain — the ~2300-line upstream README that originally hosted the stale claims (lines 217/408/2365) was replaced upstream at `81418649c` (Apr 2026) and the current fork README already names RVF/HNSW/AgentDB correctly (lines 70-76, 168, 247, 290-291). No fork edit needed; Option D is closed as no-op against current README. — Prior amendments preserved for history: Amended 2026-05-01 per ADR-0111 W5 §Decision plan step 7; partial supersession (2026-05-02) closed the hive shared-state branch via ADR-0122/0123/0130 (`state.sharedMemory` now RVF-backed and typed, not JSON). Residual scope items (a)-(c) — general-memory `storage-factory.ts` vs upstream `database-provider.ts` reconciliation, SQLite-fallback factory wiring (Option B) decision, `validateStorageProvider` enum / ADR-0086 Debt 7 invariant tracking — remain open under ADR-0103's program (operationalised via ADR-0118 §Status table). The "8 memory types" R4 open question is closed by ADR-0122. W4 ruvector + ruflo merge investigation findings retained: (1) `storage-factory.ts` is **fork-only** — upstream uses `database-provider.ts` for backend selection, exhibiting a **different** unreachable-branch pattern in the dual SQLite+RVF coexistence model; (2) README correction tier confirmed no-op (per Option D verification above); (3) `validateStorageProvider` enum validator added to `validate-input.ts` per ADR-092 domain-specific-validators-per-shape pattern (W5 small validators).
-- **Date**: 2026-04-29 (amended 2026-05-01)
-- **Roadmap**: ADR-0103 item 6
-- **Scope**: README "Collective Memory" claim — backend (SQLite WAL vs RVF),
-  LRU cache, and the conflation between hive shared-state and general agent
-  memory.
+# Collective memory backend reconciliation
 
-## Context
+## Context and Problem Statement
 
 README §Hive Mind Capabilities, line 217:
 
@@ -108,7 +110,7 @@ The fork's ADR record is unanimous: RVF is primary, SQLite is fallback. The READ
 | "8 memory types" | Memory types enum exists in `types.ts` | ⚠️ Not verified per type — out of scope |
 | "TTL" | `CacheManager` and SQLite backend support TTL; RVF stores TTL on entries | ✅ Accurate |
 
-## Decision options
+## Considered Options
 
 ### Option A — Doc correction only (deflationary)
 
@@ -157,7 +159,33 @@ The SQLite fallback path (Option B) stays a separate, deferrable decision
 — the existing `storageProvider: 'better-sqlite3'` knob in resolve-config
 is already plumbed; only the factory wiring is missing.
 
-## Test plan
+## Decision Outcome
+
+Chosen option: "Option D (A + C) — fix the SQLite/RVF naming and split hive-state vs general-memory in the README", because the SQLite-WAL claim is a doc bug, not a code bug: RVF already provides everything the README promises (LRU cache, WAL persistence, durable shared knowledge) plus native HNSW the README doesn't mention, so the smallest correct fix is to rename the backend and disentangle the two conflated subsystems with no code change.
+
+Ship **Option D**. The SQLite-WAL claim is a doc bug, not a code bug —
+RVF already provides everything the README promises (LRU cache, WAL
+persistence, durable shared knowledge), plus native HNSW the README
+doesn't mention. Fix the README copy in three places, split the
+"Collective Memory" claim into hive-state vs general-memory, ship paired
+tests asserting RVF is the actual write target.
+
+Defer Option B (feature-flag SQLite primary) until a user actually asks
+for it — speculative configurability is the kind of complexity CLAUDE.md
+"Simplicity First" tells us to skip.
+
+### Consequences
+
+* Good, because the README stops naming the unreachable fallback (SQLite) as the primary persistence story and correctly names RVF (with native HNSW the README previously omitted).
+* Good, because splitting "Collective Memory" into hive-state (JSON) vs general-memory (RVF) removes the conflation of two distinct subsystems.
+* Good, because it requires no code change — RVF already provides LRU cache, WAL persistence, and durable shared knowledge.
+* Good, because paired tests assert RVF is the actual write target, guarding against future doc/code drift.
+* Bad, because the SQLite fallback remains unreachable (R2) — per `feedback-no-fallbacks.md` an unreachable fallback is worse than no fallback; wiring it (Option B) or deleting it is deferred to a separate decision.
+* Neutral, because Option B (feature-flag SQLite primary) is deferred until a user actually asks for it, per "Simplicity First".
+
+### Confirmation
+
+#### Test plan
 
 Per `feedback-all-test-levels.md`: unit + integration + acceptance.
 
@@ -209,15 +237,8 @@ If Option B (feature-flag SQLite) is ever revisited, the wiring point is `storag
   has been primary since ADR-0086.
 - README rewrite of the broader capabilities table — covered by ADR-0101.
 
-## Recommendation
+## More Information
 
-Ship **Option D**. The SQLite-WAL claim is a doc bug, not a code bug —
-RVF already provides everything the README promises (LRU cache, WAL
-persistence, durable shared knowledge), plus native HNSW the README
-doesn't mention. Fix the README copy in three places, split the
-"Collective Memory" claim into hive-state vs general-memory, ship paired
-tests asserting RVF is the actual write target.
+Status: partially superseded by ADR-0122 (T4) + ADR-0123 (T5) + ADR-0130 (T11) — all complete in ADR-0118 §Status (2026-05-03). RVF confirmed primary (`resolve-config.ts:89` `DEFAULT_STORAGE_PROVIDER: 'rvf'`); SQLite branch unreachable from `storage-factory.ts:130-183`. Option D (README delta — split hive shared-state vs general agent memory) is the residual; verified 2026-05-03 against `forks/ruflo/README.md` (333 lines): zero "SQLite"/"WAL" mentions remain — the ~2300-line upstream README that originally hosted the stale claims (lines 217/408/2365) was replaced upstream at `81418649c` (Apr 2026) and the current fork README already names RVF/HNSW/AgentDB correctly (lines 70-76, 168, 247, 290-291). No fork edit needed; Option D is closed as no-op against current README.
 
-Defer Option B (feature-flag SQLite primary) until a user actually asks
-for it — speculative configurability is the kind of complexity CLAUDE.md
-"Simplicity First" tells us to skip.
+Prior amendments preserved for history: amended 2026-05-01 per ADR-0111 W5 §Decision plan step 7; partial supersession (2026-05-02) closed the hive shared-state branch via ADR-0122/0123/0130 (`state.sharedMemory` now RVF-backed and typed, not JSON). Residual scope items (a)-(c) — general-memory `storage-factory.ts` vs upstream `database-provider.ts` reconciliation, SQLite-fallback factory wiring (Option B) decision, `validateStorageProvider` enum / ADR-0086 Debt 7 invariant tracking — remain open under ADR-0103's program (operationalised via ADR-0118 §Status table). The "8 memory types" R4 open question is closed by ADR-0122. W4 ruvector + ruflo merge investigation findings retained: (1) `storage-factory.ts` is fork-only — upstream uses `database-provider.ts` for backend selection, exhibiting a different unreachable-branch pattern in the dual SQLite+RVF coexistence model; (2) README correction tier confirmed no-op (per Option D verification above); (3) `validateStorageProvider` enum validator added to `validate-input.ts` per ADR-092 domain-specific-validators-per-shape pattern (W5 small validators). Dated 2026-04-29 (amended 2026-05-01). Roadmap: ADR-0103 item 6. This ADR is superseded in part by ADR-0122, ADR-0123, and ADR-0130.

@@ -1,13 +1,15 @@
-# ADR-0121: Hive-mind CRDT consensus protocol (T3)
+---
+status: accepted
+date: 2026-05-02
+tags: [hive-mind, consensus, crdt, protocol]
+supersedes: []
+depends-on: [ADR-0116, ADR-0118]
+implements: []
+---
 
-- **Status**: **Implemented (2026-05-03)** per ADR-0118 §Status (T3 complete; fork 49a2786dd + ruflo-patch this commit). In-handler dispatch at `hive-mind-tools.ts:241` (enum) + `:78-104, 134-163` (vote tally).
-- **Date**: 2026-05-02
-- **Deciders**: Henrik Pettersen
-- **Depends on**: ADR-0116 (hive-mind marketplace plugin — verification matrix), ADR-0118 (runtime-gaps tracker — owns T3 task definition)
-- **Related**: ADR-0114 (substrate/protocol/execution layering), ADR-0117 (marketplace MCP-server registration — supplies the `mcp__ruflo__hive-mind_consensus` namespace the agent file references)
-- **Scope**: Fork-side runtime work in `forks/ruflo/v3/@claude-flow/cli/src/`. Closes the CRDT portion of the "5 protocols" matrix row. Independent of T1 (Weighted) and T2 (Gossip) — no cross-Tn dependencies.
+# Hive-mind CRDT consensus protocol (T3)
 
-## Context
+## Context and Problem Statement
 
 ADR-0116's verification matrix flagged the "5 protocols" row as ✗ partial: USERGUIDE advertises BFT, Raft, Quorum, Weighted, Gossip, and CRDT as available consensus protocols, but the runtime exposes only the first three. T3 in ADR-0118 owns the CRDT slice.
 
@@ -26,7 +28,7 @@ The `hive-mind_broadcast` tool (same file, line 857) is a string-message bulleti
 
 Per `feedback-patches-in-fork.md`, USERGUIDE-promised features that don't work are bugs and bugs are fixed in fork.
 
-## Decision drivers
+## Decision Drivers
 
 - **USERGUIDE contract** — CRDT is one of 5 advertised consensus protocols; the runtime currently rejects `crdt` at the TS type level (`hive-mind-tools.ts:46`) and at the MCP `inputSchema.strategy.enum` (`:575`). Per ADR-0116's verification matrix, this is a partial-implementation bug.
 - **No causal-broadcast requirement** — CmRDT (op-based) would require reliable causal broadcast; the substrate has no such layer (`hive-mind_broadcast` is a string-bulletin-board, not a causal op stream). CvRDT semantics (full-state exchange + commutative-associative-idempotent join) require only that voters exchange serialised state through the existing proposal record — no causal ordering, no exactly-once delivery contract, no new substrate.
@@ -34,63 +36,17 @@ Per `feedback-patches-in-fork.md`, USERGUIDE-promised features that don't work a
 - **Fork-side patching** — per `feedback-patches-in-fork.md`, the runtime fix lands on the fork, not as a codemod or upstream PR. New module `crdt-types.ts` is fork-internal source.
 - **Three primitives map cleanly to the consensus shapes the round needs** — G-Counter for monotonic vote-count accumulation, OR-Set for the set of approving voter IDs, LWW-Register for the single-value verdict. Each primitive sits at exactly one role the round must produce; no speculative primitives.
 
-## Considered options
+## Considered Options
 
 - **Option A: State-based CRDTs (CvRDT)** — workers exchange full state; merge with a join function. Three primitives: G-Counter, OR-Set, LWW-Register.
 - **Option B: Operation-based CRDTs (CmRDT)** — workers exchange operations; merge replays ops in causal order. Requires reliable causal broadcast.
 - **Option C: Delta-CRDTs** — hybrid; ship state deltas instead of full state. Smaller payloads, more code surface (delta-state lattice + acknowledgement bookkeeping).
 
-## Pros and cons of the options
-
-### Option A: CvRDT (state-based) — chosen
-
-- Pros: merge is commutative/associative/idempotent by construction; re-broadcast safe; no causal-broadcast layer required; CRDT-state rides on the existing proposal record (extend `ConsensusProposal`, not the broadcast bus); minimum new code surface (one module + three primitives).
-- Cons: full-state payload grows with proposal cardinality and per-voter slot count (acceptable for short-lived consensus rounds — see §Risks for measured-bloat escalation criterion); OR-Set tombstones occupy memory until garbage collection; LWW tiebreaker drops one of two writes that arrive at the same `(timestamp, voterId)` key by construction (see §Refinement edge cases).
-
-### Option B: CmRDT (operation-based)
-
-- Pros: smaller per-message payload (op delta vs. full state); some primitives admit simpler merge semantics under guaranteed causal delivery.
-- Cons: requires reliable causal broadcast, which the fork has no layer for; `hive-mind_broadcast` is a string-bulletin-board (last-100 messages, no causal ordering, no per-recipient delivery guarantee). Op-replay must be exactly-once, forcing dedup bookkeeping. Correctness contract leaks into the substrate layer.
-
-### Option C: Delta-CRDTs
-
-- Pros: bandwidth win over CvRDT for steady-state; preserves CvRDT's mathematical convergence properties.
-- Cons: not a third algebra — delta-CRDTs are a transport-layer optimisation of state-based CRDTs (ship state diffs instead of full state). The lattice itself is still a CvRDT. The optimisation requires per-peer delta-acknowledgement bookkeeping and adds a delta-lattice surface alongside the state lattice — over-engineered for short-lived consensus rounds where full-state payload is bounded by participant count. If implementation measures payload bloat, this ADR's escalation criterion (§Risks) promotes the delta optimisation to its own ADR rather than implementing it speculatively here.
-
-## Decision outcome
+## Decision Outcome
 
 **Chosen option: CvRDT with G-Counter / OR-Set / LWW-Register** (traces to drivers *No causal-broadcast requirement*, *Algebraic merge property*, *Three primitives map cleanly*). It requires no substrate-layer guarantees beyond what `hive-mind_consensus` already provides, the merge property is mathematically self-evident (testable by property-based fuzzing), and the three primitives cover the round's needs without introducing optional or speculative lattice types. Option B is rejected as substrate-incompatible (no causal broadcast available); Option C is rejected as premature optimisation of the same algebra rather than a distinct alternative — consensus rounds are short-lived, payload bloat is not measured to be a problem.
 
 If implementation surfaces a load-bearing reason to escalate (measured payload bloat that motivates delta state, causal-broadcast feature, RGA sequence semantics — see §Risks for the full escalation list), this ADR is promoted to a separate design-decision ADR before code lands. Default position commits only to the three primitives above.
-
-## Consequences
-
-### Positive
-
-- Mathematical convergence guarantee — N replicas with arbitrary interleaved updates always converge to the same merged state, provable by property tests (idempotence + commutativity + associativity).
-- Idempotent re-broadcast safe — workers can re-send the same state any number of times in any order without divergence; tolerates duplicates, retries, and out-of-order delivery natively.
-- Closes the "5 protocols" matrix row in ADR-0116 once landed; no remaining CRDT-shaped runtime gap.
-- Algebraic test surface (property-based) catches subtle merge bugs that scenario tests miss.
-
-### Negative
-
-- Full-state exchange bandwidth cost grows with proposal cardinality and voter count; acceptable for short-lived consensus rounds, brittle under future scale-out.
-- LWW tiebreaker drops one of two writes that share the same `(timestamp, voterId)` pair — concrete loss case: the same voter writes twice in the same `Date.now()` millisecond (collision against itself); the second write's value vanishes silently. This is correct CvRDT behaviour for an LWW-Register, but it must be annotated in code and exercised by tests.
-- The disappearing-voter case under G-Counter: a voter that increments and never returns leaves a stale slot that contributes to `value()` indefinitely (slot-wise max preserves the slot forever). This is correct CvRDT behaviour — votes are durable — but it must be annotated alongside the OR-Set tombstone note.
-- OR-Set tombstones leak memory until garbage collection; for short-lived consensus this is bounded, but it must be annotated in code so future long-lived uses don't trip on it.
-
-### Neutral
-
-- New module `crdt-types.ts` adds a third consensus-shape file to `mcp-tools/`; future protocols (delta-CRDT, RGA) would extend rather than replace it.
-- `ConsensusStrategy` enum gains `'crdt'` value; T1 (Weighted) and T2 (Gossip) extend the same enum — see §Risks for merge-conflict batching.
-
-## Validation
-
-- Unit: associativity / commutativity / idempotency property tests for each of G-Counter, OR-Set, LWW-Register; LWW tiebreaker collision tests with synthetic clock-skewed timestamps; OR-Set concurrent add/remove tombstone tests; G-Counter monotonicity test under simulated voter restart.
-- Integration: round-trip merge convergence — N (N ≥ 3) replicas with randomised-interleaving fuzzer (≥ 100 schedules per primitive); verifies all replicas converge to the same merged state regardless of message order.
-- Acceptance: `lib/acceptance-adr0121-crdt-consensus.sh` exercises the CRDT path through an init'd project — invokes `hive-mind_consensus` with `strategy: 'crdt'` via the `crdt-synchronizer.md` agent, observes a CRDT-merged verdict.
-
-## Decision
 
 **Implement state-based CRDT primitives (G-Counter, OR-Set, LWW-Register) and replace the vote tally for the `crdt` strategy with a CRDT merge over per-voter snapshots stored on the proposal record.** State-based (CvRDT) chosen over operation-based (CmRDT) as the default position because it does not require reliable causal broadcast — voters submit serialised state through `hive-mind_consensus.vote`, and the handler merges it into the proposal's `crdtState` accumulator using commutative-associative-idempotent join functions.
 
@@ -100,6 +56,48 @@ The three primitives cover the consensus shapes the existing `hive-mind_consensu
 - **LWW-Register** — single-value decision (the proposal verdict) with last-write-wins by `(timestamp, voterId)` tiebreaker
 
 Merge functions are commutative, associative, and idempotent — convergence is mathematical, not protocol-driven. Workers can re-broadcast the same state any number of times in any order without divergence.
+
+### Consequences
+
+* Good, because of mathematical convergence guarantee — N replicas with arbitrary interleaved updates always converge to the same merged state, provable by property tests (idempotence + commutativity + associativity).
+* Good, because idempotent re-broadcast is safe — workers can re-send the same state any number of times in any order without divergence; tolerates duplicates, retries, and out-of-order delivery natively.
+* Good, because it closes the "5 protocols" matrix row in ADR-0116 once landed; no remaining CRDT-shaped runtime gap.
+* Good, because the algebraic test surface (property-based) catches subtle merge bugs that scenario tests miss.
+* Bad, because full-state exchange bandwidth cost grows with proposal cardinality and voter count; acceptable for short-lived consensus rounds, brittle under future scale-out.
+* Bad, because the LWW tiebreaker drops one of two writes that share the same `(timestamp, voterId)` pair — concrete loss case: the same voter writes twice in the same `Date.now()` millisecond (collision against itself); the second write's value vanishes silently. This is correct CvRDT behaviour for an LWW-Register, but it must be annotated in code and exercised by tests.
+* Bad, because of the disappearing-voter case under G-Counter: a voter that increments and never returns leaves a stale slot that contributes to `value()` indefinitely (slot-wise max preserves the slot forever). This is correct CvRDT behaviour — votes are durable — but it must be annotated alongside the OR-Set tombstone note.
+* Bad, because OR-Set tombstones leak memory until garbage collection; for short-lived consensus this is bounded, but it must be annotated in code so future long-lived uses don't trip on it.
+* Neutral, because new module `crdt-types.ts` adds a third consensus-shape file to `mcp-tools/`; future protocols (delta-CRDT, RGA) would extend rather than replace it.
+* Neutral, because `ConsensusStrategy` enum gains `'crdt'` value; T1 (Weighted) and T2 (Gossip) extend the same enum — see §Risks for merge-conflict batching.
+
+### Confirmation
+
+- Unit: associativity / commutativity / idempotency property tests for each of G-Counter, OR-Set, LWW-Register; LWW tiebreaker collision tests with synthetic clock-skewed timestamps; OR-Set concurrent add/remove tombstone tests; G-Counter monotonicity test under simulated voter restart.
+- Integration: round-trip merge convergence — N (N ≥ 3) replicas with randomised-interleaving fuzzer (≥ 100 schedules per primitive); verifies all replicas converge to the same merged state regardless of message order.
+- Acceptance: `lib/acceptance-adr0121-crdt-consensus.sh` exercises the CRDT path through an init'd project — invokes `hive-mind_consensus` with `strategy: 'crdt'` via the `crdt-synchronizer.md` agent, observes a CRDT-merged verdict.
+
+## Pros and Cons of the Options
+
+### Option A: CvRDT (state-based) — chosen
+
+- Good, because merge is commutative/associative/idempotent by construction; re-broadcast safe; no causal-broadcast layer required; CRDT-state rides on the existing proposal record (extend `ConsensusProposal`, not the broadcast bus); minimum new code surface (one module + three primitives).
+- Bad, because full-state payload grows with proposal cardinality and per-voter slot count (acceptable for short-lived consensus rounds — see §Risks for measured-bloat escalation criterion); OR-Set tombstones occupy memory until garbage collection; LWW tiebreaker drops one of two writes that arrive at the same `(timestamp, voterId)` key by construction (see §Refinement edge cases).
+
+### Option B: CmRDT (operation-based)
+
+- Good, because of smaller per-message payload (op delta vs. full state); some primitives admit simpler merge semantics under guaranteed causal delivery.
+- Bad, because it requires reliable causal broadcast, which the fork has no layer for; `hive-mind_broadcast` is a string-bulletin-board (last-100 messages, no causal ordering, no per-recipient delivery guarantee). Op-replay must be exactly-once, forcing dedup bookkeeping. Correctness contract leaks into the substrate layer.
+
+### Option C: Delta-CRDTs
+
+- Good, because of bandwidth win over CvRDT for steady-state; preserves CvRDT's mathematical convergence properties.
+- Bad, because it is not a third algebra — delta-CRDTs are a transport-layer optimisation of state-based CRDTs (ship state diffs instead of full state). The lattice itself is still a CvRDT. The optimisation requires per-peer delta-acknowledgement bookkeeping and adds a delta-lattice surface alongside the state lattice — over-engineered for short-lived consensus rounds where full-state payload is bounded by participant count. If implementation measures payload bloat, this ADR's escalation criterion (§Risks) promotes the delta optimisation to its own ADR rather than implementing it speculatively here.
+
+## Validation
+
+- Unit: associativity / commutativity / idempotency property tests for each of G-Counter, OR-Set, LWW-Register; LWW tiebreaker collision tests with synthetic clock-skewed timestamps; OR-Set concurrent add/remove tombstone tests; G-Counter monotonicity test under simulated voter restart.
+- Integration: round-trip merge convergence — N (N ≥ 3) replicas with randomised-interleaving fuzzer (≥ 100 schedules per primitive); verifies all replicas converge to the same merged state regardless of message order.
+- Acceptance: `lib/acceptance-adr0121-crdt-consensus.sh` exercises the CRDT path through an init'd project — invokes `hive-mind_consensus` with `strategy: 'crdt'` via the `crdt-synchronizer.md` agent, observes a CRDT-merged verdict.
 
 ## Implementation plan
 
@@ -143,7 +141,7 @@ The `timestamp` is a wall-clock millisecond from `Date.now()` on the writing vot
 
 `voterId` is the stable string identifier the worker registers under in `state.workers` (NOT the node's hostname or PID — those drift across restarts). Test surface MUST include collision cases where two voters write the same register at the same `Date.now()` millisecond; the tiebreaker resolves by `voterId` string lexicographic comparison.
 
-A voter writing twice in the same millisecond against itself is the one collision case where data is silently dropped (same `(ts, voterId)` pair on both writes); per §Consequences-Negative this is acknowledged correct LWW behaviour and tests must assert the second write loses.
+A voter writing twice in the same millisecond against itself is the one collision case where data is silently dropped (same `(ts, voterId)` pair on both writes); per §Consequences this is acknowledged correct LWW behaviour and tests must assert the second write loses.
 
 ### State-snapshot shape per voter
 
@@ -163,7 +161,7 @@ Prose-level merge logic. Concrete implementation lands in `crdt-types.ts` per Im
 
 For each voter key in the union of `a.counts` and `b.counts`, take the max of the per-voter slot values. Voter keys present in only one side carry their slot through unchanged (treat-as-zero on the absent side, so `max(x, 0) = x`); this handles non-overlapping state and is the standard CvRDT G-Counter join. Result is a new `GCounter` whose `counts` map has every voter key from both sides, each holding the larger of the two observed values. `value()` is the sum across the merged map. Idempotence: `merge(a, a)` produces slot-wise `max(x, x) = x`, so it equals `a`. Commutativity follows from `max` symmetry. Associativity follows from `max` associativity.
 
-A disappearing voter leaves a stale slot that contributes to `value()` indefinitely. This is correct CvRDT semantics (votes are durable across voter death); §Consequences-Negative annotates the trade-off.
+A disappearing voter leaves a stale slot that contributes to `value()` indefinitely. This is correct CvRDT semantics (votes are durable across voter death); §Consequences annotates the trade-off.
 
 ### OR-Set merge
 
@@ -221,7 +219,7 @@ The `mcp__ruflo__*` tool prefix is contributed by the marketplace MCP-server reg
 - **OR-Set concurrent removes** — voter A removes `x` after observing tag1; voter B concurrently adds `(x, tag2)` without seeing tag1. After merge, A's tombstone set contains tag1 only; tag2 survives in `entries`; `x` is in `elements()`. Add-wins is the correct CvRDT semantic — tests must assert this rather than expecting remove to win.
 - **G-Counter overflow at 2^53** — JavaScript Number precision caps integer slots at `Number.MAX_SAFE_INTEGER` (2^53 - 1). For consensus-vote use the per-voter slot is bounded by participant count and round count, so this is well below the limit. Annotate the constraint in the code as a no-op overflow handler (a comment that `Number.MAX_SAFE_INTEGER` is the implicit cap and that overflow indicates a bug, not an expected case); do not implement BigInt slots speculatively (per CLAUDE.md "no abstractions for single-use code").
 - **Voter rejoins with stale state** — a voter that drops out and rejoins arrives with stale local CRDTs. On receiving the next merged proposal record, its state monotonically advances to at-least the merged max (G-Counter slot-wise, OR-Set entry-union, LWW lexicographic max). No special rejoin handshake is needed; the merge function is its own reconciliation. Stale-vs-fresh: the rejoiner's contribution is bounded — its slots are merged via max, so old slot values never overwrite newer ones; old OR-Set tombstones merge in via union (already-removed elements stay removed); old LWW values lose to newer `(ts, voterId)` pairs unless the rejoiner happens to be the latest writer.
-- **Voter never rejoins** — see §Consequences-Negative; the disappeared voter's G-Counter slot persists indefinitely and contributes to `value()`. Correct CvRDT behaviour, not a bug.
+- **Voter never rejoins** — see §Consequences; the disappeared voter's G-Counter slot persists indefinitely and contributes to `value()`. Correct CvRDT behaviour, not a bug.
 
 ### Error paths
 
@@ -280,8 +278,15 @@ If none of those surface, this ADR stands as the implementation contract.
 2. **OR-Set tombstone leakage**: removed elements still occupy memory until garbage collection; for the consensus-vote use case the proposal is short-lived so this is acceptable, but worth annotating in the code.
 3. **Cross-Tn enum extension collision**: T1 (Weighted), T2 (Gossip), and T3 (CRDT) all extend `ConsensusStrategy`. If two land in parallel they will conflict-merge on the same line. Per ADR-0118 §Open-questions item 2, batch in dependency order; T3 is independent so it can land first or last.
 
-## References
+## More Information
 
+Original status: **Implemented (2026-05-03)** per ADR-0118 §Status (T3 complete; fork 49a2786dd + ruflo-patch this commit). In-handler dispatch at `hive-mind-tools.ts:241` (enum) + `:78-104, 134-163` (vote tally).
+
+This ADR depends on ADR-0116 (hive-mind marketplace plugin — verification matrix) and ADR-0118 (runtime-gaps tracker — owns T3 task definition). It is related to ADR-0114 (substrate/protocol/execution layering) and ADR-0117 (marketplace MCP-server registration — supplies the `mcp__ruflo__hive-mind_consensus` namespace the agent file references).
+
+Scope: Fork-side runtime work in `forks/ruflo/v3/@claude-flow/cli/src/`. Closes the CRDT portion of the "5 protocols" matrix row. Independent of T1 (Weighted) and T2 (Gossip) — no cross-Tn dependencies.
+
+References:
 - Task definition: ADR-0118 task index row T3 (ADR-0118 has no narrative §T3 — the row defines the surface; this ADR fills in the steps)
 - Verification matrix: ADR-0116 §USERGUIDE-vs-implementation verification matrix, "5 protocols" row
 - Architectural constraints: ADR-0114 (CRDT primitives sit in the protocol layer; the `hive-mind_consensus` MCP tool is the execution-layer surface that drives them; the proposal record is the merge accumulator)
@@ -290,7 +295,7 @@ If none of those surface, this ADR stands as the implementation contract.
 - Test discipline: `feedback-no-fallbacks.md` (mathematical-property tests must fail loudly, not silently fall back to a non-CRDT tally; unknown-strategy `default` branch must throw, not return a majority threshold)
 - CLI invocation discipline: `reference-cli-cmd-helper.md` (parallel acceptance checks use `$(_cli_cmd)`, never raw `npx @latest`)
 
-## Implementation log
+### Implementation log
 
 (To be filled in as the task lands. Reference commit hash and the corresponding ADR-0118 §Status row update.)
 
@@ -301,7 +306,7 @@ If none of those surface, this ADR stands as the implementation contract.
 - [ ] Step 5: mathematical-property tests + randomised-interleaving fuzzer + acceptance check
 - [ ] ADR-0118 §Status table T3 row flipped to `complete`; plugin README annotation lifts on next P1 materialise run
 
-## Review notes
+### Review notes
 
 Triage results from `/docs/adr/ADR-0118b-review-notes-triage.md`. DEFER-TO-IMPL items remain open questions; resolved items are stamped inline.
 

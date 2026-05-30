@@ -1,11 +1,32 @@
-# ADR-0116: Hive-mind marketplace plugin (`ruflo-hive-mind`)
+---
+status: accepted
+date: 2026-05-02
+tags: [hive-mind, plugin, marketplace, packaging]
+supersedes: []
+depends-on: [ADR-0104, ADR-0113, ADR-0114, ADR-0117, ADR-0118]
+implements: []
+---
 
-- **Status**: **Plugin shipped 2026-05-02 (packaging Phases 1-2 landed); MCP-resolution gated on ADR-0117 Revision 2026-05-03 (Phase R1)** — verified 2026-05-03: `forks/ruflo/plugins/ruflo-hive-mind/` tree exists with all 31 files (2 skills + 16 agents + 11 commands + README + plugin.json); marketplace.json contains the entry. The plugin manifests correctly follow the service-method pattern (no `mcpServers`, no `npx` in plugin.json) — identical shape to the other 32 marketplace plugins. Tools referenced as `mcp__ruflo__hive-mind_*` resolve once ADR-0117's revised init-side `ruflo` server-key registration lands.
-- **Date**: 2026-05-02
-- **Deciders**: Henrik Pettersen
-- **Depends on**: ADR-0104 (hive-mind queen orchestration), ADR-0113 (plugin system integration), ADR-0114 (swarm/hive-mind architectural model)
-- **Related**: ADR-0117 (marketplace MCP server registration — Revision 2026-05-03 switches from parallel umbrella-plugin registration to init service-method; this plugin's `mcp__ruflo__*` references resolve once Phase R1 lands), ADR-0118 (hive-mind runtime gaps tracker — owns the implementation work surfaced by this ADR's verification matrix)
-- **Scope**: Fork-side artifact for the sparkling marketplace. Per `feedback-no-upstream-donate-backs.md`, this stays on `sparkling/main`; we do not file a PR against `ruvnet/ruflo`. **Packaging only** — runtime gaps are tracked separately in ADR-0118.
+# Hive-mind marketplace plugin (`ruflo-hive-mind`)
+
+## Context and Problem Statement
+
+Investigation of the upstream `ruvnet/ruflo@HEAD` skill-installation paths surfaced a concrete gap: the `hive-mind-advanced` skill is documented, recommended, and bundled, but **never installed into a Claude Code project by any automated path**.
+
+Specifically:
+
+| Surface | `hive-mind-advanced` available? | Source |
+|---------|:-:|---|
+| `docs/USERGUIDE.md` line 4053 promises `/hive-mind-advanced` as a built-in | ✓ | doc |
+| `mcp__ruflo__guidance_*` recommends it for the `hive-mind` domain | ✓ | `v3/@claude-flow/cli/src/mcp-tools/guidance-tools.ts:122` |
+| Bundled in the published `@claude-flow/cli` npm package | ✓ | `v3/@claude-flow/cli/.claude/skills/hive-mind-advanced/SKILL.md` |
+| `npx ruflo init --full` (Claude Code) copies it | ✗ **gap** | `SKILLS_MAP` in `v3/@claude-flow/cli/src/init/executor.ts:35-80` lists 34 skills across 7 categories; `hive-mind-advanced` is in none of them |
+| `npx ruflo init upgrade --add-missing` adds it | ✗ **same gap** | Same `SKILLS_MAP` consumed at `executor.ts:632` |
+| Any of the 32 marketplace plugins ships it | ✗ | `grep -rln hive-mind-advanced plugins/` → 0 results |
+
+The plain `hive-mind` skill is in worse shape — only `.agents/skills/hive-mind/SKILL.md` exists (no Claude Code copy, no bundled-in-cli copy). It reaches Claude Code users via no path at all.
+
+The same investigation found the related agents (5 files in `.claude/agents/hive-mind/`) and commands (11 files in `.claude/commands/hive-mind/`) are bundled in the cli package (`v3/@claude-flow/cli/.claude/{agents,commands}/hive-mind/`) and do get copied by `init --full` via `AGENTS_MAP.hiveMind` (executor.ts:103) and standard command-discovery — so the issue is **isolated to the skills tier**.
 
 ## Implementation status (2026-05-03)
 
@@ -26,33 +47,44 @@ The plugin packaging is complete and shipped. Verified by file inspection:
 
 What's still pending: ADR-0117 Phase R1 (init flip to `ruflo` server-key) must land before this plugin's 524-collective-ref `mcp__ruflo__*` tool calls actually resolve in a Claude Code session. Until then, the plugin installs cleanly and registers its skills/agents/commands, but the MCP tool calls inside those assets fail at invocation time.
 
-## Context
+## Considered Options
 
-Investigation of the upstream `ruvnet/ruflo@HEAD` skill-installation paths surfaced a concrete gap: the `hive-mind-advanced` skill is documented, recommended, and bundled, but **never installed into a Claude Code project by any automated path**.
+Considered three alternatives:
 
-Specifically:
+| Approach | Pros | Cons |
+|---|---|---|
+| **A: Patch `SKILLS_MAP` in `executor.ts`** to add `hive-mind-advanced` to a new `hiveMind` category | Single line of fork code; fixes `init --full` for everyone | Touches upstream-maintained file; merge-conflict risk every upstream sync; requires re-applying after every `npm run sync`; doesn't help users who chose `init --minimal` and want hive-mind opt-in |
+| **B: Create marketplace plugin** (this ADR) | Aligns with the existing 32-plugin pattern; opt-in install matches how niche capabilities ship; survives upstream syncs untouched; works for both `--minimal` and `--full` users | Requires user to know the plugin exists and run `/plugin install`; relies on the marketplace path the user already adopted |
+| **C: Both A and B** | Defense in depth | Doubles the maintenance surface |
 
-| Surface | `hive-mind-advanced` available? | Source |
-|---------|:-:|---|
-| `docs/USERGUIDE.md` line 4053 promises `/hive-mind-advanced` as a built-in | ✓ | doc |
-| `mcp__ruflo__guidance_*` recommends it for the `hive-mind` domain | ✓ | `v3/@claude-flow/cli/src/mcp-tools/guidance-tools.ts:122` |
-| Bundled in the published `@claude-flow/cli` npm package | ✓ | `v3/@claude-flow/cli/.claude/skills/hive-mind-advanced/SKILL.md` |
-| `npx ruflo init --full` (Claude Code) copies it | ✗ **gap** | `SKILLS_MAP` in `v3/@claude-flow/cli/src/init/executor.ts:35-80` lists 34 skills across 7 categories; `hive-mind-advanced` is in none of them |
-| `npx ruflo init upgrade --add-missing` adds it | ✗ **same gap** | Same `SKILLS_MAP` consumed at `executor.ts:632` |
-| `npx ruflo init --codex --full` (Codex CLI) copies it | ✓ | Different code path: `v3/@claude-flow/codex/src/initializer.ts:284` copies every skill in `.agents/skills/` when template is `full`/`enterprise` |
-| Any of the 32 marketplace plugins ships it | ✗ | `grep -rln hive-mind-advanced plugins/` → 0 results |
+## Decision Outcome
 
-The plain `hive-mind` skill is in worse shape — only `.agents/skills/hive-mind/SKILL.md` exists (no Claude Code copy, no bundled-in-cli copy). It reaches Claude Code users via no path at all.
-
-The same investigation found the related agents (5 files in `.claude/agents/hive-mind/`) and commands (11 files in `.claude/commands/hive-mind/`) are bundled in the cli package (`v3/@claude-flow/cli/.claude/{agents,commands}/hive-mind/`) and do get copied by `init --full` via `AGENTS_MAP.hiveMind` (executor.ts:103) and standard command-discovery — so the issue is **isolated to the skills tier**.
-
-## Decision
+Chosen option: "B: Create marketplace plugin", because it aligns with the existing 32-plugin pattern, the opt-in install matches how niche capabilities ship, it survives upstream syncs untouched, and it works for both `--minimal` and `--full` users.
 
 Ship a new file-based marketplace plugin **`ruflo-hive-mind`** in our fork's marketplace (`sparkling/ruflo`). The plugin scope is **packaging only**: it materialises the existing upstream files (skills, agents, commands) into a `/plugin install ruflo-hive-mind@ruflo`-compatible layout, applies codemod, and ships via GitHub.
 
 The verification matrix below catalogues which advertised features have real runtime behaviour vs. which are documentation-only. **Closing those runtime gaps is out of scope for this ADR** — that work is owned by **ADR-0118 (hive-mind runtime gaps tracker)**, where each gap row becomes a discrete task that can be picked up independently. This ADR is shippable as packaging now, even while runtime gaps remain.
 
 The plugin lives at `forks/ruflo/plugins/ruflo-hive-mind/` and is added to `forks/ruflo/.claude-plugin/marketplace.json`. After codemod, it ships to users as part of the `sparkling/ruflo` GitHub marketplace.
+
+Rationale for choosing B:
+1. Per `feedback-no-value-judgements-on-features.md`, the user wants the full surface available; a marketplace plugin makes both skills installable without taking a position on whether they should be in everyone's `init --full`.
+2. Per `feedback-patches-in-fork.md`, fork patches are for **bug fixes**. The init-skills omission is a real upstream bug, but it's also reasonable for upstream to consider hive-mind-advanced an opt-in skill — so reframing as "ship as a plugin" sidesteps the policy question.
+3. The plugin pattern is the documented v3-era distribution mechanism (per ADR-0113 plugin-system completion, USERGUIDE §Plugin Marketplace). Building a hive-mind plugin exercises the path our other sparkling plugins also use.
+
+If user feedback later shows that opt-in is the wrong default, we can revisit option A in a follow-up ADR.
+
+### Consequences
+
+* Good, because the marketplace plugin aligns with the existing 32-plugin pattern; opt-in install matches how niche capabilities ship.
+* Good, because the plugin survives upstream syncs untouched — it does not touch upstream-maintained files like `executor.ts`.
+* Good, because it works for both `--minimal` and `--full` users.
+* Bad, because it requires the user to know the plugin exists and run `/plugin install`; it relies on the marketplace path the user already adopted.
+* Neutral, because the plugin ships the full markdown surface as-is per `feedback-no-value-judgements-on-features.md` even where runtime support is partial or missing — the known gaps are annotated in the README and per-command frontmatter and tracked in ADR-0118.
+
+### Confirmation
+
+The plugin packaging is verified by file inspection (see §Implementation status): the 31-file tree exists at `forks/ruflo/plugins/ruflo-hive-mind/`, `plugin.json` matches the service-method template, and `marketplace.json` contains the entry. Acceptance is enforced by `lib/acceptance-adr0116-checks.sh` covering all 16 ACs plus the USERGUIDE-anchor pre-check, wired into `scripts/test-acceptance.sh` and run as part of `npm run test:acceptance`. The end-to-end install check (AC #13) is gated on ADR-0117 Phase R1 landing so that `mcp__ruflo__hive-mind_*` resolves.
 
 ### USERGUIDE-vs-implementation verification matrix
 
@@ -273,23 +305,6 @@ Every shipped asset already exists in upstream — this plugin is a **packaging 
 
 To prevent drift, extend `lib/codemod-plugin-skills.sh` (or new `lib/build-hive-mind-plugin.sh`) to materialise the plugin directory from these upstream paths before codemod runs. **Hand-editing the shipped copies is forbidden** — fix at the upstream source and re-run the materialise step.
 
-## Why a marketplace plugin (vs. patching upstream init)
-
-Considered three alternatives:
-
-| Approach | Pros | Cons |
-|---|---|---|
-| **A: Patch `SKILLS_MAP` in `executor.ts`** to add `hive-mind-advanced` to a new `hiveMind` category | Single line of fork code; fixes `init --full` for everyone | Touches upstream-maintained file; merge-conflict risk every upstream sync; requires re-applying after every `npm run sync`; doesn't help users who chose `init --minimal` and want hive-mind opt-in |
-| **B: Create marketplace plugin** (this ADR) | Aligns with the existing 32-plugin pattern; opt-in install matches how niche capabilities ship; survives upstream syncs untouched; works for both `--minimal` and `--full` users | Requires user to know the plugin exists and run `/plugin install`; relies on the marketplace path the user already adopted |
-| **C: Both A and B** | Defense in depth | Doubles the maintenance surface |
-
-**Choose B.** Rationale:
-1. Per `feedback-no-value-judgements-on-features.md`, the user wants the full surface available; a marketplace plugin makes both skills installable without taking a position on whether they should be in everyone's `init --full`.
-2. Per `feedback-patches-in-fork.md`, fork patches are for **bug fixes**. The init-skills omission is a real upstream bug, but it's also reasonable for upstream to consider hive-mind-advanced an opt-in skill — so reframing as "ship as a plugin" sidesteps the policy question.
-3. The plugin pattern is the documented v3-era distribution mechanism (per ADR-0113 plugin-system completion, USERGUIDE §Plugin Marketplace). Building a hive-mind plugin exercises the path our other sparkling plugins also use.
-
-If user feedback later shows that opt-in is the wrong default, we can revisit option A in a follow-up ADR.
-
 ## Acceptance criteria
 
 A new acceptance check `lib/acceptance-adr0116-checks.sh` covering:
@@ -411,8 +426,15 @@ If acceptance fails: revert the marketplace.json entry, delete `forks/ruflo/plug
 - Auto-installing the plugin during `init --full` — the marketplace pattern is opt-in by design
 - **Implementing any of the runtime gaps surfaced in the verification matrix** — owned by ADR-0118
 
-## References
+## More Information
 
+Original status: **Plugin shipped 2026-05-02 (packaging Phases 1-2 landed); MCP-resolution gated on ADR-0117 Revision 2026-05-03 (Phase R1)** — verified 2026-05-03: `forks/ruflo/plugins/ruflo-hive-mind/` tree exists with all 31 files (2 skills + 16 agents + 11 commands + README + plugin.json); marketplace.json contains the entry. The plugin manifests correctly follow the service-method pattern (no `mcpServers`, no `npx` in plugin.json) — identical shape to the other 32 marketplace plugins. Tools referenced as `mcp__ruflo__hive-mind_*` resolve once ADR-0117's revised init-side `ruflo` server-key registration lands.
+
+This ADR depends on ADR-0104 (hive-mind queen orchestration), ADR-0113 (plugin system integration), and ADR-0114 (swarm/hive-mind architectural model). It is related to ADR-0117 (marketplace MCP server registration — Revision 2026-05-03 switches from parallel umbrella-plugin registration to init service-method; this plugin's `mcp__ruflo__*` references resolve once Phase R1 lands) and ADR-0118 (hive-mind runtime gaps tracker — owns the implementation work surfaced by this ADR's verification matrix).
+
+Scope: Fork-side artifact for the sparkling marketplace. Per `feedback-no-upstream-donate-backs.md`, this stays on `sparkling/main`; we do not file a PR against `ruvnet/ruflo`. **Packaging only** — runtime gaps are tracked separately in ADR-0118.
+
+References:
 - Investigation transcript: this conversation 2026-05-02
 - USERGUIDE.md `/hive-mind-advanced` claim: `/Users/henrik/source/ruvnet/ruflo/docs/USERGUIDE.md:4053`
 - USERGUIDE Hive Mind block (substring anchor): `<summary>👑 <strong>Hive Mind</strong>` in `docs/USERGUIDE.md`

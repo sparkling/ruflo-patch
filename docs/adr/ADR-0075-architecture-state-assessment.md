@@ -1,15 +1,20 @@
-# ADR-0075: Architecture State Assessment — Storage, Controllers, Embeddings
+---
+status: accepted
+date: 2026-04-06
+tags: [architecture, storage, controllers, embeddings]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: Closed — all 5 layers addressed (L2-L5 by ADR-0085, L1 by ADR-0086). See ADR-0086 for remaining debt.
-- **Date**: 2026-04-06
-- **Analysis**: 5-agent hive council (queen architect + storage/controller/embedding specialists + devil's advocate)
+# Architecture State Assessment — Storage, Controllers, Embeddings
 
-## Context
+## Context and Problem Statement
 
 A deep architecture review was conducted across the ruflo and agentic-flow forks to assess the
 current state of storage backends, controller wiring, embedding generation, and configuration
 flow. The goal: identify what works, what's broken, what's redundant, and what the ideal end
-state looks like — with no constraints.
+state looks like — with no constraints. This assessment is informational — it captures the current state as a baseline for future simplification work, not an implementation decision. It was produced by a 5-agent hive council (queen architect + storage/controller/embedding specialists + devil's advocate).
 
 ## Findings
 
@@ -164,7 +169,7 @@ No sql.js fallback. No parallel AgentDBService. No bridge functions. One path, e
 - All 19 AgentDB controllers (unchanged internally)
 - All CLI-layer controllers (unchanged internally)
 
-## Decision
+## Prioritization Guidance
 
 This ADR is informational — no implementation decision. It captures the current state as a
 baseline for future simplification work. The findings should inform prioritization:
@@ -228,3 +233,7 @@ All 5 ideal-state layers are now fully addressed. Remaining ADR-0086 debt items 
 - **ControllerRegistry retains independent SQLite** for neural controllers (`learningBridge`,
   `graphAdapter`, etc.). This is an accepted trade-off — neural controllers have legitimate
   relational query needs that RVF does not serve.
+
+## More Information
+
+Original status: "Closed — all 5 layers addressed (L2-L5 by ADR-0085, L1 by ADR-0086). See ADR-0086 for remaining debt." Recorded 2026-04-06. The analysis was produced by a 5-agent hive council (queen architect + storage/controller/embedding specialists + devil's advocate). Layer 2's ideal-state criteria were superseded in part by ADR-0089 (intercept pattern + shared pool), and the broader simplification was carried out by ADR-0085 (L2-L5) and ADR-0086 (L1).

@@ -1,35 +1,38 @@
-# ADR-0046: Self-Learning Pipeline & Native Acceleration
+---
+status: accepted
+date: 2026-03-16
+tags: [self-learning, native, sona, controllers]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-## Status
+# Self-Learning Pipeline & Native Acceleration
 
-Accepted
-
-## Date
-
-2026-03-16
-
-## Deciders
-
-sparkling team
-
-## Methodology
-
-SPARC + MADR
-
-## Context
+## Context and Problem Statement
 
 ADR-0039 Phase 11 identified A6 (SelfLearningRvfBackend) and B4 (NativeAccelerator) as the foundation for a self-tuning vector index. Currently, every session starts cold with no learning, static routing, and manual HNSW parameter configuration. A6 is a composite orchestrator that auto-creates 6 sub-components (A7, A8, B1, B2, FederatedSessionManager, RvfSolver). B4 is a global singleton providing WASM/native acceleration used by multiple controllers.
 
-## Decision: Specification (SPARC-S)
+## Considered Options
 
-### Controllers
+* Wire A6 SelfLearningRvfBackend (Level 2, composite) and B4 NativeAccelerator (Level 2, singleton), with A6's six sub-components auto-created internally rather than wired separately (chosen).
+
+(No alternatives were recorded. The composition hierarchy swarm confirmed that wiring sub-components separately would create duplicate instances with lifecycle conflicts — see Refinement.)
+
+## Decision Outcome
+
+Chosen option: "Wire A6 SelfLearningRvfBackend and B4 NativeAccelerator at Level 2", because A6 delivers a self-tuning vector index plus six sub-systems through a single registry entry, and B4 (a shared singleton) supplies native 2-8x acceleration to A6, A5, B2, and A7 while preserving JS fallbacks.
+
+### Specification (SPARC-S)
+
+#### Controllers
 
 | ID | Class | Lines | Type | Description |
 |----|-------|:-----:|------|-------------|
 | A6 | SelfLearningRvfBackend | 487 | COMPOSITE | Orchestrator that auto-creates A7, A8, B1, B2 + FederatedSessionManager + RvfSolver via `initComponents()` lazy import. Exposes unified API: `search()`, `recordFeedback()`, `getStats()`. |
 | B4 | NativeAccelerator | 490 | SINGLETON | Global capability bridge. 11 @ruvector packages, 40+ methods, 80+ tests. Used by A6, A5, B2, A7. Auto-detects WASM, falls back to JS. |
 
-### A6 Sub-Components (auto-created, NOT wired separately)
+#### A6 Sub-Components (auto-created, NOT wired separately)
 
 | Sub-component | ID | Private field | Description |
 |--------------|-----|---------------|-------------|
@@ -40,7 +43,7 @@ ADR-0039 Phase 11 identified A6 (SelfLearningRvfBackend) and B4 (NativeAccelerat
 | FederatedSessionManager | -- | `private federated` | Session lifecycle for federated learning. |
 | RvfSolver | -- | `private solver` | Thompson Sampling policy per 18 context buckets. |
 
-### SONA Correction (from ADR-0039)
+#### SONA Correction (from ADR-0039)
 
 **Previous claim (issue #1243): "SONA wiring non-functional (stub instead of real API)"**
 
@@ -55,11 +58,11 @@ ADR-0039 Phase 11 identified A6 (SelfLearningRvfBackend) and B4 (NativeAccelerat
 
 Issue #1243 referred to wiring between layers, not the implementation itself.
 
-### Native Acceleration (B4)
+#### Native Acceleration (B4)
 
 B4 probes 11 `@ruvector` packages at init. When native is available, A5 HyperbolicAttention becomes usable (correct Poincare math requires native). B4 provides SIMD-optimized distance calculations (cosine, L2, inner product) with 2-8x speedup over pure JS. Every capability has a JS fallback.
 
-## Decision: Pseudocode (SPARC-P)
+### Pseudocode (SPARC-P)
 
 ```
 // controller-registry.ts -- A6 at Level 2 (after vectorBackend)
@@ -94,7 +97,7 @@ bridgeRecordFeedback(query, selectedResult, reward):
   a6.recordFeedback({ query, selectedResult, reward })  // fire-and-forget
 ```
 
-## Decision: Architecture (SPARC-A)
+### Architecture (SPARC-A)
 
 - A6 wires at Level 2. Sub-components (A7, A8, B1, B2, FederatedSessionManager, RvfSolver) are created internally via `initComponents()` -- NOT wired separately in the registry.
 - B4 wires at Level 2 as a singleton. Shared across A6, A5, B2, A7.
@@ -102,16 +105,16 @@ bridgeRecordFeedback(query, selectedResult, reward):
 - Bridge functions access sub-components through A6's API only (`search()`, `recordFeedback()`, `getStats()`).
 - A6's private fields mean sub-component behavior is only observable via `A6.getStats()`.
 
-## Decision: Refinement (SPARC-R)
+### Refinement (SPARC-R)
 
 - The composition hierarchy swarm (3 agents) confirmed A6 creates 6 sub-components as private fields via lazy import. Wiring them separately would create duplicate instances with lifecycle conflicts.
 - B4 is an exception: despite A6 creating an internal NativeAccelerator, B4 must be wired as a shared singleton because A5, B2, and A7 also need it independently.
 - A6 exposes `VectorBackendAsync` interface -- drop-in replacement for current vectorBackend.
 - Phase 11 effort: 10h. Depends on Phase 7 (CircuitBreaker protection).
 
-## Decision: Completion (SPARC-C)
+### Completion (SPARC-C)
 
-### Checklist
+#### Checklist
 
 - [x] Wire A6 SelfLearningRvfBackend at Level 2 (~487 lines)
 - [x] Wire B4 NativeAccelerator at Level 2 as singleton (~490 lines)
@@ -122,7 +125,21 @@ bridgeRecordFeedback(query, selectedResult, reward):
 - [x] Verify A6.initComponents() creates all 6 sub-components via getStats()
 - [x] Wire fire-and-forget for learning/training writes (must not block response)
 
-### Testing
+### Consequences
+
+* Good, because the self-tuning vector index eliminates manual HNSW parameter configuration.
+* Good, because SONA micro-LoRA provides real-time adaptation (<1ms per inference).
+* Good, because A6 is a single registry entry delivering 6 sub-systems.
+* Good, because the B4 singleton enables native 2-8x speedup across all consumers.
+* Good, because contrastive training improves embedding quality over time without model changes.
+* Bad, because A6's private fields mean sub-component behavior is only observable via getStats().
+* Bad, because A6's lazy initComponents() may silently fail (all try-catch).
+* Bad, because the native package adds a ~1.3MB binary dependency.
+* Neutral, because there are risks: A6 initComponents() silent failures need getStats() verification after init; B4 WASM detection may fail in constrained environments; and SONA EWC++ lambda tuning (lambda=2000) may need adjustment per workload.
+
+### Confirmation
+
+#### Testing
 
 ```js
 // tests/unit/self-learning-native.test.mjs
@@ -184,7 +201,7 @@ describe('ADR-0046: self-learning pipeline & native acceleration', () => {
 });
 ```
 
-### Testing Guidance
+#### Testing Guidance
 
 **Unit test file**: `tests/unit/adr-0046-self-learning-native.test.mjs`
 
@@ -220,39 +237,15 @@ describe('ADR-0046: self-learning pipeline & native acceleration', () => {
 - New MCP tool for A6 stats or feedback: `npm run deploy` (full acceptance)
 - B4 native package install (`@ruvector/attention`): `npm run deploy` (full acceptance)
 
-### Success Criteria
+#### Success Criteria
 
 - A6.search() invokes router + SONA + solver internally (non-empty routing decisions from getStats())
 - Hyperbolic attention Poincare distances satisfy triangle inequality after native install
 - B4 singleton shared across all consumers (same reference)
 - B4 JS fallback produces correct distance calculations when native unavailable
 
-## Consequences
+## More Information
 
-### Positive
+This decision was recorded by the sparkling team using the SPARC + MADR methodology.
 
-- Self-tuning vector index eliminates manual HNSW parameter configuration
-- SONA micro-LoRA provides real-time adaptation (<1ms per inference)
-- A6 is a single registry entry delivering 6 sub-systems
-- B4 singleton enables native 2-8x speedup across all consumers
-- Contrastive training improves embedding quality over time without model changes
-
-### Negative
-
-- A6's private fields mean sub-component behavior only observable via getStats()
-- A6's lazy initComponents() may silently fail (all try-catch)
-- Native package adds ~1.3MB binary dependency
-
-### Risks
-
-- A6 initComponents() silent failures need getStats() verification after init
-- B4 WASM detection may fail in constrained environments
-- SONA EWC++ lambda tuning (lambda=2000) may need adjustment per workload
-
-## Related
-
-- **ADR-0039**: Upstream controller integration roadmap (parent, Phase 11)
-- **ADR-006** (upstream): Unified Self-Learning RVF Integration (defines A6 as orchestrator)
-- **ADR-007** (upstream): @ruvector Full Capability Integration (B4 Phase 1)
-- **ADR-050** (upstream): Self-Learning Intelligence Loop (SONA integration pattern)
-- **ADR-0044**: Attention suite integration (A5 HyperbolicAttention enabled here)
+The original record cross-referenced related decisions: ADR-0039 (upstream controller integration roadmap, the parent, covering Phase 11); upstream ADR-006 (Unified Self-Learning RVF Integration, which defines A6 as orchestrator); upstream ADR-007 (@ruvector Full Capability Integration, B4 Phase 1); upstream ADR-050 (Self-Learning Intelligence Loop, the SONA integration pattern); and ADR-0044 (attention suite integration, where A5 HyperbolicAttention is enabled here).

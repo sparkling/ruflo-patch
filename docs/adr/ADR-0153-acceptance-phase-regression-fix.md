@@ -1,11 +1,15 @@
-# ADR-0153: Acceptance phase regression — wrapper-proxy 92% root cause + 7.5x recovery
+---
+status: accepted
+date: 2026-05-07
+tags: [acceptance, pipeline, performance, regression]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: Implemented 2026-05-07
-- **Date**: 2026-05-07
-- **Deciders**: Henrik Pettersen
-- **Related ADRs**: ADR-0094 (acceptance coverage), ADR-0098 (parallelism cap), ADR-0129 (hive-mind sibling tests), ADR-0142 (wrapper pivot), ADR-0147 (agentdb refinement that surfaced this work)
+# Acceptance phase regression — wrapper-proxy 92% root cause + 7.5x recovery
 
-## Context
+## Context and Problem Statement
 
 Acceptance phase wall-time grew from ~3 min (April baseline, 460 checks) to **25 min (timeout)** by 2026-05-06 (674 checks). The phase was reliably aborting at `RUFLO_GLOBAL_TIMEOUT_S=1500s` with zero per-check verdicts emitted — `wait "${BG_PIDS[@]}"` blocked indefinitely on a hung check, hiding the actual cause. Multiple deploys had been failing at the acceptance gate.
 
@@ -49,7 +53,17 @@ Three wrapper-install checks (`adr0142-bin-path`, `adr0142-mcp-jsonrpc`, `adr014
 
 `saveState`/`appendLog` used a shared `${path}.tmp` filename. Concurrent calls raced: A's rename succeeded, B's rename hit ENOENT because A had already renamed the shared `.tmp`. Pre-existing bug, exposed under the higher parallelism enabled by the other fixes. Failed `p2-ap-enable` ~50% of runs.
 
-## Decision
+## Considered Options
+
+* **Apply seven surgical fixes in priority order, coverage unchanged at 674 checks (chosen).**
+* **Reduce check count (rejected)** — would degrade coverage. The 460→674 growth was driven by ADR-0094 Phase 8-17 + recent integrity work. All real coverage.
+* **Wrapper-solo dedup as foreground phase (rejected)** — tried (commit b3d556f, reverted). Added 70s sequential install while only freeing ~50s parallel-wave time. Net regression.
+* **Cap=12 (oversubscribe ncpu/2) (rejected)** — original 9→6 cap was reactive to load spiking to 13.5; without the wrapper-proxy fueling that contention the spike isn't reproducible at cap=9, but cap=12 introduces real risk on the 18-core M5.
+* **Persistent MCP daemon for ALL browser tools (not just batched) (rejected)** — requires bigger refactor (long-lived stdio process across multiple checks). Per-check-batched JSON-RPC is good enough; floor is ~75s for navigation, well under the original 115s.
+
+## Decision Outcome
+
+Chosen option: "Apply seven fixes in priority order", because the regression was a stack of compounding causes (wrapper-proxy hangs + no watchdog + sibling races + per-tool browser spawns + slow wrapper installs + sequential init + an atomic-write race) — each surgical fix targets one cause and together they restore the phase without degrading coverage.
 
 Apply seven fixes in priority order. All are surgical — coverage unchanged at 674 checks.
 
@@ -81,7 +95,15 @@ Apply seven fixes in priority order. All are surgical — coverage unchanged at 
 
 `forks/ruflo/v3/@claude-flow/cli/src/autopilot-state.ts` (FORK COMMIT) — `saveState` and `appendLog` use unique `${path}.tmp.${pid}.${random}` instead of shared `.tmp`. Each concurrent writer has its own exclusive tmp file → no rename ENOENT.
 
-## Acceptance criteria
+### Consequences
+
+* Good, because acceptance phase wall recovered 7.5x (25 min timeout → 3:19) with no coverage drop (674 checks before and after).
+* Good, because the per-check watchdog caps any future hung check anywhere and writes a loud TIMEOUT verdict instead of silently blocking the aggregator.
+* Neutral, because the autopilot fix uses `Math.random()` not `crypto.randomBytes()` — for atomic-write tmpfile uniqueness across concurrent processes within ~ms, Math.random's collision space (~2^36 unique 8-char base36 strings) is more than sufficient; crypto-strength not required.
+
+### Confirmation
+
+Acceptance criteria:
 
 - [x] Pipeline acceptance phase wall ≤ 4 min
 - [x] Direct `bash scripts/test-acceptance.sh` wall ≤ 4 min
@@ -90,7 +112,7 @@ Apply seven fixes in priority order. All are surgical — coverage unchanged at 
 - [x] No coverage drop — 674 checks before and after
 - [x] All fixes deployed via Verdaccio (autopilot fix in cli@3.5.58-patch.395)
 
-## Empirical results
+Empirical results:
 
 | Metric | Before (2026-05-06) | After (2026-05-07) | Improvement |
 |---|---|---|---|
@@ -108,14 +130,13 @@ Apply seven fixes in priority order. All are surgical — coverage unchanged at 
 - **R3: Per-check watchdog could mask real performance regressions.** 180s default is generous; checks that legitimately need more time can override via `RUFLO_CHECK_TIMEOUT_S`. The watchdog writes a TIMEOUT verdict so the failure is loud — not silent.
 - **R4: Autopilot fix uses `Math.random()` not `crypto.randomBytes()`.** For atomic-write tmpfile uniqueness across concurrent processes within ~ms, Math.random's collision space (~2^36 unique 8-char base36 strings) is more than sufficient. Crypto-strength not required.
 
-## Considered + rejected alternatives
+## More Information
 
-- **Reduce check count.** Rejected — would degrade coverage. The 460→674 growth was driven by ADR-0094 Phase 8-17 + recent integrity work. All real coverage.
-- **Wrapper-solo dedup as foreground phase.** Tried (commit b3d556f, reverted). Added 70s sequential install while only freeing ~50s parallel-wave time. Net regression.
-- **Cap=12 (oversubscribe ncpu/2).** Rejected — original 9→6 cap was reactive to load spiking to 13.5; without the wrapper-proxy fueling that contention the spike isn't reproducible at cap=9, but cap=12 introduces real risk on the 18-core M5.
-- **Persistent MCP daemon for ALL browser tools (not just batched).** Rejected — requires bigger refactor (long-lived stdio process across multiple checks). Per-check-batched JSON-RPC is good enough; floor is ~75s for navigation, well under the original 115s.
+Original status: Implemented 2026-05-07.
 
-## References
+This ADR relates to ADR-0094 (acceptance coverage), ADR-0098 (parallelism cap), ADR-0129 (hive-mind sibling tests), ADR-0142 (wrapper pivot), and ADR-0147 (agentdb refinement that surfaced this work).
+
+References:
 
 - forks/ruflo `bd7e7c9` — wrapper pivot that surfaced the regression
 - patch repo commits chain: `47b39b7` → `3d9bc28` → `8289125` → `d811a4c` → `e1c6dec` → `9 follow-up commits`

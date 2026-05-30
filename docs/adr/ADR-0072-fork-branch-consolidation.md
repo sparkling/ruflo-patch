@@ -1,10 +1,15 @@
-# ADR-0072: Fork Branch Consolidation
+---
+status: accepted
+date: 2026-04-06
+tags: [fork, branch, pipeline, consolidation]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: Implemented
-- **Date**: 2026-04-06
-- **Driver**: Pipeline failure — patches on feature branches never merged to main
+# Fork Branch Consolidation
 
-## Context
+## Context and Problem Statement
 
 ruflo-patch builds from 4 forks. `copy-source.sh` rsyncs whatever branch is checked out — `upstream-branches.json` is advisory only.
 
@@ -41,15 +46,25 @@ The hive analysis found that ~27 of main's 178 commits are **superseded** by the
 
 Main's ADR-0040–0053 controller work (ControllerInitError, fail-loud, deferred init, 45+ controllers) is **NOT superseded** — it's complementary and must be preserved.
 
-## Baseline
+## Decision Drivers
+
+* Pipeline failure — patches on feature branches never merged to main.
+
+## Considered Options
+
+* **Fix forward on main, since the fix branch is already an ancestor of main (chosen)** — there is nothing to merge; the regressions are caused by main's 178 commits introducing incompatible patterns alongside the fix branch's config chain.
+
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "Fix forward on main", because the fix branch is already an ancestor of main, so there is nothing to merge — the 15 regressions are caused by main's 178 commits introducing incompatible patterns alongside the fix branch's config chain.
+
+### Baseline
 
 Pre-merge acceptance: **148/148 passed, zero failures** (`accept-2026-04-06T102925Z`).
 
 This is the target. Every acceptance check that passed in baseline must pass after fixes.
-
-## Decision: Fix Forward on Main
-
-Since fix is already an ancestor of main, there is nothing to merge. The 15 regressions are caused by main's 178 commits introducing incompatible patterns alongside the fix branch's config chain.
 
 ### Root Causes (all found and fixed)
 
@@ -67,6 +82,20 @@ Since fix is already an ancestor of main, there is nothing to merge. The 15 regr
 ### Non-regression (new check)
 
 `f3-mech-count`: ADR-0069 F3 WASM mechanism count check — new, not in baseline. WASM packages need publish pipeline wiring.
+
+### Consequences
+
+* Good, because all forks build from `main` — policy aligned with reality.
+* Good, because unit tests show 0 failures / 1465 passes.
+* Good, because the acceptance target is 148/148 baseline (rebuild in progress).
+* Good, because the ADR-0052 approach (embedding-constants) is officially superseded by the ADR-0069 config chain.
+* Good, because `copy-source.sh` has non-blocking branch verification.
+* Neutral, because ~27 superseded commits remain in history but their artifacts are removed from source.
+* Neutral, because feature branches are historical (fully merged, can be deleted).
+
+### Confirmation
+
+Pre-merge acceptance baseline was 148/148 passed with zero failures (`accept-2026-04-06T102925Z`); every check that passed in baseline must pass after fixes. As of the post-sync update, acceptance was 157/159 passing with the 148/148 baseline fully restored, and unit tests showed 0 failures / 1502 passes.
 
 ## Implementation Log
 
@@ -110,16 +139,6 @@ Since fix is already an ancestor of main, there is nothing to merge. The 15 regr
 - 17 auto-merged cleanly
 - 1 delete conflict (sqljs-backend.ts → deleted per fix branch, correct)
 
-## Consequences
-
-- All forks build from `main` — policy aligned with reality
-- Unit tests: 0 failures / 1465 passes
-- Acceptance target: 148/148 baseline (rebuild in progress)
-- ADR-0052 approach (embedding-constants) officially superseded by ADR-0069 config chain
-- ~27 superseded commits remain in history but their artifacts removed from source
-- `copy-source.sh` has non-blocking branch verification
-- Feature branches are historical (fully merged, can be deleted)
-
 ## Post-Sync Update (2026-04-06)
 
 All 4 forks synced with upstream:
@@ -130,3 +149,7 @@ All 4 forks synced with upstream:
 
 Acceptance: 157/159 passing. Baseline 148/148 fully restored.
 Unit tests: 0 failures / 1502 passes.
+
+## More Information
+
+Original status: "Implemented (2026-04-06)." Recorded 2026-04-06. The driving cause was a pipeline failure where patches on feature branches were never merged to main. This decision officially supersedes the ADR-0052 embedding-constants approach in favor of the ADR-0068/0069 config chain (the artifacts were removed from source while the superseded commits remain in history).

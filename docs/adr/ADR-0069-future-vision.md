@@ -1,14 +1,25 @@
-# ADR-0069: Future Vision -- AgentDBService Consolidation, RVF Storage Unification, Full AttentionService
+---
+status: accepted
+date: 2026-04-05
+tags: [agentdb, storage, attention, future-vision]
+supersedes: []
+depends-on: [ADR-0068]
+implements: []
+---
 
-- **Status**: F1 Implemented, F2 Extracted to ADR-0073 (Implemented), F3 Implemented — all 2026-04-21 audit gaps closed and shipped in @sparkleideas/agentic-flow@2.0.2-alpha-patch.348 / @sparkleideas/cli@3.5.58-patch.230. Four ADR-0069 F3/Bug3 acceptance checks (`adr0069-f3-booster`, `adr0069-f3-onnx`, `adr0069-f3-onnx-rt`, `adr0069-bug3-persist`) are green against the published tarball. A5 EWC-lambda fallback closed (1000→2000 per Appendix A5 table). See "Closure evidence 2026-04-21 PM (v2)" below.
-- **Date**: 2026-04-05
-- **Implemented**: 2026-04-06 (F1 — 10 controllers delegated to AgentDB.getController(), 2 kept direct, ~30 lines removed)
-- **Implemented**: 2026-04-05 (bypass inventory remediation — 12 sites across both forks)
-- **Depends on**: ADR-0068 (must be completed first)
-- **Architecture**: [Controller Wiring Vision](../architecture/controller-wiring-vision.md)
-- **Analysis**: ADR-0067 (original vision for controller wiring)
+# Future Vision -- AgentDBService Consolidation, RVF Storage Unification, Full AttentionService
 
-## Dependencies on ADR-0068
+## Context and Problem Statement
+
+The controller-wiring-vision.md document (Section 5, Section 6, Section 7) identifies three large-scope items that go beyond completing the upstream author's existing wiring gaps. ADR-0066/0068 scope is limited to finishing what was designed but never connected. This ADR captures three future directions that require new architectural work -- a third wiring layer consolidation, a storage format migration, and a full attention mechanism implementation.
+
+These items were excluded from ADR-0066/0068 for concrete reasons:
+
+- **AgentDBService** is agentic-flow-internal. Our forks track upstream HEAD, and restructuring a 1,679-line singleton facade in agentic-flow is high-risk with low immediate benefit for CLI users.
+- **RVF unification** has open blocking bugs (#315 recall-after-import, #323 Node 22 ONNX) and no merged implementation of the `claude-flow-v3-ruvector` integration branch.
+- **AttentionService** requires the unbuilt `@claude-flow/attention` WASM package and `@ruvector/attention` Rust module. Only WASM stubs and LegacyAdapter exist today.
+
+## Decision Drivers
 
 Each F-item in this ADR depends on specific ADR-0068 waves. The table below maps those dependencies and records the forward-compatibility analysis performed on 2026-04-05.
 
@@ -22,15 +33,15 @@ Each F-item in this ADR depends on specific ADR-0068 waves. The table below maps
 
 ADR-0068 should not anticipate ADR-0069's internal implementation choices. It should complete the upstream wiring gaps cleanly. The one forward-compatible adjustment (W4-3 interface abstraction) aligns with good practice regardless of F2 and costs negligible extra effort.
 
-## Context
+## Considered Options
 
-The controller-wiring-vision.md document (Section 5, Section 6, Section 7) identifies three large-scope items that go beyond completing the upstream author's existing wiring gaps. ADR-0066/0068 scope is limited to finishing what was designed but never connected. This ADR captures three future directions that require new architectural work -- a third wiring layer consolidation, a storage format migration, and a full attention mechanism implementation.
+* **Pursue three future directions (F1 AgentDBService consolidation, F2 RVF storage unification, F3 full AttentionService), prioritized F1 → F3 → F2 (chosen)** — each requires new architectural work beyond completing the upstream author's existing wiring gaps.
 
-These items were excluded from ADR-0066/0068 for concrete reasons:
+(No alternatives were recorded; the F-item re-assessment refined the priority order and scope rather than proposing rejected alternatives.)
 
-- **AgentDBService** is agentic-flow-internal. Our forks track upstream HEAD, and restructuring a 1,679-line singleton facade in agentic-flow is high-risk with low immediate benefit for CLI users.
-- **RVF unification** has open blocking bugs (#315 recall-after-import, #323 Node 22 ONNX) and no merged implementation of the `claude-flow-v3-ruvector` integration branch.
-- **AttentionService** requires the unbuilt `@claude-flow/attention` WASM package and `@ruvector/attention` Rust module. Only WASM stubs and LegacyAdapter exist today.
+## Decision Outcome
+
+Chosen option: "Pursue three future directions (F1 AgentDBService consolidation, F2 RVF storage unification, F3 full AttentionService), prioritized F1 → F3 → F2", because F1 has the highest value and lowest risk, F3 removes dead code and fixes wiring, and F2 is viable but needs careful scoping. These items require new architectural work that was deliberately excluded from ADR-0066/0068's "finish what was designed" scope.
 
 ## F1: AgentDBService Third Layer Consolidation
 
@@ -307,6 +318,48 @@ All 4 prerequisites from the original text are already done:
 
 F3 completed in ~1 day as predicted. The WASM modules were built and published upstream;
 the work was pipeline wiring, fallback chain fixes, and WASM class dispatch integration.
+
+### Consequences
+
+#### What becomes possible after all three are done
+
+1. **Single controller instance per name** across all deployment contexts (CLI, MCP server, direct AgentDB). No more 2-3 copies with divergent state.
+2. **Single storage format** (RVF) with unified vector search, eliminating the 6-format fragmentation and enabling cross-tool data visibility.
+3. **Real neural attention** replacing stub adapters, enabling Flash Attention speedups (2.49x-7.47x), MoE expert routing, and hyperbolic embeddings for hierarchical data.
+4. **AgentDBService becomes a thin facade** (~700-800 lines instead of 1,679), reducing agentic-flow maintenance burden and making the MCP tool layer predictable.
+5. **Cross-ecosystem interop** via RVF: memory stored by the CLI is searchable by MCP tools, and vice versa, with consistent dimension/model/HNSW parameters throughout.
+
+The above are the Good consequences. The following hold regardless (Neutral — what does NOT change):
+
+- The four-layer architecture (config -> memory-bridge -> registry -> AgentDB) remains stable.
+- Controller types and their responsibilities remain unchanged.
+- config.json and embeddings.json remain the operator-facing control plane.
+- The ruflo-patch pipeline (fork -> version -> codemod -> build -> publish) is unaffected.
+
+### Confirmation
+
+#### F1: AgentDBService Consolidation
+- [ ] AgentDBService calls `agentdb.getController()` for the 13 migratable controllers (verified: zero `new X(this.db` for those 13 in agentdb-service.ts)
+- [ ] AgentDBService Phase 1 init delegated to AgentDB; Phase 2/4 init retained (RuVector/QUIC/Sync have external deps)
+- [x] AgentDBService duplicate-instance problem resolved (zero duplicate controller instantiations per name, verified by ADR-0089 intercept pattern acceptance checks `adr0089-shipped`/`adr0089-svc`/`adr0089-reg`/`adr0089-live`).
+- [ ] All 50+ MCP tool callers pass integration tests with consolidated service
+- [ ] In-memory fallback preserved for environments without better-sqlite3
+
+#### F2: RVF Single Storage
+- [ ] RuVector issues #315, #323, #316 closed (blocking bugs fixed)
+- [ ] NAPI-RS bindings for RuVector exist and pass CI on macOS ARM + Linux x64
+- [ ] RvfBackend is primary IMemoryBackend; SQLiteBackend deprecated
+- [ ] Migration tool converts existing `.swarm/memory.db` to RVF format
+- [ ] `.swarm/memory.graph` data migrated to RVF graph profile
+- [ ] Cross-tool data visibility verified (CLI store -> MCP search returns results)
+
+#### F3: Full AttentionService (Implemented 2026-04-06)
+- [x] `@ruvector/attention` crate exists with WASM + NAPI-RS bindings
+- [x] `@claude-flow/attention` package wraps Rust module with TypeScript API — AttentionService.ts wraps WASM with NAPI->WASM->JS fallback chain
+- [x] At least 3 mechanism types functional: Flash Attention, Multi-Head, MoE — plus Hyperbolic, Linear via WASM class-based dispatch
+- [x] LegacyAttentionAdapter replaced by real dispatch in ControllerRegistry — WASM class instances (WasmFlashAttention, WasmMultiHeadAttention, WasmMoEAttention) used via getWasmInstance() cache
+- [x] SONAWithAttention correctly uses 2 separate AttentionService instances (Flash + MoE) — flashAttentionService and moeAttentionService in ControllerRegistry
+- [x] Performance benchmark: Flash Attention achieves >= 2x speedup over legacy adapter
 
 ## Appendix: Full Config Chain Bypass Inventory (audited 2026-04-05)
 
@@ -604,48 +657,6 @@ The following bugs were discovered during ADR-0070 Phase 5 acceptance testing an
 
 3. **Memory persistence bug — CLI `memory store` does not persist between invocations** — `npx @sparkleideas/cli@latest memory store --key foo --value bar` followed by `memory retrieve --key foo` in a separate invocation returns nothing. Each CLI invocation constructs a fresh in-memory backend that is discarded on exit. The SQLite/RVF persistent backends are only initialized when a full `init`-ed project context is detected, but `memory store` does not require or check for one. **Status**: open, not yet fixed. Workaround: run memory commands inside an initialized project directory.
 
-## Consequences
-
-### What becomes possible after all three are done
-
-1. **Single controller instance per name** across all deployment contexts (CLI, MCP server, direct AgentDB). No more 2-3 copies with divergent state.
-2. **Single storage format** (RVF) with unified vector search, eliminating the 6-format fragmentation and enabling cross-tool data visibility.
-3. **Real neural attention** replacing stub adapters, enabling Flash Attention speedups (2.49x-7.47x), MoE expert routing, and hyperbolic embeddings for hierarchical data.
-4. **AgentDBService becomes a thin facade** (~700-800 lines instead of 1,679), reducing agentic-flow maintenance burden and making the MCP tool layer predictable.
-5. **Cross-ecosystem interop** via RVF: memory stored by the CLI is searchable by MCP tools, and vice versa, with consistent dimension/model/HNSW parameters throughout.
-
-### What does NOT change
-
-- The four-layer architecture (config -> memory-bridge -> registry -> AgentDB) remains stable.
-- Controller types and their responsibilities remain unchanged.
-- config.json and embeddings.json remain the operator-facing control plane.
-- The ruflo-patch pipeline (fork -> version -> codemod -> build -> publish) is unaffected.
-
-## Acceptance Criteria
-
-### F1: AgentDBService Consolidation
-- [ ] AgentDBService calls `agentdb.getController()` for the 13 migratable controllers (verified: zero `new X(this.db` for those 13 in agentdb-service.ts)
-- [ ] AgentDBService Phase 1 init delegated to AgentDB; Phase 2/4 init retained (RuVector/QUIC/Sync have external deps)
-- [x] AgentDBService duplicate-instance problem resolved (zero duplicate controller instantiations per name, verified by ADR-0089 intercept pattern acceptance checks `adr0089-shipped`/`adr0089-svc`/`adr0089-reg`/`adr0089-live`).
-- [ ] All 50+ MCP tool callers pass integration tests with consolidated service
-- [ ] In-memory fallback preserved for environments without better-sqlite3
-
-### F2: RVF Single Storage
-- [ ] RuVector issues #315, #323, #316 closed (blocking bugs fixed)
-- [ ] NAPI-RS bindings for RuVector exist and pass CI on macOS ARM + Linux x64
-- [ ] RvfBackend is primary IMemoryBackend; SQLiteBackend deprecated
-- [ ] Migration tool converts existing `.swarm/memory.db` to RVF format
-- [ ] `.swarm/memory.graph` data migrated to RVF graph profile
-- [ ] Cross-tool data visibility verified (CLI store -> MCP search returns results)
-
-### F3: Full AttentionService (Implemented 2026-04-06)
-- [x] `@ruvector/attention` crate exists with WASM + NAPI-RS bindings
-- [x] `@claude-flow/attention` package wraps Rust module with TypeScript API — AttentionService.ts wraps WASM with NAPI->WASM->JS fallback chain
-- [x] At least 3 mechanism types functional: Flash Attention, Multi-Head, MoE — plus Hyperbolic, Linear via WASM class-based dispatch
-- [x] LegacyAttentionAdapter replaced by real dispatch in ControllerRegistry — WASM class instances (WasmFlashAttention, WasmMultiHeadAttention, WasmMoEAttention) used via getWasmInstance() cache
-- [x] SONAWithAttention correctly uses 2 separate AttentionService instances (Flash + MoE) — flashAttentionService and moeAttentionService in ControllerRegistry
-- [x] Performance benchmark: Flash Attention achieves >= 2x speedup over legacy adapter
-
 ## Status Update 2026-04-21
 
 **Old status**: F1 Complete; F2 extracted to ADR-0073; F3 Mostly Complete, ONNX chain + registerEnhancedBoosterTools not wired.
@@ -721,3 +732,7 @@ Upstream v3.5.52-v3.5.58 merged into ruflo fork. Impact: SIGNIFICANT.
 - hooks-tools.ts uses both EMBEDDING_DIM (ADR-0052) and getEmbeddingConfig() (ADR-0069) — values consistent, no behavioral divergence
 - F1 delegation and F3 WASM fallback chain: unaffected by upstream changes
 - Upstream creator endorses config chain approach, suggests fail-loud instead of graceful fallback for missing embeddings.json
+
+## More Information
+
+Original status: "F1 Implemented, F2 Extracted to ADR-0073 (Implemented), F3 Implemented — all 2026-04-21 audit gaps closed and shipped in @sparkleideas/agentic-flow@2.0.2-alpha-patch.348 / @sparkleideas/cli@3.5.58-patch.230. Four ADR-0069 F3/Bug3 acceptance checks (`adr0069-f3-booster`, `adr0069-f3-onnx`, `adr0069-f3-onnx-rt`, `adr0069-bug3-persist`) are green against the published tarball. A5 EWC-lambda fallback closed (1000→2000 per Appendix A5 table)." Recorded 2026-04-05; F1 implemented 2026-04-06 (10 controllers delegated to AgentDB.getController(), 2 kept direct, ~30 lines removed); bypass inventory remediation 2026-04-05 (12 sites across both forks). This ADR depends on ADR-0068 (must be completed first); the design analysis is ADR-0067 (original vision for controller wiring), F2 was extracted to ADR-0073 (RVF storage upgrade), and the accompanying architecture document is `../architecture/controller-wiring-vision.md` (Controller Wiring Vision).

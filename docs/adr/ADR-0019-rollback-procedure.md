@@ -1,10 +1,15 @@
-# ADR-0019: Rollback Procedure
+---
+status: accepted
+date: 2026-03-05
+tags: [rollback, npm, publish, runbook]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-## Status
+# Rollback Procedure
 
-Accepted
-
-## Context
+## Context and Problem Statement
 
 ### Specification (SPARC-S)
 
@@ -43,7 +48,7 @@ ON discovery of broken @latest:
   PROMOTE to @latest
 ```
 
-## Decision
+## Procedure
 
 ### Architecture (SPARC-A)
 
@@ -130,7 +135,7 @@ echo "Rollback complete. Verify with: npx ruflo@latest --version"
 7. Investigate, fix, and publish a corrected version (Phase 4)
 8. Update `.last-promoted-version` after promoting the corrected version
 
-### Considered Alternatives
+## Considered Alternatives
 
 1. **Always unpublish broken versions immediately** -- Rejected. `npm unpublish` has a 72-hour window. After that, the version is permanent. Building a procedure around a time-limited operation is fragile. Dist-tag reassignment is instant, has no time limit, and achieves the same user-facing result (users on `@latest` stop getting the broken version).
 
@@ -140,9 +145,7 @@ echo "Rollback complete. Verify with: npx ruflo@latest --version"
 
 4. **Automated rollback on error reports** -- Rejected. There is no telemetry or error reporting infrastructure. Automated rollback without reliable signal data risks rolling back working versions based on false positives. Manual rollback is appropriate for the current scale.
 
-## Consequences
-
-### Refinement (SPARC-R)
+## Refinement (SPARC-R)
 
 **Positive:**
 
@@ -164,7 +167,7 @@ echo "Rollback complete. Verify with: npx ruflo@latest --version"
 - If different `@sparkleideas/*` packages were published at different versions (e.g., partial publish failure), rollback to a version where all packages were in sync. The build script publishes all packages at the same version (ADR-0012), so this should not occur under normal operation
 - npm caches dist-tag resolution for a short period. Users who install within seconds of the rollback may still get the broken version from their local npm cache. Running `npm cache clean --force` resolves this, but most users will not need to -- the cache TTL is short
 
-### Completion (SPARC-C)
+## Completion (SPARC-C)
 
 Acceptance criteria:
 

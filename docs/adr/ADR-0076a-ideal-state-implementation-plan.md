@@ -1,18 +1,19 @@
-# ADR-0076: Architecture Consolidation — Implementation Plan
+---
+status: accepted
+date: 2026-04-06
+tags: [architecture, consolidation, implementation-plan]
+supersedes: []
+depends-on: [ADR-0075]
+implements: []
+---
 
-> See also [ADR-0076-architecture-consolidation-plan.md](ADR-0076-architecture-consolidation-plan.md) for high-level plan.
+# Architecture Consolidation — Implementation Plan
 
-- **Status**: Implemented (all phases complete)
-- **Date**: 2026-04-06 (proposed), 2026-04-07 (Phases 0-4 implemented)
-- **Depends on**: ADR-0075 (Architecture State Assessment)
-- **Revised by**: ADR-0077 (upstream-compatible approach adopted for Phases 1-5)
-- **Supersedes**: None
-
-## Context
+## Context and Problem Statement
 
 ADR-0075 identified the ideal end state: 5 unified layers replacing 3 parallel controller
 registries, 6 embedding implementations, 7 storage backends, and 5 independent config
-resolution chains. This ADR defines the phased plan to get there.
+resolution chains. This ADR defines the phased plan to get there. It is the detailed phase-tracking companion to ADR-0076 (high-level plan).
 
 ## Implementation Approach
 
@@ -605,9 +606,13 @@ Every MCP tool call follows one path:
 - `memory-bridge.ts` — became dead code after Phases 0-4; **deleted by ADR-0085** (2026-04-13)
 - `memory-initializer.ts` — 11 bridge try-blocks **removed by ADR-0085**; DELETED by ADR-0086 Debt 6 (2026-04-14). 918-line shim removed after all callers rewired to memory-router.ts.
 
-## Decision
+## Decision Outcome
 
 Implement the 6-phase plan using the ADR-0077 intercept approach. Each phase is gated on
 a passing test suite. Phases 0-4 are complete. Phase 5 (bridge+initializer dead code removal)
 was implemented by **ADR-0085**, which deleted memory-bridge.ts, moved registry bootstrap
 to the router, and eliminated the JSON sidecar.
+
+## More Information
+
+Original status: "Implemented (all phases complete)." Proposed 2026-04-06; Phases 0-4 implemented 2026-04-07. This ADR depends on ADR-0075 (Architecture State Assessment); its Phases 1-5 were revised by ADR-0077 to adopt the upstream-compatible intercept approach, and Phase 5's dead-code removal was implemented by ADR-0085 (with ADR-0086 Debt 6 deleting memory-initializer.ts). It is the detailed-tracking companion to ADR-0076 (high-level plan).

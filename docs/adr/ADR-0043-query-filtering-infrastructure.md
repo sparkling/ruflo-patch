@@ -1,28 +1,30 @@
-# ADR-0043: Query & Filtering Infrastructure
+---
+status: accepted
+date: 2026-03-16
+tags: [query, filtering, cache, controllers]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-## Status
+# Query & Filtering Infrastructure
 
-Accepted
-
-## Date
-
-2026-03-16
-
-## Deciders
-
-sparkling team
-
-## Methodology
-
-SPARC + MADR
-
-## Context
+## Context and Problem Statement
 
 Currently, memory retrieval supports only namespace and tag filtering. ADR-0039 Phase 8 identified two upstream controllers (B5 MetadataFilter, B6 QueryOptimizer) that enable structured metadata predicates and query caching. Both are already exported from upstream `controllers/index.ts`. This phase has no dependencies and can run in parallel with Phase 7 (ADR-0042).
 
-## Decision: Specification (SPARC-S)
+## Considered Options
 
-### B5 MetadataFilter (280 lines)
+* Wire B5 MetadataFilter (dual in-memory + SQL) and B6 QueryOptimizer at Level 1 (chosen).
+* B10 FilterBuilder (RVF-only) — rejected; B5 (dual in-memory + SQL) was chosen over B10 FilterBuilder (RVF-only), and B10 stays internal.
+
+## Decision Outcome
+
+Chosen option: "Wire B5 MetadataFilter and B6 QueryOptimizer at Level 1", because both are already exported upstream with low integration effort, have no dependencies, and the dual in-memory + SQL interface of B5 was preferred over the RVF-only B10 FilterBuilder.
+
+### Specification (SPARC-S)
+
+#### B5 MetadataFilter (280 lines)
 
 MongoDB-style metadata filtering engine with dual interface (in-memory + SQL). Supported operators:
 
@@ -34,7 +36,7 @@ MongoDB-style metadata filtering engine with dual interface (in-memory + SQL). S
 
 Already exported from `controllers/index.ts` barrel file. Compiles filter expressions to efficient SQLite WHERE clauses. Estimated ~75 lines to wire into the registry and bridge.
 
-### B6 QueryOptimizer (297 lines)
+#### B6 QueryOptimizer (297 lines)
 
 LRU query cache (1000 entries, 60s TTL) with EXPLAIN plan analysis and performance suggestions. Strategies:
 
@@ -43,9 +45,9 @@ LRU query cache (1000 entries, 60s TTL) with EXPLAIN plan analysis and performan
 - **Early termination**: Stop when top-k quality threshold met
 - **Plan selection**: Choose between index scan, full scan, hybrid based on selectivity
 
-## Decision: Pseudocode (SPARC-P)
+### Pseudocode (SPARC-P)
 
-### MetadataFilter integration
+#### MetadataFilter integration
 
 ```
 // controller-registry.ts -- Level 1
@@ -64,7 +66,7 @@ async function bridgeFilteredSearch(query, filter, options) {
 }
 ```
 
-### QueryOptimizer integration
+#### QueryOptimizer integration
 
 ```
 // controller-registry.ts -- Level 1
@@ -86,17 +88,17 @@ async function bridgeOptimizedSearch(options) {
 }
 ```
 
-## Decision: Architecture (SPARC-A)
+### Architecture (SPARC-A)
 
 Both wired at init Level 1 (after Level 0 security from ADR-0042). Pipeline: Query arrives, QueryOptimizer checks cache (hit = instant return), miss = vector search, MetadataFilter applies predicates, QueryOptimizer caches result, return.
 
-## Decision: Refinement (SPARC-R)
+### Refinement (SPARC-R)
 
 Phase 8 effort: 5h. No dependencies (parallel with Phase 7). Both already exported upstream. B5 (dual in-memory + SQL) chosen over B10 FilterBuilder (RVF-only). B10 stays internal.
 
-## Decision: Completion (SPARC-C)
+### Completion (SPARC-C)
 
-### Checklist
+#### Checklist
 
 - [x] Wire B5 MetadataFilter at Level 1 (~15 lines) — pre-existing in controller-registry.ts
 - [x] Wire B6 QueryOptimizer at Level 1 (~15 lines) — pre-existing in controller-registry.ts
@@ -105,7 +107,16 @@ Phase 8 effort: 5h. No dependencies (parallel with Phase 7). Both already export
 - [x] Integrate QueryOptimizer cache into existing `memory_search` handler
 - [x] Add unit tests for B5 operators + B6 cache (32 tests)
 
-### Testing
+### Consequences
+
+* Good, because it provides structured metadata filtering beyond namespace/tag, and instant repeat queries via LRU cache.
+* Good, because of low integration effort (both already exported upstream, ~75 lines each) and no dependencies.
+* Bad, because the cache consumes memory (1000 entries, configurable).
+* Neutral, because there are risks around cache invalidation between writes and reads (mitigated: 60s TTL) and complex `$and`/`$or` nesting edge cases.
+
+### Confirmation
+
+#### Testing
 
 ```js
 import { describe, it } from 'node:test';
@@ -175,7 +186,7 @@ describe('ADR-0043 query & filtering', () => {
 });
 ```
 
-### Testing Guidance
+#### Testing Guidance
 
 **Unit test file**: `tests/unit/adr-0043-query-filtering.test.mjs`
 
@@ -205,28 +216,15 @@ describe('ADR-0043 query & filtering', () => {
 - Filter param added to existing `memory_search` handler: `npm run deploy` (full acceptance)
 - Acceptance check changes only: `npm run deploy`
 
-### Success Criteria
+#### Success Criteria
 
 - Filter memories by metadata: `{ score: { $gt: 0.8 } }` returns only matching entries
 - Repeated identical queries return from cache (0ms vector search on second call)
 - QueryOptimizer cache respects 60s TTL
 - `agentdb_health` reports B5, B6 as active at Level 1
 
-## Consequences
+## More Information
 
-### Positive
-- Structured metadata filtering beyond namespace/tag; instant repeat queries via LRU cache
-- Low integration effort (both already exported upstream, ~75 lines each); no dependencies
+This decision was recorded by the sparkling team using the SPARC + MADR methodology.
 
-### Negative
-- Cache consumes memory (1000 entries, configurable)
-
-### Risks
-- Cache invalidation between writes and reads (mitigated: 60s TTL); complex $and/$or nesting edge cases
-
-## Related
-
-- **ADR-0039**: Upstream controller integration roadmap (parent, superseded)
-- **ADR-0041**: Composition-aware controller architecture (Level 1 placement)
-- **ADR-0042**: Security & reliability foundation (parallel, no dependency)
-- **ADR-0033**: Original controller activation
+The original record cross-referenced several related decisions: ADR-0039 (upstream controller integration roadmap, the parent, since superseded); ADR-0041 (composition-aware controller architecture, governing Level 1 placement); ADR-0042 (security & reliability foundation, which runs in parallel with no dependency); and ADR-0033 (original controller activation).

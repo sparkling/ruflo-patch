@@ -1,18 +1,13 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-19
-implemented: 2026-05-19
-methodology: [MADR]
-decision-makers: [Henrik Pettersen]
-tags: [autopilot, learning, stop-hook, observability, follow-ups, ADR-0191, ADR-0192, federated]
-related: [0058, 0072, 0191, 0192]
-follow-up-adrs: [0194, 0195, 0196]
-upstream-related: [agentic-flow/ADR-058, agentic-flow/ADR-059]
-audience: ai-executor
+tags: [autopilot, learning, observability]
+supersedes: []
+depends-on: [ADR-0191, ADR-0192]
+implements: []
 ---
 
-# ADR-0193: Autopilot system completion + ADR-0191/0192 follow-up gap closure
+# Autopilot system completion + ADR-0191/0192 follow-up gap closure
 
 ## Context and Problem Statement
 
@@ -303,34 +298,31 @@ Each item lands in its own commit chain with its own acceptance
 check. ADR-0193 closes when items A-F are all green; Item G is
 documented but tracked in its own sub-ADRs as they're prioritised.
 
-## Consequences
+## Decision Consequences
 
-### Positive
+### Consequences
 
-* Whole-system picture of what's outstanding after ADR-0191/0192
+* Good, because there is a whole-system picture of what's outstanding after ADR-0191/0192
   in one place; nothing decays into "we said this was a follow-up
   and never came back."
-* Each item has a concrete closure criterion (acceptance check or
+* Good, because each item has a concrete closure criterion (acceptance check or
   test) so "done" is measurable.
-* AutopilotLearning becomes useful beyond the Phase 1 baseline.
-* The autopilot system's other sibling components (DriftDetector,
+* Good, because AutopilotLearning becomes useful beyond the Phase 1 baseline.
+* Good, because the autopilot system's other sibling components (DriftDetector,
   SwarmCompletionCoordinator) get the same treatment AutopilotLearning
   got — speced-but-never-built → built.
-* The harness cache trap stops being a recurring source of false
+* Good, because the harness cache trap stops being a recurring source of false
   release failures.
-
-### Negative
-
-* Six concrete sub-features to land. Each is small but the total
+* Bad, because there are six concrete sub-features to land. Each is small but the total
   surface is non-trivial.
-* Items A.1 / A.2 / A.3 / A.4 change the AutopilotLearning behavior;
+* Bad, because Items A.1 / A.2 / A.3 / A.4 change the AutopilotLearning behavior;
   the populated-test-suite assertions need to be revisited to lock
   in the new behavior without false-positive flakes.
-* Items E (drift-detector + swarm-completion) re-introduce risk on
+* Bad, because Items E (drift-detector + swarm-completion) re-introduce risk on
   the existing test file — fixing the orphan imports means vitest
   starts running 16+ test blocks that haven't been exercised in CI.
   Some of them may turn out to be wrong about the contract.
-* Phase 5 (federated learning) requires runtime infrastructure that
+* Bad, because Phase 5 (federated learning) requires runtime infrastructure that
   doesn't exist yet. Documenting the interface without delivering
   the runtime is honest, but it creates a known-unfinished surface.
 
@@ -412,3 +404,7 @@ ADR-0193 closes when:
   (status: proposed) for Phases 3 / 4 / 5 respectively. **Satisfied** — see follow-up-adrs frontmatter.
 
 Status flipped from `proposed` to `implemented` on 2026-05-19. The "still degraded" inventory in ADR-0192's post-implementation revision section can be removed (the inventory's content has moved here and resolved).
+
+## More Information
+
+Original status: accepted, implemented, and completed 2026-05-19. Original frontmatter recorded `methodology: [MADR]`, `decision-makers: [Henrik Pettersen]`, `audience: ai-executor`, `related: [0058, 0072, 0191, 0192]`, `follow-up-adrs: [0194, 0195, 0196]`, and `upstream-related: [agentic-flow/ADR-058, agentic-flow/ADR-059]`.

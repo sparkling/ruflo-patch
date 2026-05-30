@@ -1,24 +1,17 @@
-# ADR-0048: Deferred Controller Initialization & Registry Performance
+---
+status: accepted
+date: 2026-03-17
+tags: [controllers, performance, init, sqlite]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-## Status
+# Deferred Controller Initialization & Registry Performance
 
-Accepted (complete — 55/55 tests passing, 49s total)
+## Context and Problem Statement
 
-## Date
-
-2026-03-17
-
-## Deciders
-
-sparkling team
-
-## Methodology
-
-SPARC + MADR
-
-## Context
-
-With ADR-0043/0044/0045/0047 fully wired, the ControllerRegistry now initializes 44 controllers at startup. Nine bugs prevented this until 2026-03-17 (see Related — Bugs Fixed). With all fixes applied, full initialization takes 30-60 seconds on cold start but only ~228ms when warm.
+With ADR-0043/0044/0045/0047 fully wired, the ControllerRegistry now initializes 44 controllers at startup. Nine bugs prevented this until 2026-03-17 (see More Information — Bugs Fixed). With all fixes applied, full initialization takes 30-60 seconds on cold start but only ~228ms when warm.
 
 ### Profiler Findings (2026-03-17)
 
@@ -58,9 +51,19 @@ All 55 tests pass. Zero failures.
 
 The deferred init (Levels 0-1 eager, Levels 2-6 background) was implemented on 2026-03-17. The LazyControllerProxy from the original design was replaced by a simpler `eagerMaxLevel` approach — see Implementation Notes.
 
-## Decision: Specification (SPARC-S)
+## Considered Options
 
-### Changes
+* Deferred controller initialization (Levels 0-1 eager, Levels 2-6 background) via an `eagerMaxLevel` config, plus a 6-layer ONNX model cache (chosen).
+* The original `LazyControllerProxy` per-controller lazy-init design — partly superseded; profiling showed it was over-engineered because all 44 controller factories complete in 8ms total. See Implementation Notes.
+* Registry caching to disk (serialize the initialized registry to `.swarm/registry-cache.json` and reload on subsequent process starts) — rejected because controller state (SQLite handles, NAPI bindings) cannot be serialized, version mismatches between cache and installed packages would cause subtle bugs, and it adds cache invalidation complexity.
+
+## Decision Outcome
+
+Chosen option: "Deferred controller initialization via `eagerMaxLevel` plus a persistent ONNX model cache", because profiling proved the real bottleneck is `AgentDB.initialize()`'s cold ONNX model download (not controller factories), so returning after Level 0-1 controllers are ready and pre-caching the model recovers CLI startup to <1s and the acceptance suite to ~49s.
+
+### Specification (SPARC-S)
+
+#### Changes
 
 | Component | File | Lines | Description |
 |-----------|------|:-----:|-------------|
@@ -69,7 +72,7 @@ The deferred init (Levels 0-1 eager, Levels 2-6 background) was implemented on 2
 | Console isolation | memory-bridge.ts | ~20 | Capture all controller logs to buffer, not stdout, during bridge init |
 | _run_and_kill tuning | acceptance-checks.sh | ~5 | Increase default max_wait from 8s to 15s for tools that trigger lazy init |
 
-### Controller Classification
+#### Controller Classification
 
 | Category | Controllers | Init Strategy |
 |----------|------------|---------------|
@@ -79,7 +82,7 @@ The deferred init (Levels 0-1 eager, Levels 2-6 background) was implemented on 2
 | **Lazy** (Level 3 optional) | enhancedEmbeddingService, auditLogger, skills, reflexion, explainableRecall | Deferred — loaded on first use |
 | **Lazy** (Level 5-6) | contextSynthesizer, rvfOptimizer, mmrDiversityRanker, graphAdapter | Deferred — rarely used |
 
-### Performance Targets
+#### Performance Targets
 
 | Metric | Before fix | After deferred init | Target (with model cache) |
 |--------|-----------|--------------------|----|
@@ -88,7 +91,7 @@ The deferred init (Levels 0-1 eager, Levels 2-6 background) was implemented on 2
 | First deferred controller access | N/A | ~8s (background init) | <2s (warm) |
 | Controller factories (all 44) | 8ms | 8ms | 8ms (already optimal) |
 
-### ONNX Model Cache (Implemented 2026-03-17)
+#### ONNX Model Cache (Implemented 2026-03-17)
 
 The cold ONNX model download (~23MB, 30-60s) was the primary bottleneck. Fixed by adding a persistent cache layer to `ModelCacheLoader`:
 
@@ -107,7 +110,7 @@ The cold ONNX model download (~23MB, 30-60s) was the primary bottleneck. Fixed b
 
 **Result**: CLI init drops from 30-60s (cold) to **217ms** (cached). Acceptance test sets `AGENTDB_MODEL_PATH=$HOME/.cache/agentdb-models`.
 
-### Remaining Bottleneck: `init --full` + SQLite Handle Hang
+#### Remaining Bottleneck: `init --full` + SQLite Handle Hang
 
 With model cache resolved, the acceptance suite bottleneck is now:
 - **harness-init** (120s): `init --full --force` creates 119 files + initializes 44 controllers. Process hangs on open SQLite handles after completion, hitting the 120s KILL timeout.
@@ -118,7 +121,7 @@ The CLI process hangs because `db-fallback.js` creates a `setInterval(10s)` memo
 
 Additionally, the `shutdownBridge()` function in `memory-bridge.ts` exists but is never called after `init --full`. This leaves the ControllerRegistry singleton alive with open database handles. The `.unref()` fix resolves the hang, but calling `shutdownBridge()` would provide cleaner cleanup.
 
-## Decision: Pseudocode (SPARC-P)
+### Pseudocode (SPARC-P)
 
 ```
 // controller-registry.ts — LazyControllerProxy
@@ -185,9 +188,9 @@ try {
 }
 ```
 
-## Decision: Architecture (SPARC-A)
+### Architecture (SPARC-A)
 
-### Implemented: eagerMaxLevel Approach
+#### Implemented: eagerMaxLevel Approach
 
 ```
 CLI process start
@@ -206,7 +209,7 @@ CLI process start
   └── Process exits (or killed by _run_and_kill)
 ```
 
-### Measured Init Breakdown (44 controllers)
+#### Measured Init Breakdown (44 controllers)
 
 | Level | Controllers | Measured Time | Strategy |
 |-------|:-----------:|:------------:|----------|
@@ -218,17 +221,17 @@ CLI process start
 | 5 | 5 (contextSynthesizer, rvfOptimizer, mmrDiversityRanker, guardedVectorBackend, sonaTrajectory) | 0.4ms | Deferred (background) |
 | 6 | 1 (graphAdapter) | 0.0ms | Deferred (background) |
 
-### 12 Controllers Return Null (class missing from agentdb exports)
+#### 12 Controllers Return Null (class missing from agentdb exports)
 
 solverBandit, hierarchicalMemory (stub), mutationGuard, selfLearningRvfBackend, nativeAccelerator, attestationLog, auditLogger, semanticRouter, indexHealthMonitor, federatedLearningManager, attentionMetrics, guardedVectorBackend — these require classes not yet exported from agentdb v3. They register with `enabled: false`.
 
-### Console Isolation
+#### Console Isolation
 
 All `console.log` and `console.warn` output is suppressed during registry initialization in `memory-bridge.ts`. This prevents 42 controllers' diagnostic logs (GNN, Sona, WASM, LearningSystem) from polluting MCP tool output.
 
-## Decision: Refinement (SPARC-R)
+### Refinement (SPARC-R)
 
-### Trade-offs
+#### Trade-offs
 
 - **Pro**: 15-30x faster CLI startup (2s vs 30-60s)
 - **Pro**: Acceptance tests return to ~40s total
@@ -236,13 +239,13 @@ All `console.log` and `console.warn` output is suppressed during registry initia
 - **Con**: First access to a lazy controller incurs 5-15s delay
 - **Con**: `listControllers()` shows `lazy: true` controllers that haven't proven they can initialize
 
-### Constraints
+#### Constraints
 
 - `_run_and_kill` max_wait must accommodate lazy init for tools that trigger it (e.g., `agentdb_attention_compute` triggers attentionService init)
 - The `init --full --force` command should still eagerly init all controllers (for project setup validation)
 - Test assertions on `agentdb_controllers` must accept lazy controllers as valid (they're registered, just not yet initialized)
 
-### Effort
+#### Effort
 
 - LazyControllerProxy + isEagerController: 3h
 - Console isolation in memory-bridge: 1h
@@ -250,16 +253,16 @@ All `console.log` and `console.warn` output is suppressed during registry initia
 - Update acceptance tests to handle lazy flag: 2h
 - Total: ~7h
 
-### Alternative Considered: Registry Caching to Disk
+#### Alternative Considered: Registry Caching to Disk
 
 Serialize the initialized registry to `.swarm/registry-cache.json` and reload on subsequent process starts. Rejected because:
 - Controller state (SQLite handles, NAPI bindings) cannot be serialized
 - Version mismatches between cache and installed packages would cause subtle bugs
 - Adds cache invalidation complexity
 
-## Decision: Completion (SPARC-C)
+### Completion (SPARC-C)
 
-### Checklist
+#### Checklist
 
 **Implemented (2026-03-17)**:
 - [x] Deferred init via `eagerMaxLevel` config in controller-registry.ts (commit b469ef61e, ruflo fork)
@@ -277,7 +280,36 @@ Serialize the initialized registry to `.swarm/registry-cache.json` and reload on
 - [ ] Export 12 missing controller classes from agentdb index.ts (AuditLogger, AttentionMetrics, IndexHealthMonitor, etc.)
 - [ ] Add unit tests for deferred init behavior
 
-### Testing
+### Consequences
+
+#### Positive (measured)
+
+* Good, because of the **10x faster acceptance suite**: 36s (was 300-355s).
+* Good, because of the **120x faster harness init**: 1s (was 120s KILL timeout).
+* Good, because **e2e tests recovered**: 5s and running (were skipped/crashed at 93s).
+* Good, because **55/55 tests passing**: up from 44/55 (all 11 new checks + all 44 existing pass).
+* Good, because **CLI startup <1s**: for L0/L1 tools (was 30-60s cold).
+* Good, because **43 controllers active**: up from 11 (all deferred controllers now initialize).
+* Good, because **15 bugs fixed**: across 3 repos, all committed and pushed.
+
+#### Negative (accepted)
+
+* Bad, because `init --full` process hangs on exit without explicit `shutdownBridge()` call (mitigated by `.unref()`).
+* Bad, because 12 controller classes are not exported from agentdb (register as `enabled: false`).
+* Bad, because sql.js is 2-13x slower than better-sqlite3 (acceptable for CLI workload).
+* Bad, because tools using `waitForDeferred()` block for background init completion (~1-8s additional latency on first call).
+* Bad, because sql.js requires explicit `save()` after writes to persist data to disk (added to bridgeStoreEntry).
+
+#### Risks (mitigated)
+
+* Neutral, because **ONNX cold download** is mitigated by 6-layer model cache with `AGENTDB_MODEL_PATH`.
+* Neutral, because **process hang** is mitigated by `setInterval.unref()` in db-fallback.js.
+* Neutral, because **console pollution** is mitigated by full log+warn suppression during init.
+* Neutral, because **deferred timing**: acceptance tests that need L2+ controllers wait 8s (within `_run_and_kill` window for most tools).
+
+### Confirmation
+
+#### Testing
 
 ```js
 // tests/unit/adr-0048-lazy-controller-init.test.mjs
@@ -347,7 +379,7 @@ describe('ADR-0048: lazy controller initialization', () => {
 });
 ```
 
-### Testing Guidance
+#### Testing Guidance
 
 **Unit test file**: `tests/unit/adr-0048-lazy-controller-init.test.mjs`
 
@@ -375,7 +407,7 @@ describe('ADR-0048: lazy controller initialization', () => {
 - Console isolation in memory-bridge: `npm run deploy` (full acceptance)
 - `_run_and_kill` timeout changes: `npm run deploy` (full acceptance)
 
-### Success Criteria
+#### Success Criteria
 
 - CLI startup (first tool response) <2s for L0/L1 tools
 - Acceptance suite total <60s (down from 300s)
@@ -383,33 +415,6 @@ describe('ADR-0048: lazy controller initialization', () => {
 - No controller initialization logs leak into tool output
 - No e2e subprocess crashes from memory pressure
 - Previously passing tests remain passing (no regressions)
-
-## Consequences
-
-### Positive (measured)
-
-- **10x faster acceptance suite**: 36s (was 300-355s)
-- **120x faster harness init**: 1s (was 120s KILL timeout)
-- **e2e tests recovered**: 5s and running (were skipped/crashed at 93s)
-- **55/55 tests passing**: up from 44/55 (all 11 new checks + all 44 existing pass)
-- **CLI startup <1s**: for L0/L1 tools (was 30-60s cold)
-- **43 controllers active**: up from 11 (all deferred controllers now initialize)
-- **15 bugs fixed**: across 3 repos, all committed and pushed
-
-### Negative (accepted)
-
-- `init --full` process hangs on exit without explicit `shutdownBridge()` call (mitigated by `.unref()`)
-- 12 controller classes not exported from agentdb (register as `enabled: false`)
-- sql.js is 2-13x slower than better-sqlite3 (acceptable for CLI workload)
-- Tools using `waitForDeferred()` block for background init completion (~1-8s additional latency on first call)
-- sql.js requires explicit `save()` after writes to persist data to disk (added to bridgeStoreEntry)
-
-### Risks (mitigated)
-
-- **ONNX cold download**: mitigated by 6-layer model cache with `AGENTDB_MODEL_PATH`
-- **Process hang**: mitigated by `setInterval.unref()` in db-fallback.js
-- **Console pollution**: mitigated by full log+warn suppression during init
-- **Deferred timing**: acceptance tests that need L2+ controllers wait 8s (within `_run_and_kill` window for most tools)
 
 ## SQLite Backend Analysis: better-sqlite3 vs sql.js
 
@@ -482,14 +487,11 @@ This is sufficient because:
 2. The `initAgentDB()` call (which includes the ONNX bottleneck) runs eagerly regardless — it must complete before any controller can initialize
 3. The real fix for cold-start latency is pre-caching the ONNX model, not deferring controller factories
 
-## Related
+## More Information
 
-- **ADR-0039**: Upstream controller integration roadmap (parent)
-- **ADR-0041**: 7-step controller integration protocol (wiring standard)
-- **ADR-0043**: Query filtering (B5/B6 controllers — eager set, Level 1)
-- **ADR-0044**: Attention suite (A1-A5 controllers — deferred, Level 2)
-- **ADR-0045**: Embeddings & compliance (A9/D1/D3 — deferred, Level 3+)
-- **ADR-0047**: Quantization & health (B9/A11/B3 — deferred, Level 2/4)
+This decision was recorded by the sparkling team using the SPARC + MADR methodology. Original status: "Accepted (complete — 55/55 tests passing, 49s total)".
+
+The original record cross-referenced related decisions: ADR-0039 (upstream controller integration roadmap, the parent); ADR-0041 (7-step controller integration protocol, the wiring standard); ADR-0043 (query filtering, B5/B6 controllers — eager set, Level 1); ADR-0044 (attention suite, A1-A5 controllers — deferred, Level 2); ADR-0045 (embeddings & compliance, A9/D1/D3 — deferred, Level 3+); and ADR-0047 (quantization & health, B9/A11/B3 — deferred, Level 2/4).
 
 ### Bugs Fixed (2026-03-17) — Prerequisites
 

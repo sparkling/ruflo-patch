@@ -1,11 +1,15 @@
-# ADR-0100: Project-Root Resolution — Walk-Up, Not `process.cwd()`
+---
+status: accepted
+date: 2026-04-23
+tags: [project-root, cwd, mcp, resolution]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: **[RECONCILED 2026-05-29 → DONE-WITH-RESIDUAL; see [[ADR-0270]]]** All four "Pending" artifacts in the 2026-05-03 status below now exist in `forks/ruflo` `main` (`.ruflo-project` sentinel writer in `init/executor.ts`; `__tests__/find-project-root.test.ts`; `lib/acceptance-adr0100-checks.sh`; `scripts/check-no-cwd-in-handlers.sh`). The one true residual — site-by-site cwd eradication across the remaining handlers — is owned by [[ADR-0137]] (genuinely open). Original 2026-05-03 status preserved verbatim below. — **Partial — Implemented 2026-04-23, instrumentation pending. Last reviewed 2026-05-03.** Core resolver (`findProjectRoot()` in `forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/types.ts:50-73`) shipped via fork commit `bb9e56dec` (2026-04-23) with 15-handler migration covering the load-bearing `.swarm/` sprawl bug — the user-reported UX issue is fixed. **Pending (per `bb9e56dec` commit message):** (1) `.ruflo-project` sentinel writer in `ruflo init` flow (no `init/*` file currently writes it); (2) paired unit test `__tests__/find-project-root.test.ts` (ADR §5, ADR-0097 contract — does not exist); (3) acceptance check `lib/acceptance-adr0100-checks.sh` (ADR §4, six scenarios — does not exist); (4) preflight grep gate `scripts/check-no-cwd-in-handlers.sh` (ADR §3c — does not exist). **Additional unfinished migrations (out of original §3b scope but same bug class):** `neural-tools.ts:95` and `ruvllm-store.ts:37` still anchor artifact paths on `process.cwd()`; `hooks-tools.ts:1854,1867` likewise. ADR-0111 (2026-04-29) treats ADR-0100 as already-shipped infrastructure (see ADR-0111 line 164, 1177) — that is true for the **resolver and primary handlers** but **not** for the four contract-binding artifacts above. Do not promote to Implemented until all four pending items land. Supersedes ADR-0098 §"Scope-unit clarification" (2026-04-23) which incorrectly defended CWD-scoping as desired behaviour.
-- **Date**: 2026-04-23
-- **Scope**: Centralize `findProjectRoot()` in `forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/types.ts` (replacing `getProjectCwd()` as the artifact anchor for every MCP handler). Blast radius: all MCP storage paths — `.swarm/` (swarm-tools), `.claude-flow/tasks/` (task-tools), `.claude-flow/system/` (system-tools), `.claude/` (guidance-tools — removes duplicated local walk-up). Add `.ruflo-project` sentinel file written by `ruflo init`. New acceptance check. Paired unit test per ADR-0097.
-- **Related**: ADR-0098 (swarm-init dedupe — correct within a project root, wrong anchor), ADR-0097 (paired unit tests), ADR-0094 (acceptance coverage — add a check). Upstream: `ruvnet/claude-flow` (same bug exists there; file issue with reproduction).
+# Project-Root Resolution — Walk-Up, Not `process.cwd()`
 
-## Context
+## Context and Problem Statement
 
 User report 2026-04-23: a single ruflo-initialized project has multiple `.swarm/` folders at `src/hm/semantic-modelling/` AND `src/hm/semantic-modelling/generated/`, within the same project root. Reproduces on unpatched upstream `ruvnet/claude-flow` — **not caused by ADR-0098**; the sprawl is one layer below the dedupe logic ADR-0098 fixed.
 
@@ -46,7 +50,20 @@ The 2026-04-23 follow-up to ADR-0098 claimed "CWD-scoped is correct because work
 
 `mcp-tools/guidance-tools.ts:23-47` already walks up looking for `.claude/` (max-depth 10). That code exists because the guidance system independently hit the same problem and fixed it locally. Evidence of convergent need. The fix is to **lift, centralize, and generalize** that pattern — not invent one.
 
-## Decision
+## Considered Options
+
+* **Replace `getProjectCwd()` with a per-invocation `findProjectRoot()` walk-up resolver + `.ruflo-project` sentinel + enforced rename + preflight gate** (chosen).
+* **A. Wait for Anthropic to fix Claude Code CWD drift** — Pros: upstream fix fixes all ecosystem MCP servers, not just ours. Cons: 10+ open issues, no shipped fix, `/cd` feature request open since Issue #1628. Waiting is "hope as a strategy." Rejected.
+* **B. Rely on `CLAUDE_FLOW_CWD` env var (current partial mechanism)** — Pros: zero code change — our install script already sets it. Cons: Claude Code doesn't propagate it to subprocess Bash invocations; it works only when `ruflo` is called directly, not via MCP handlers spawned under CC. Already broken for the sprawl case (user's reproduction is WITH the env var). Rejected.
+* **C. Walk up only for `.swarm/`, not the other artifacts** — Pros: minimal blast radius; fixes the user-reported symptom. Cons: every other artifact has the same bug (`.claude-flow/tasks/`, `.claude-flow/system/`). Fixing one tool at a time means the sprawl migrates to the others. Rejected — centralize.
+* **D. Cache `findProjectRoot()` at module load** — Pros: cheaper — one `existsSync` walk per process. Cons: module-load-time CWD is exactly the CWD we don't trust. `guidance-tools.ts` did this and it's why we're in this mess. Rejected — per-invocation only.
+* **E. Use `.git` as the sole marker** — Pros: universal, no new sentinel needed. Cons: fails inside a monorepo where multiple projects share one `.git`; fails in projects not using git at all; fails when `.git` is above the intended project root. `.ruflo-project` sentinel disambiguates. Rejected as sole marker, accepted as tertiary fallback.
+* **F. Ship without the `.ruflo-project` sentinel (use `CLAUDE.md` + `.git` only)** — Pros: no new file, no `ruflo init` change. Cons: future drift — someone edits the CLAUDE.md-detection in `init`, suddenly resolution changes. Explicit sentinel future-proofs the contract. Also: `CLAUDE.md` can legitimately exist in docs subdirs of larger projects, causing false-positive early termination. Rejected.
+* **G. Pass the workspace via MCP handshake (`MCP_WORKSPACE` env var)** — Pros: the "right" architectural answer — upstream MCP SDK Issue #1520 proposes this. Cons: requires Anthropic or MCP SDK changes we don't control. Can coexist with walk-up when it lands. Deferred — implement walk-up now, migrate to handshake if/when upstream supports it.
+
+## Decision Outcome
+
+Chosen option: "Replace `getProjectCwd()` with a per-invocation `findProjectRoot()` walk-up resolver plus a `.ruflo-project` sentinel", because Claude Code's CWD drift is a documented, unfixed, ecosystem-wide condition, so an MCP server cannot trust `process.cwd()` as the workspace anchor; walking up to the first project marker (sentinel > CLAUDE.md+`.claude/` > `.git`) converges all artifacts at one project root while preserving worktree and fixture isolation.
 
 ### 1. Replace `getProjectCwd()` with `findProjectRoot()` in `types.ts`
 
@@ -211,55 +228,27 @@ Body:
 
 Bundles with the upstream issue ADR-0098 already has pending (combine into one filing).
 
-## Alternatives
-
-### A. Wait for Anthropic to fix Claude Code CWD drift
-**Pros**: upstream fix fixes all ecosystem MCP servers, not just ours.
-**Cons**: 10+ open issues, no shipped fix, `/cd` feature request open since Issue #1628. Waiting is "hope as a strategy." Rejected.
-
-### B. Rely on `CLAUDE_FLOW_CWD` env var (current partial mechanism)
-**Pros**: zero code change — our install script already sets it.
-**Cons**: Claude Code doesn't propagate it to subprocess Bash invocations; it works only when `ruflo` is called directly, not via MCP handlers spawned under CC. Already broken for the sprawl case (user's reproduction is WITH the env var). Rejected.
-
-### C. Walk up only for `.swarm/`, not the other artifacts
-**Pros**: minimal blast radius; fixes the user-reported symptom.
-**Cons**: every other artifact has the same bug (`.claude-flow/tasks/`, `.claude-flow/system/`). Fixing one tool at a time means the sprawl migrates to the others. Rejected — centralize.
-
-### D. Cache `findProjectRoot()` at module load
-**Pros**: cheaper — one `existsSync` walk per process.
-**Cons**: module-load-time CWD is exactly the CWD we don't trust. `guidance-tools.ts` did this and it's why we're in this mess. Rejected — per-invocation only.
-
-### E. Use `.git` as the sole marker
-**Pros**: universal, no new sentinel needed.
-**Cons**: fails inside a monorepo where multiple projects share one `.git`; fails in projects not using git at all; fails when `.git` is above the intended project root. `.ruflo-project` sentinel disambiguates. Rejected as sole marker, accepted as tertiary fallback.
-
-### F. Ship without the `.ruflo-project` sentinel (use `CLAUDE.md` + `.git` only)
-**Pros**: no new file, no `ruflo init` change.
-**Cons**: future drift — someone edits the CLAUDE.md-detection in `init`, suddenly resolution changes. Explicit sentinel future-proofs the contract. Also: `CLAUDE.md` can legitimately exist in docs subdirs of larger projects, causing false-positive early termination. Rejected.
-
-### G. Pass the workspace via MCP handshake (`MCP_WORKSPACE` env var)
-**Pros**: the "right" architectural answer — upstream MCP SDK Issue #1520 proposes this.
-**Cons**: requires Anthropic or MCP SDK changes we don't control. Can coexist with walk-up when it lands. Deferred — implement walk-up now, migrate to handshake if/when upstream supports it.
-
-## Consequences
+### Consequences
 
 **Positive:**
-- `.swarm/`, `.claude-flow/tasks/`, `.claude-flow/system/` artifacts converge at one location per project, regardless of which subdirectory Claude Code's CWD drifted to.
-- Guidance-tools local walk-up (lines 20-47) is deleted — one less divergent implementation of "find project root."
-- `.ruflo-project` sentinel gives users a way to explicitly mark an intended root in ambiguous layouts (monorepos, nested projects).
-- Upstream issue + proposed PR positions us as contributors, not just fork-patchers.
+* Good, because `.swarm/`, `.claude-flow/tasks/`, `.claude-flow/system/` artifacts converge at one location per project, regardless of which subdirectory Claude Code's CWD drifted to.
+* Good, because the guidance-tools local walk-up (lines 20-47) is deleted — one less divergent implementation of "find project root."
+* Good, because the `.ruflo-project` sentinel gives users a way to explicitly mark an intended root in ambiguous layouts (monorepos, nested projects).
+* Good, because the upstream issue + proposed PR positions us as contributors, not just fork-patchers.
 
 **Negative:**
-- `findProjectRoot()` adds `existsSync` calls on every handler invocation. **Measured** via §5 test 11 + §4 Scenario F (review flaw 4 — no more handwaving): mean ≤ 2 ms, p99 ≤ 5 ms on M5 Max reference. Build fails if p99 > 5 ms. Network-FS users (Windows/OneDrive reparse points, NFS, sshfs) may see 20–200 ms per call; caught reactively via the persistent-log warning channel (Scenario E). Revisit if user reports appear.
-- `.ruflo-project` is a new file users must learn about. Mitigated by `ruflo init` writing it automatically; existing projects pick up `CLAUDE.md`-based resolution without re-init.
-- Behaviour change: existing users with stray `.swarm/` in subdirectories will find them ignored after upgrade. Their state is orphaned (same fate as the 66 orphans ADR-0098 cleaned). Acceptable.
-- `getProjectCwd()` remains for display/logging uses — mild confusion potential ("two cwd functions?"). Mitigated by comments + one-time grep to confirm no artifact writer still uses the legacy name.
+* Bad, because `findProjectRoot()` adds `existsSync` calls on every handler invocation. **Measured** via §5 test 11 + §4 Scenario F (review flaw 4 — no more handwaving): mean ≤ 2 ms, p99 ≤ 5 ms on M5 Max reference. Build fails if p99 > 5 ms. Network-FS users (Windows/OneDrive reparse points, NFS, sshfs) may see 20–200 ms per call; caught reactively via the persistent-log warning channel (Scenario E). Revisit if user reports appear.
+* Bad, because `.ruflo-project` is a new file users must learn about. Mitigated by `ruflo init` writing it automatically; existing projects pick up `CLAUDE.md`-based resolution without re-init.
+* Bad, because of the behaviour change: existing users with stray `.swarm/` in subdirectories will find them ignored after upgrade. Their state is orphaned (same fate as the 66 orphans ADR-0098 cleaned). Acceptable.
+* Bad, because `getProjectCwd()` remains for display/logging uses — mild confusion potential ("two cwd functions?"). Mitigated by comments + one-time grep to confirm no artifact writer still uses the legacy name.
 
 **Neutral / deferred:**
-- MCP handshake `MCP_WORKSPACE` env (Alternative G) — migrate when upstream supports it. Walk-up is defensive; handshake is authoritative. Walk-up stays as belt-and-braces regardless.
-- Other MCP servers in the ecosystem have the same bug — not our problem to fix beyond filing the upstream issue.
+* Neutral, because the MCP handshake `MCP_WORKSPACE` env (Alternative G) is to be migrated when upstream supports it. Walk-up is defensive; handshake is authoritative. Walk-up stays as belt-and-braces regardless.
+* Neutral, because other MCP servers in the ecosystem have the same bug — not our problem to fix beyond filing the upstream issue.
 
-## Adversarial Review Outcome (2026-04-23)
+### Confirmation
+
+#### Adversarial Review Outcome (2026-04-23)
 
 Third-order hive `hive-1776935361015-683ejf` (queen `adr0100-queen-1776935364429-ve91`, devil `adr0100-devil-1776935365155-3xqh`) reviewed this ADR in parallel. Devil found 3 flaws; queen anticipated 3. **Devil and queen converged on 1** (the `getProjectCwd()` → `getDisplayCwd()` rename). Total: **5 distinct flaws, all disposition FIX — zero ACCEPT.** That unanimous FIX signal mattered: it meant every named flaw had a cheap textual fix that closed the 2029-regret surface, and none required re-architecting the walk-up decision.
 
@@ -271,11 +260,11 @@ Third-order hive `hive-1776935361015-683ejf` (queen `adr0100-queen-1776935364429
 | 4 | "1–2 ms on SSD. Acceptable" — handwaved perf claim; ADR-0099 perf program not yet shipped; Windows/OneDrive/NFS users could see 20–200 ms per call with no detection | Devil | MEDIUM-HIGH | **FIXED** — §4 Scenario F adds explicit p99 ≤ 5 ms gate on M5 Max reference; §5 test 11 microbenchmarks 1000 calls in depth-10 tree; network-FS regressions caught via persistent-log warnings (Scenario E) |
 | 5 | `console.warn` to stderr is swallowed by Claude Code's MCP stdio transport — the "warning IS the contract" bullet is a silent fallback in practice, violating `feedback-no-fallbacks` | Queen | CRITICAL | **FIXED** — §1 resolver now logs to BOTH stderr AND `~/.ruflo/resolver-warnings.log` (best-effort append, never throws); §4 Scenarios C + E assert the persistent log is written; §5 test 7 asserts both sinks |
 
-### Queen's net position (preserved verbatim)
+##### Queen's net position (preserved verbatim)
 
 > *"Three FIX dispositions, zero ACCEPT/DEFER/REJECT — that's a signal. ADR-0100 is substantively right (walk-up is the correct architecture, the ecosystem evidence is persuasive, the alternatives analysis is honest) but it repeats ADR-0098's pattern of naming a risk in the alternatives section and then shipping without mitigating it. The three likely flaws are all the same shape: 'the ADR knows this could be a problem and rationalizes past it.' That's exactly how we got here with ADR-0098's CWD-scope defence."*
 
-### Devil's net judgment (preserved verbatim)
+##### Devil's net judgment (preserved verbatim)
 
 > *"Fix-then-ship. ADR-0100 correctly identifies the root cause (previous two attempts missed it) and proposes a structurally sound fix. But the three flaws above are precisely the shape of the regression patterns that got us here: an unenforced contract (sentinel), an unenforced convention (two-function-name discipline), and an unmeasured performance claim. Each has a small, surgical preventive edit."*
 
@@ -291,3 +280,13 @@ All 5 FIX edits landed in the ADR body directly (resolver code, Scenarios A/C/D/
   - `hive-1776935361015-683ejf` (this review)
   - Workers: `adr0100-queen-1776935364429-ve91`, `adr0100-devil-1776935365155-3xqh`
 - No fourth-order review planned. If implementation reveals a gap, bug-fix ADR; if not, ADR transitions to Implemented after fork commit + publish.
+
+## More Information
+
+Status: reconciled 2026-05-29 → DONE-WITH-RESIDUAL (see ADR-0270). All four "Pending" artifacts in the 2026-05-03 status below now exist in `forks/ruflo` `main` (`.ruflo-project` sentinel writer in `init/executor.ts`; `__tests__/find-project-root.test.ts`; `lib/acceptance-adr0100-checks.sh`; `scripts/check-no-cwd-in-handlers.sh`). The one true residual — site-by-site cwd eradication across the remaining handlers — is owned by ADR-0137 (genuinely open).
+
+Original 2026-05-03 status, preserved verbatim: "Partial — Implemented 2026-04-23, instrumentation pending. Last reviewed 2026-05-03. Core resolver (`findProjectRoot()` in `forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/types.ts:50-73`) shipped via fork commit `bb9e56dec` (2026-04-23) with 15-handler migration covering the load-bearing `.swarm/` sprawl bug — the user-reported UX issue is fixed. Pending (per `bb9e56dec` commit message): (1) `.ruflo-project` sentinel writer in `ruflo init` flow (no `init/*` file currently writes it); (2) paired unit test `__tests__/find-project-root.test.ts` (ADR §5, ADR-0097 contract — does not exist); (3) acceptance check `lib/acceptance-adr0100-checks.sh` (ADR §4, six scenarios — does not exist); (4) preflight grep gate `scripts/check-no-cwd-in-handlers.sh` (ADR §3c — does not exist). Additional unfinished migrations (out of original §3b scope but same bug class): `neural-tools.ts:95` and `ruvllm-store.ts:37` still anchor artifact paths on `process.cwd()`; `hooks-tools.ts:1854,1867` likewise. ADR-0111 (2026-04-29) treats ADR-0100 as already-shipped infrastructure (see ADR-0111 line 164, 1177) — that is true for the resolver and primary handlers but not for the four contract-binding artifacts above. Do not promote to Implemented until all four pending items land."
+
+This ADR supersedes ADR-0098 §"Scope-unit clarification" (2026-04-23) which incorrectly defended CWD-scoping as desired behaviour. Dated 2026-04-23. Scope: centralize `findProjectRoot()` in `forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/types.ts` (replacing `getProjectCwd()` as the artifact anchor for every MCP handler). Blast radius: all MCP storage paths — `.swarm/` (swarm-tools), `.claude-flow/tasks/` (task-tools), `.claude-flow/system/` (system-tools), `.claude/` (guidance-tools — removes duplicated local walk-up). Adds `.ruflo-project` sentinel file written by `ruflo init`. New acceptance check. Paired unit test per ADR-0097.
+
+The original record cross-referenced these related decisions: ADR-0098 (swarm-init dedupe — correct within a project root, wrong anchor); ADR-0097 (paired unit tests); and ADR-0094 (acceptance coverage — add a check). Upstream: `ruvnet/claude-flow` (same bug exists there; issue filed with reproduction).

@@ -1,20 +1,13 @@
-# ADR-0023: Google Test Engineering Framework
+---
+status: accepted
+date: 2026-03-07
+tags: [testing, pipeline, verdaccio, release-engineering]
+supersedes: [ADR-0020]
+depends-on: []
+implements: []
+---
 
-- **Status**: Accepted (supersedes ADR-0020)
-- **Date**: 2026-03-07
-- **Deciders**: ruflo-patch maintainers
-- **Methodology**: SPARC + MADR
-
-## Decision Drivers
-
-- ADR-0020's 3-layer model is missing formal test sizing, gate definitions, and hermeticity requirements
-- Test counts have drifted (78->93 unit, 6->14 acceptance) without doc updates
-- Environment validation and static analysis exist as scripts but are not classified as test layers
-- Verdaccio is used ad-hoc rather than as an architectural requirement
-- No flaky test policy, skip threshold, or anti-pattern catalog for contributors
-- No structured artifact schema for cross-run comparison
-- Integration tests prove packages **install** but not that they **work** -- functional bugs are only discovered post-publish when they already affect users
-- 12 of 14 acceptance tests could run pre-publish against Verdaccio, closing the validation gap before deployment
+# Google Test Engineering Framework
 
 ## Context and Problem Statement
 
@@ -244,6 +237,29 @@ FAILURE SEMANTICS:
   Layer 3 pass, L4 fail   -> deployment issue, investigate registry/CDN
   Both pass               -> promote to @latest
 ```
+
+## Decision Drivers
+
+- ADR-0020's 3-layer model is missing formal test sizing, gate definitions, and hermeticity requirements
+- Test counts have drifted (78->93 unit, 6->14 acceptance) without doc updates
+- Environment validation and static analysis exist as scripts but are not classified as test layers
+- Verdaccio is used ad-hoc rather than as an architectural requirement
+- No flaky test policy, skip threshold, or anti-pattern catalog for contributors
+- No structured artifact schema for cross-run comparison
+- Integration tests prove packages **install** but not that they **work** -- functional bugs are only discovered post-publish when they already affect users
+- 12 of 14 acceptance tests could run pre-publish against Verdaccio, closing the validation gap before deployment
+
+## Considered Options
+
+* **Google Test Engineering Framework with six-layer pyramid and two-gate deployment model (chosen)** — adopt Google Test Engineering and Release Engineering standards as the formal framework for all testing.
+* **Option 1: Jest or Vitest as Test Framework** — Rejected.
+* **Option 2: Code Coverage Metrics (Istanbul/c8)** — Rejected as mandatory metric.
+* **Option 3: Docker-Based Integration Tests** — Rejected (consistent with ADR-0020).
+* **Option 4: Keep Acceptance Tests Post-Publish Only (No Release Qualification)** — Rejected.
+* **Option 5: GitHub Actions CI** — Rejected (consistent with ADR-0009 and ADR-0020).
+* **Option 6: Property-Based Testing (fast-check)** — Deferred.
+* **Option 7: Separate Verdaccio Instance for Release Qualification** — Rejected.
+* **Option 8: Put RQ in test-integration.sh** — Rejected.
 
 ## Decision Outcome
 
@@ -491,166 +507,6 @@ Putting RQ in a test that cannot produce runnable artifacts violates Google's te
 | Agent booster import fail | Post-publish (users affected) | Pre-publish (deploy blocked) |
 | Dist-tag resolves wrong | Post-publish (Layer 4) | Post-publish (Layer 4) -- registry-specific, cannot shift left |
 
-### Considered Options
-
-#### Option 1: Jest or Vitest as Test Framework
-
-**Rejected**. The project uses Node.js built-in `node:test` with `node:assert/strict`. This has zero dependencies, ships with Node >= 20, and produces TAP output natively. Adding Jest/Vitest would introduce ~200 transitive dependencies for no functional benefit. Google's guidance is to use the simplest framework that meets requirements.
-
-#### Option 2: Code Coverage Metrics (Istanbul/c8)
-
-**Rejected as mandatory metric**. This project patches upstream code -- we don't own the source being tested. Line-level coverage of our scripts (codemod, publish, patch helpers) would be misleading because the critical paths are in *how* these scripts interact, not individual line execution. The 6-layer pyramid provides behavioral coverage that is more meaningful than line counts.
-
-Coverage tooling MAY be added later for the `lib/` and `scripts/` directories if the codebase grows significantly.
-
-#### Option 3: Docker-Based Integration Tests
-
-**Rejected** (consistent with ADR-0020). Docker adds image management, volume mounting, and network bridging overhead without proportional benefit. The current approach (temp dirs + ephemeral Verdaccio) achieves isolation without containerization. Revisit if multiple maintainers need identical environments.
-
-#### Option 4: Keep Acceptance Tests Post-Publish Only (No Release Qualification)
-
-**Rejected**. This was the ADR-0020 position: acceptance tests validate real published artifacts, so they must run post-publish. While the rationale was sound for Layer 4 (production verification), it left a validation gap: 12 of 14 acceptance tests are not registry-specific and could run against Verdaccio pre-publish. The gap means functional bugs (missing dist/, broken init, failed patches) reach real npm before detection.
-
-The adopted approach (Decision 9) adds Layer 3 (Release Qualification) to run these 12 tests pre-publish in the deployment pipeline, while preserving Layer 4 post-publish for production confirmation. Layer 4's semantics change from "discovery" to "confirmation" -- if Layer 3 passed but Layer 4 fails, it's a deployment issue, not a code bug.
-
-#### Option 5: GitHub Actions CI
-
-**Rejected** (consistent with ADR-0009 and ADR-0020). The build server is more powerful than GitHub Actions runners, the pipeline is linear (no parallelization benefit), and the systemd timer provides reliable scheduling. GitHub Actions would add cost and complexity without improving test quality.
-
-#### Option 6: Property-Based Testing (fast-check)
-
-**Deferred**. Property-based testing would be valuable for `computeVersion()` and codemod transforms (generating random version strings and package.json structures). However, the current input space is well-covered by explicit test cases. This can be added when edge cases emerge that explicit tests miss.
-
-#### Option 7: Separate Verdaccio Instance for Release Qualification
-
-**Rejected**. Running Layer 3 against a second Verdaccio instance would add setup time, port management, and complexity for zero benefit. A single permanent Verdaccio systemd service at `localhost:4873` is now used by both Layer 2 (`test-integration.sh`) and Layer 3 (`sync-and-build.sh`). Test isolation is achieved by clearing `@sparkleideas/*` packages at the start of each run, not by spinning up separate instances.
-
-#### Option 8: Put RQ in test-integration.sh
-
-**Rejected**. `test-integration.sh` is a pipeline mechanics test. It clones upstream from git, applies codemod and patches, publishes to Verdaccio, and installs. It does NOT build TypeScript -- packages have no `dist/` directory. Running RQ tests (which execute CLI commands, import ESM modules) against packages without `dist/` produces 82% structural failures that are expected and meaningless.
-
-This violates three Google testing principles:
-1. **A test must exercise its subject** -- RQ cannot exercise unbuilt packages
-2. **Tests produce signal, not noise** -- expected failures are noise
-3. **Separation of concerns** -- a test should not also be a build system
-
-RQ belongs in `sync-and-build.sh` where built artifacts exist.
-
-## Consequences
-
-### Refinement (SPARC-R)
-
-#### Positive Consequences
-
-- **Formal sizing** -- every test has a declared size with enforced constraints (time, network, I/O), preventing test bloat
-- **Six layers** -- environment validation, static analysis, and release qualification are now first-class test categories, not informal scripts or post-deploy discovery
-- **Two-gate model** -- clear separation between "safe to publish" (Gate 1, includes functional validation) and "safe to promote" (Gate 2) eliminates ambiguity about what test failures mean
-- **Verdaccio-as-staging** -- Verdaccio is the staging environment for both structural (Layer 2) and functional (Layer 3) validation. No package reaches real npm without proving it works
-- **Release Qualification** -- 12 functional smoke tests run pre-publish in the deployment pipeline, catching broken deploys before they affect users. ~30 seconds of testing to prevent deploying broken packages
-- **Separation of concerns** -- tests (`test-integration.sh`) validate pipeline mechanics. The deployment pipeline (`sync-and-build.sh`) builds, qualifies, and ships. RQ is a deployment gate, not a test phase
-- **Shared test library** -- `lib/acceptance-checks.sh` eliminates duplication between Layer 3 and Layer 4. One test definition, two execution contexts. Adding a test auto-runs it in both layers
-- **Failure semantics** -- Layer 3 failure = code bug (fix before publish). Layer 4 failure after Layer 3 pass = deployment issue (investigate registry). Clear root-cause signal
-- **No advisory/skip hacks** -- every test either runs with real signal or doesn't run at all. No "advisory failures" or "expected failures" polluting results
-- **Hermeticity requirements** -- explicit rules prevent the test suite from developing shared state or host dependencies
-- **Flaky test policy** -- quarantine + skip threshold + fix deadline prevents test suite decay
-- **Integration test unchanged** -- `test-integration.sh` stays at 9 phases, testing what it was always meant to test: pipeline mechanics
-
-#### Negative Consequences
-
-- **Documentation overhead** -- new tests must declare their size and layer, adding friction for contributors
-- **Skip threshold** -- the max-8-skipped enforcement may force premature removal of tests that are difficult to fix but still provide value
-- **Verdaccio dependency** -- Verdaccio is now architecturally required as a permanent systemd user service, not optional. This eliminates per-run startup overhead (~5s saved per run) but adds a system dependency: the service must be running before any Layer 2 or Layer 3 test can execute. If the service is down, scripts fail at the health-check step. If Verdaccio has breaking changes, the entire test pipeline breaks
-- **RQ only runs during deployment** -- `test-integration.sh` alone does NOT run RQ. Functional validation requires running the full `sync-and-build.sh` pipeline. This is by design (RQ needs built artifacts) but means developers can't run RQ in isolation
-- **Shared library coupling** -- `lib/acceptance-checks.sh` must work in both Verdaccio and real npm contexts. Tests that depend on registry-specific behavior must be excluded and maintained separately in `test-acceptance.sh`
-
-#### Risks
-
-- Layer 4 production verification tests depend on npm CDN propagation timing (1-3 minutes). If Layer 4 runs too soon after publish, it may fail due to CDN lag rather than real defects. Mitigation: the pipeline already waits for publish confirmation before running Layer 4
-- The 42-package topological publish to Verdaccio takes ~60s with rate limiting disabled. If the package count grows significantly (ADR-0022 adds more), the integration test may need parallelized publishing
-- Layer 3 tests run against a Verdaccio install, not real npm. If npm has different module resolution behavior than Verdaccio, Layer 3 could pass while Layer 4 fails for non-deployment reasons. Mitigation: Verdaccio implements the npm registry API faithfully; this risk is theoretical
-
-### Completion (SPARC-C)
-
-**Acceptance criteria**:
-
-- [x] All existing tests classified into Google Small/Medium/Large sizes
-- [x] Six-layer pyramid documented with clear boundaries and Google phase mapping
-- [x] Gate 1 (pre-publish, includes Release Qualification) and Gate 2 (post-publish) formally defined
-- [x] Verdaccio lifecycle documented as staging environment (structural + functional validation)
-- [x] Release Qualification layer (Layer 3) specified with 12 RQ tests
-- [x] Shared test library (`lib/acceptance-checks.sh`) design documented
-- [x] Failure semantics defined: Layer 3 fail = code bug, Layer 4 fail after L3 pass = deployment issue
-- [x] Hermeticity requirements specified for all layers
-- [x] Test doubles strategy documented
-- [x] Flaky test policy with quarantine + skip threshold + fix deadline
-- [x] Structured artifact schema defined for all layers (including `qualification-results.json`)
-- [x] Anti-patterns cataloged (see `docs/testing.strategy.fixed.google.md`)
-- [x] Considered options documented with rationale (8 options, including Option 8 rejection)
-- [x] Cost analysis: +30s deploy time, +1 file, 0 new infrastructure
-- [x] `lib/acceptance-checks.sh` implemented (shared test functions)
-- [x] `test-acceptance.sh` refactored to source shared library
-- [x] `sync-and-build.sh` run_tests() updated with RQ phase
-- [x] `qualification-results.json` emitted by sync-and-build.sh
-- [x] `test-integration.sh` Phase 9 (RQ) removed (revert to 9-phase: 1-8 + cleanup)
-
-**Implementation plan**:
-
-#### Step 1: Create Shared Test Library
-
-Create `lib/acceptance-checks.sh` by extracting test functions from `scripts/test-acceptance.sh`:
-- Extract functions for A1-A7, A9-A10, A13-A15 (the 12 registry-agnostic tests)
-- Functions receive `$REGISTRY`, `$TEMP_DIR`, `$PKG` from the sourcing script
-- Keep A8 (dist-tag) and A16 (plugin install) in `test-acceptance.sh` only
-
-#### Step 2: Refactor Acceptance Test
-
-Update `scripts/test-acceptance.sh`:
-- Source `lib/acceptance-checks.sh` for shared tests
-- Keep A8 and A16 as local-only functions
-- Remove duplicated test function bodies (now in shared library)
-- Preserve `--registry` flag behavior
-
-#### Step 3: Add RQ to sync-and-build.sh
-
-Update `scripts/sync-and-build.sh` `run_tests()` function:
-- After Layer 0 (codemod acceptance), Layer 1 (unit tests), Layer 2 (integration test)
-- Start Verdaccio, publish **built** packages from `$TEMP_DIR`
-- Install packages from Verdaccio into fresh temp dir
-- Source `lib/acceptance-checks.sh`, run RQ-1 through RQ-12
-- Emit `qualification-results.json`
-- Hard fail: any RQ failure aborts pipeline before publish to real npm
-
-#### Step 4: Remove RQ from test-integration.sh
-
-Revert `scripts/test-integration.sh` to 9 phases (1-8 + cleanup):
-- Remove Phase 9 (release_qualification)
-- Renumber Phase 10 (cleanup) back to Phase 9
-- Remove advisory/dist-detection logic
-- `test-integration.sh` tests pipeline mechanics only
-
-#### Step 5: Mark ADR-0020 as Superseded
-
-Update `docs/adr/ADR-0020-testing-strategy.md`:
-- Change `Status` from `Accepted` to `Superseded by [ADR-0023](ADR-0023-google-testing-framework.md)`
-- No other changes -- ADR-0020's content is preserved as historical record
-
-#### Step 6: Update Companion Docs
-
-Update `docs/testing.framework.md` and `docs/testing.strategy.fixed.google.md`:
-- Layer 2 is `test-integration.sh` (9 phases, pipeline mechanics)
-- Layer 3 is `sync-and-build.sh` (RQ against built packages)
-- Remove references to `test-integration.sh Phase 9` as RQ
-
-#### Step 7: Update Auto-Memory
-
-Update `~/.claude/projects/.../memory/MEMORY.md` testing section:
-- Layer 3 runner = `sync-and-build.sh` (not `test-integration.sh`)
-- `test-integration.sh` = Layer 2 only (pipeline mechanics)
-
-#### Implementation Order
-
-Steps 1-2 (shared library + acceptance refactor) are done. Steps 3-4 are the code changes (add RQ to sync-and-build, remove from test-integration). Steps 5-7 are doc updates. All steps after 2 are independent.
-
 #### Decision 10: Incremental Build and Publish
 
 **Problem**: The pipeline rebuilds, re-codemods, re-patches, and republishes all 42+ packages on every run, regardless of what changed. A full build takes ~3.5 minutes. Most changes (patch fixes, single-repo upstream updates) only affect 1-5 packages.
@@ -738,9 +594,167 @@ Steps 1-2 (shared library + acceptance refactor) are done. Steps 3-4 are the cod
 
 **Status**: Implemented. All layers use incremental builds by default.
 
-## Links
+### Consequences
 
-- [ADR-0020: Testing Strategy](ADR-0020-testing-strategy.md) -- **superseded** by this ADR; all decisions preserved, Release Qualification and formal framework added
+#### Positive Consequences
+
+* Good, because **formal sizing** -- every test has a declared size with enforced constraints (time, network, I/O), preventing test bloat
+* Good, because **six layers** -- environment validation, static analysis, and release qualification are now first-class test categories, not informal scripts or post-deploy discovery
+* Good, because **two-gate model** -- clear separation between "safe to publish" (Gate 1, includes functional validation) and "safe to promote" (Gate 2) eliminates ambiguity about what test failures mean
+* Good, because **Verdaccio-as-staging** -- Verdaccio is the staging environment for both structural (Layer 2) and functional (Layer 3) validation. No package reaches real npm without proving it works
+* Good, because **Release Qualification** -- 12 functional smoke tests run pre-publish in the deployment pipeline, catching broken deploys before they affect users. ~30 seconds of testing to prevent deploying broken packages
+* Good, because **separation of concerns** -- tests (`test-integration.sh`) validate pipeline mechanics. The deployment pipeline (`sync-and-build.sh`) builds, qualifies, and ships. RQ is a deployment gate, not a test phase
+* Good, because **shared test library** -- `lib/acceptance-checks.sh` eliminates duplication between Layer 3 and Layer 4. One test definition, two execution contexts. Adding a test auto-runs it in both layers
+* Good, because **failure semantics** -- Layer 3 failure = code bug (fix before publish). Layer 4 failure after Layer 3 pass = deployment issue (investigate registry). Clear root-cause signal
+* Good, because **no advisory/skip hacks** -- every test either runs with real signal or doesn't run at all. No "advisory failures" or "expected failures" polluting results
+* Good, because **hermeticity requirements** -- explicit rules prevent the test suite from developing shared state or host dependencies
+* Good, because **flaky test policy** -- quarantine + skip threshold + fix deadline prevents test suite decay
+* Good, because **integration test unchanged** -- `test-integration.sh` stays at 9 phases, testing what it was always meant to test: pipeline mechanics
+* Bad, because **documentation overhead** -- new tests must declare their size and layer, adding friction for contributors
+* Bad, because **skip threshold** -- the max-8-skipped enforcement may force premature removal of tests that are difficult to fix but still provide value
+* Bad, because **Verdaccio dependency** -- Verdaccio is now architecturally required as a permanent systemd user service, not optional. This eliminates per-run startup overhead (~5s saved per run) but adds a system dependency: the service must be running before any Layer 2 or Layer 3 test can execute. If the service is down, scripts fail at the health-check step. If Verdaccio has breaking changes, the entire test pipeline breaks
+* Bad, because **RQ only runs during deployment** -- `test-integration.sh` alone does NOT run RQ. Functional validation requires running the full `sync-and-build.sh` pipeline. This is by design (RQ needs built artifacts) but means developers can't run RQ in isolation
+* Bad, because **shared library coupling** -- `lib/acceptance-checks.sh` must work in both Verdaccio and real npm contexts. Tests that depend on registry-specific behavior must be excluded and maintained separately in `test-acceptance.sh`
+
+#### Risks
+
+- Layer 4 production verification tests depend on npm CDN propagation timing (1-3 minutes). If Layer 4 runs too soon after publish, it may fail due to CDN lag rather than real defects. Mitigation: the pipeline already waits for publish confirmation before running Layer 4
+- The 42-package topological publish to Verdaccio takes ~60s with rate limiting disabled. If the package count grows significantly (ADR-0022 adds more), the integration test may need parallelized publishing
+- Layer 3 tests run against a Verdaccio install, not real npm. If npm has different module resolution behavior than Verdaccio, Layer 3 could pass while Layer 4 fails for non-deployment reasons. Mitigation: Verdaccio implements the npm registry API faithfully; this risk is theoretical
+
+### Confirmation
+
+#### Completion (SPARC-C)
+
+**Acceptance criteria**:
+
+- [x] All existing tests classified into Google Small/Medium/Large sizes
+- [x] Six-layer pyramid documented with clear boundaries and Google phase mapping
+- [x] Gate 1 (pre-publish, includes Release Qualification) and Gate 2 (post-publish) formally defined
+- [x] Verdaccio lifecycle documented as staging environment (structural + functional validation)
+- [x] Release Qualification layer (Layer 3) specified with 12 RQ tests
+- [x] Shared test library (`lib/acceptance-checks.sh`) design documented
+- [x] Failure semantics defined: Layer 3 fail = code bug, Layer 4 fail after L3 pass = deployment issue
+- [x] Hermeticity requirements specified for all layers
+- [x] Test doubles strategy documented
+- [x] Flaky test policy with quarantine + skip threshold + fix deadline
+- [x] Structured artifact schema defined for all layers (including `qualification-results.json`)
+- [x] Anti-patterns cataloged (see `docs/testing.strategy.fixed.google.md`)
+- [x] Considered options documented with rationale (8 options, including Option 8 rejection)
+- [x] Cost analysis: +30s deploy time, +1 file, 0 new infrastructure
+- [x] `lib/acceptance-checks.sh` implemented (shared test functions)
+- [x] `test-acceptance.sh` refactored to source shared library
+- [x] `sync-and-build.sh` run_tests() updated with RQ phase
+- [x] `qualification-results.json` emitted by sync-and-build.sh
+- [x] `test-integration.sh` Phase 9 (RQ) removed (revert to 9-phase: 1-8 + cleanup)
+
+**Implementation plan**:
+
+#### Step 1: Create Shared Test Library
+
+Create `lib/acceptance-checks.sh` by extracting test functions from `scripts/test-acceptance.sh`:
+- Extract functions for A1-A7, A9-A10, A13-A15 (the 12 registry-agnostic tests)
+- Functions receive `$REGISTRY`, `$TEMP_DIR`, `$PKG` from the sourcing script
+- Keep A8 (dist-tag) and A16 (plugin install) in `test-acceptance.sh` only
+
+#### Step 2: Refactor Acceptance Test
+
+Update `scripts/test-acceptance.sh`:
+- Source `lib/acceptance-checks.sh` for shared tests
+- Keep A8 and A16 as local-only functions
+- Remove duplicated test function bodies (now in shared library)
+- Preserve `--registry` flag behavior
+
+#### Step 3: Add RQ to sync-and-build.sh
+
+Update `scripts/sync-and-build.sh` `run_tests()` function:
+- After Layer 0 (codemod acceptance), Layer 1 (unit tests), Layer 2 (integration test)
+- Start Verdaccio, publish **built** packages from `$TEMP_DIR`
+- Install packages from Verdaccio into fresh temp dir
+- Source `lib/acceptance-checks.sh`, run RQ-1 through RQ-12
+- Emit `qualification-results.json`
+- Hard fail: any RQ failure aborts pipeline before publish to real npm
+
+#### Step 4: Remove RQ from test-integration.sh
+
+Revert `scripts/test-integration.sh` to 9 phases (1-8 + cleanup):
+- Remove Phase 9 (release_qualification)
+- Renumber Phase 10 (cleanup) back to Phase 9
+- Remove advisory/dist-detection logic
+- `test-integration.sh` tests pipeline mechanics only
+
+#### Step 5: Mark ADR-0020 as Superseded
+
+Update `docs/adr/ADR-0020-testing-strategy.md`:
+- Change `Status` from `Accepted` to `Superseded by [ADR-0023](ADR-0023-google-testing-framework.md)`
+- No other changes -- ADR-0020's content is preserved as historical record
+
+#### Step 6: Update Companion Docs
+
+Update `docs/testing.framework.md` and `docs/testing.strategy.fixed.google.md`:
+- Layer 2 is `test-integration.sh` (9 phases, pipeline mechanics)
+- Layer 3 is `sync-and-build.sh` (RQ against built packages)
+- Remove references to `test-integration.sh Phase 9` as RQ
+
+#### Step 7: Update Auto-Memory
+
+Update `~/.claude/projects/.../memory/MEMORY.md` testing section:
+- Layer 3 runner = `sync-and-build.sh` (not `test-integration.sh`)
+- `test-integration.sh` = Layer 2 only (pipeline mechanics)
+
+#### Implementation Order
+
+Steps 1-2 (shared library + acceptance refactor) are done. Steps 3-4 are the code changes (add RQ to sync-and-build, remove from test-integration). Steps 5-7 are doc updates. All steps after 2 are independent.
+
+## Pros and Cons of the Options
+
+#### Option 1: Jest or Vitest as Test Framework
+
+**Rejected**. The project uses Node.js built-in `node:test` with `node:assert/strict`. This has zero dependencies, ships with Node >= 20, and produces TAP output natively. Adding Jest/Vitest would introduce ~200 transitive dependencies for no functional benefit. Google's guidance is to use the simplest framework that meets requirements.
+
+#### Option 2: Code Coverage Metrics (Istanbul/c8)
+
+**Rejected as mandatory metric**. This project patches upstream code -- we don't own the source being tested. Line-level coverage of our scripts (codemod, publish, patch helpers) would be misleading because the critical paths are in *how* these scripts interact, not individual line execution. The 6-layer pyramid provides behavioral coverage that is more meaningful than line counts.
+
+Coverage tooling MAY be added later for the `lib/` and `scripts/` directories if the codebase grows significantly.
+
+#### Option 3: Docker-Based Integration Tests
+
+**Rejected** (consistent with ADR-0020). Docker adds image management, volume mounting, and network bridging overhead without proportional benefit. The current approach (temp dirs + ephemeral Verdaccio) achieves isolation without containerization. Revisit if multiple maintainers need identical environments.
+
+#### Option 4: Keep Acceptance Tests Post-Publish Only (No Release Qualification)
+
+**Rejected**. This was the ADR-0020 position: acceptance tests validate real published artifacts, so they must run post-publish. While the rationale was sound for Layer 4 (production verification), it left a validation gap: 12 of 14 acceptance tests are not registry-specific and could run against Verdaccio pre-publish. The gap means functional bugs (missing dist/, broken init, failed patches) reach real npm before detection.
+
+The adopted approach (Decision 9) adds Layer 3 (Release Qualification) to run these 12 tests pre-publish in the deployment pipeline, while preserving Layer 4 post-publish for production confirmation. Layer 4's semantics change from "discovery" to "confirmation" -- if Layer 3 passed but Layer 4 fails, it's a deployment issue, not a code bug.
+
+#### Option 5: GitHub Actions CI
+
+**Rejected** (consistent with ADR-0009 and ADR-0020). The build server is more powerful than GitHub Actions runners, the pipeline is linear (no parallelization benefit), and the systemd timer provides reliable scheduling. GitHub Actions would add cost and complexity without improving test quality.
+
+#### Option 6: Property-Based Testing (fast-check)
+
+**Deferred**. Property-based testing would be valuable for `computeVersion()` and codemod transforms (generating random version strings and package.json structures). However, the current input space is well-covered by explicit test cases. This can be added when edge cases emerge that explicit tests miss.
+
+#### Option 7: Separate Verdaccio Instance for Release Qualification
+
+**Rejected**. Running Layer 3 against a second Verdaccio instance would add setup time, port management, and complexity for zero benefit. A single permanent Verdaccio systemd service at `localhost:4873` is now used by both Layer 2 (`test-integration.sh`) and Layer 3 (`sync-and-build.sh`). Test isolation is achieved by clearing `@sparkleideas/*` packages at the start of each run, not by spinning up separate instances.
+
+#### Option 8: Put RQ in test-integration.sh
+
+**Rejected**. `test-integration.sh` is a pipeline mechanics test. It clones upstream from git, applies codemod and patches, publishes to Verdaccio, and installs. It does NOT build TypeScript -- packages have no `dist/` directory. Running RQ tests (which execute CLI commands, import ESM modules) against packages without `dist/` produces 82% structural failures that are expected and meaningless.
+
+This violates three Google testing principles:
+1. **A test must exercise its subject** -- RQ cannot exercise unbuilt packages
+2. **Tests produce signal, not noise** -- expected failures are noise
+3. **Separation of concerns** -- a test should not also be a build system
+
+RQ belongs in `sync-and-build.sh` where built artifacts exist.
+
+## More Information
+
+This ADR supersedes [ADR-0020: Testing Strategy](ADR-0020-testing-strategy.md) -- all decisions preserved, Release Qualification and formal framework added. It also relates to the following decisions, originally recorded as links:
+
 - [ADR-0009: systemd Timer](ADR-0009-systemd-timer-for-automated-builds.md) -- CI mechanism validated by Layer -1
 - [ADR-0010: Prerelease Publish Gate](ADR-0010-prerelease-publish-gate.md) -- Gate 2 controls promotion to @latest
 - [ADR-0012: Version Numbering](ADR-0012-version-numbering-scheme.md) -- `computeVersion()` tested at Layer 1
@@ -751,3 +765,5 @@ Steps 1-2 (shared library + acceptance refactor) are done. Steps 3-4 are the cod
 - [Google Testing Blog: Test Sizes](https://testing.googleblog.com/2010/12/test-sizes.html) -- Small/Medium/Large definitions
 - [Google SRE Book: Release Engineering](https://sre.google/sre-book/release-engineering/) -- staging/production verification model
 - [Companion: Testing Strategy Reference](../testing.strategy.fixed.google.md) -- operational commands, configuration, and templates
+
+This record originally used the SPARC + MADR methodology, with section headings (Specification / Pseudocode / Architecture / Refinement / Completion) remapped to the canonical MADR sections during the ADR-0271 migration, preserving all content. Original status: "Accepted (supersedes ADR-0020)".

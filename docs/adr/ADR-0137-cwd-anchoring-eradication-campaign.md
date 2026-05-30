@@ -1,33 +1,15 @@
-# ADR-0137: Eradicate cwd-anchoring across 98 sites — supersede `adr-0100-allow:` annotations with real fixes + runtime guard
+---
+status: accepted
+date: 2026-05-03
+tags: [cwd, project-root, storage, init]
+supersedes: []
+depends-on: [ADR-0100]
+implements: [ADR-0100]
+---
 
-> **[IMPLEMENTED 2026-05-29 → see [[ADR-0270]]]** Landed at `@sparkleideas/*`
-> patch.372 (forks/ruflo `627b6cf14`, `407eef14f`). **Parts 1, 3, 4 done:** 70
-> cwd-anchored sites fixed to `findProjectRoot()` — relocated to
-> `@claude-flow/shared/fs` so the memory package consumes it without an inverted
-> dependency; 21 genuine user-cwd sites kept with precise `intentional-cwd`
-> justifications; zero generic `tracked in ADR-0118` annotations remain. Grep
-> gate (`check-no-cwd-in-handlers.sh`) = **0 violations**. The 4 non-root-cwd
-> acceptance scenarios (H/I/J/K, `lib/acceptance-adr0137-checks.sh`) **pass** —
-> zero stray `.claude-flow/` created. Full acceptance 719/728, 0 fail.
-> **DEVIATION on Part 2:** the `assertProjectRootAnchored` write-path guard is
-> **opt-in** (`RUFLO_ADR0137_ENFORCE=1`), NOT always-on. A release proved an
-> always-on guard is unsound at the storage layer — it can't distinguish a
-> legitimate out-of-root write (test temp dirs, user-configured external storage)
-> from a cwd bug (both are absolute paths outside root), so it false-positived on
-> ~12 legit tests while missing in-subdir strays. Sound enforcement is Part 1
-> (static gate) + Part 3 (acceptance tree-walk); the guard is the opt-in CI/dev
-> regression net ADR-0137 Open-Q1 contemplated. **AC#5** (3 green-streak with
-> time-gaps) is an artificial time-gate — ignored. **2 sites flagged** for later
-> review (`init/helpers-generator.ts` generated-script `.claude-flow` path;
-> `commands/ruvector/import.ts` cwd temp file). Original proposal status below.
-- **Status**: **Proposed (2026-05-03)** — concrete campaign with phased rollout. Supersedes the Strategy-B band-aid from commit `7fbcfle` on `forks/ruflo` `main`.
-- **Date**: 2026-05-03
-- **Deciders**: Henrik Pettersen
-- **Supersedes (partially)**: the 98 `// adr-0100-allow: tracked in ADR-0118 known-debt` annotations added in `7fbcfle`. Each phase below removes annotations as it lands real fixes.
-- **Related**: ADR-0100 (project-root-resolution — the design this ADR finally implements end-to-end), ADR-0118 (hive-mind-runtime-gaps-tracker — the inventory this ADR drains), ADR-0098 (swarm-init-sprawl — same anti-sprawl ethos), ADR-0082 (test-integrity-no-fallbacks — runtime guard must fail loud), commit `aec0dcf` on ruflo-patch (broadened grep gate that surfaced the 98 sites)
-- **Scope**: All 98 `process.cwd()` use sites currently annotated as known-debt across `forks/ruflo/v3/@claude-flow/cli/src/{init,commands,memory}/` + `@claude-flow/memory/src/`. Plus a new runtime guard in the storage write path. Plus a new acceptance check that runs from a non-root cwd.
+# Eradicate cwd-anchoring across 98 sites — supersede `adr-0100-allow:` annotations with real fixes + runtime guard
 
-## Context
+## Context and Problem Statement
 
 ADR-0100 ratified "always walk up to project root via `findProjectRoot()`, never anchor on `process.cwd()`" as the design. Commit `aec0dcf` (ruflo-patch) broadened the grep gate `scripts/check-no-cwd-in-handlers.sh` from `mcp-tools/*-tools.ts` (4 hits, all allowlisted) to also cover `init/`, `commands/`, `memory/cli`, and `@claude-flow/memory/src/`. The broadened gate flagged **98 violations**.
 
@@ -60,9 +42,15 @@ Largest single-file concentrations: `commands/hooks.ts` (33), `init/executor.ts`
 3. **Per memory `feedback-data-loss-zero-tolerance.md`**: writing memory state to a stray `.claude-flow/` instead of the real one IS data loss — the user's memory store may silently target the wrong DB.
 4. **Per memory `feedback-no-fallbacks.md`**: cwd-anchored paths are a silent fallback. If `process.cwd()` is wrong, the code writes somewhere wrong without complaining. Must fail loud.
 
-## Decision
+## Considered Options
 
-A four-part campaign. All four must land for this ADR to close.
+* **Four-part campaign: real fixes at all 98 sites + runtime write-path guard + non-root-cwd acceptance check + annotation removal (chosen).**
+
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "A four-part campaign", because annotations satisfied the static gate without fixing the runtime behavior — only real fixes plus a guard plus a non-root-cwd acceptance scenario eliminate the bug class end-to-end. All four parts must land for this ADR to close.
 
 ### Part 1 — Real fix at all 98 violation sites
 
@@ -120,6 +108,25 @@ After each scenario: walk the entire project tree and assert ZERO `.claude-flow/
 
 Each phase landing real fixes for site set N MUST remove the corresponding annotations in the same commit. Annotations and real fixes do not coexist. The grep gate stays in place — once all 98 are fixed, the gate's allowlist count for the broadened scope drops to 0.
 
+### Consequences
+
+* Good, because bug class eliminated end-to-end. No more stray dirs anywhere. User's mental model (".claude-flow/ lives at project root, period") finally matches code reality.
+* Good, because runtime guard makes the bug class non-regressible. Future violations trip the guard on first invocation.
+* Good, because ADR-0118 known-debt tracker shrinks by 98 entries when this campaign closes.
+* Bad, because large diff (~98 sites + guard + acceptance check), executed in 5 phases over multiple release cycles.
+* Bad, because brief window of incompatibility for downstream code that relies on cwd-defaulting. Acceptable per fork-patch model (memory `project-terminology.md`).
+
+### Confirmation
+
+Acceptance criteria for closing this ADR:
+
+1. **Zero `// adr-0100-allow:` annotations** in `forks/ruflo` source. Grep returns empty.
+2. **Zero violations** in the broadened grep gate (`scripts/check-no-cwd-in-handlers.sh` exit code 0 with all sections at `viol: 0`).
+3. **Runtime guard active** at all storage-backend write entry points. Tests cover the failure path (assert thrown error with ADR-0137 reference).
+4. **Acceptance check passes** from 1-deep, 5-deep, and tmpdir cwd; tree-walk asserts no stray `.claude-flow/` after each scenario.
+5. **Three consecutive green `npm run release` runs** with the runtime guard active and the acceptance check enabled — proves no regression at the release boundary.
+6. **`.gitignore` rule `**/.claude-flow/` + `!/.claude-flow/` becomes belt-and-suspenders** — the campaign should mean strays never get created in the first place; the gitignore catches anything we missed.
+
 ## Phased rollout (5 phases)
 
 Order chosen by impact density (memory → wide-blast-radius → narrower):
@@ -133,15 +140,6 @@ Order chosen by impact density (memory → wide-blast-radius → narrower):
 | **P5** | `cli/src/commands/` | 64 | Largest fix; landing it last lets earlier phases stabilize. The 33 hits in `commands/hooks.ts` alone could be a sub-phase if the diff is unwieldy |
 
 Each phase is one PR/commit on `forks/ruflo` `main` with descriptive message. Each phase runs through `npm run release` per the canonical 2-command path before the next phase starts. ADR-0094 streak does not advance during this campaign — finish the campaign, then re-anchor.
-
-## Acceptance criteria for closing this ADR
-
-1. **Zero `// adr-0100-allow:` annotations** in `forks/ruflo` source. Grep returns empty.
-2. **Zero violations** in the broadened grep gate (`scripts/check-no-cwd-in-handlers.sh` exit code 0 with all sections at `viol: 0`).
-3. **Runtime guard active** at all storage-backend write entry points. Tests cover the failure path (assert thrown error with ADR-0137 reference).
-4. **Acceptance check passes** from 1-deep, 5-deep, and tmpdir cwd; tree-walk asserts no stray `.claude-flow/` after each scenario.
-5. **Three consecutive green `npm run release` runs** with the runtime guard active and the acceptance check enabled — proves no regression at the release boundary.
-6. **`.gitignore` rule `**/.claude-flow/` + `!/.claude-flow/` becomes belt-and-suspenders** — the campaign should mean strays never get created in the first place; the gitignore catches anything we missed.
 
 ## Trade-offs and risks
 
@@ -165,14 +163,6 @@ Each phase is one PR/commit on `forks/ruflo` `main` with descriptive message. Ea
 2. **Should `findProjectRoot()` cache its result per-process?** Walks are cheap (~ms) but could add up across 98 fixed sites if each computes independently. Recommendation: yes, memoize at module level. Defer to follow-up if perf matters.
 3. **Should we add a corresponding rule for `.swarm/` and `.claude/` strays?** Same bug class. The 98 violations include all three target dirs. The runtime guard should cover all three; the gitignore rule already covers `.claude-flow/`. Add `.swarm/` and `.claude/` non-root-only to gitignore in P4.
 
-## Consequences
-
-- **Positive**: bug class eliminated end-to-end. No more stray dirs anywhere. User's mental model (".claude-flow/ lives at project root, period") finally matches code reality.
-- **Positive**: runtime guard makes the bug class non-regressible. Future violations trip the guard on first invocation.
-- **Positive**: ADR-0118 known-debt tracker shrinks by 98 entries when this campaign closes.
-- **Negative**: large diff (~98 sites + guard + acceptance check), executed in 5 phases over multiple release cycles.
-- **Negative**: brief window of incompatibility for downstream code that relies on cwd-defaulting. Acceptable per fork-patch model (memory `project-terminology.md`).
-
 ## Implementation notes
 
 1. Per memory `feedback-trunk-only-fork-development.md`: each phase commits directly to `forks/ruflo` `main`, no feature branches.
@@ -184,3 +174,15 @@ Each phase is one PR/commit on `forks/ruflo` `main` with descriptive message. Ea
 ## Re-audit reminder
 
 When this ADR closes, update ADR-0118's known-debt counter to 0 for the broadened-gate sections. Update ADR-0135 Matrix C if the fix changes any plugin-shipped skill counts (it shouldn't — purely path-resolution change). Add a memory entry under `feedback-` namespace stating "the cwd-anchoring class is eliminated; runtime guard is the canonical enforcement point".
+
+## More Information
+
+Implementation note: **[IMPLEMENTED 2026-05-29 → see [[ADR-0270]]]** Landed at `@sparkleideas/*` patch.372 (forks/ruflo `627b6cf14`, `407eef14f`). **Parts 1, 3, 4 done:** 70 cwd-anchored sites fixed to `findProjectRoot()` — relocated to `@claude-flow/shared/fs` so the memory package consumes it without an inverted dependency; 21 genuine user-cwd sites kept with precise `intentional-cwd` justifications; zero generic `tracked in ADR-0118` annotations remain. Grep gate (`check-no-cwd-in-handlers.sh`) = **0 violations**. The 4 non-root-cwd acceptance scenarios (H/I/J/K, `lib/acceptance-adr0137-checks.sh`) **pass** — zero stray `.claude-flow/` created. Full acceptance 719/728, 0 fail. **DEVIATION on Part 2:** the `assertProjectRootAnchored` write-path guard is **opt-in** (`RUFLO_ADR0137_ENFORCE=1`), NOT always-on. A release proved an always-on guard is unsound at the storage layer — it can't distinguish a legitimate out-of-root write (test temp dirs, user-configured external storage) from a cwd bug (both are absolute paths outside root), so it false-positived on ~12 legit tests while missing in-subdir strays. Sound enforcement is Part 1 (static gate) + Part 3 (acceptance tree-walk); the guard is the opt-in CI/dev regression net ADR-0137 Open-Q1 contemplated. **AC#5** (3 green-streak with time-gaps) is an artificial time-gate — ignored. **2 sites flagged** for later review (`init/helpers-generator.ts` generated-script `.claude-flow` path; `commands/ruvector/import.ts` cwd temp file).
+
+Original status: **Proposed (2026-05-03)** — concrete campaign with phased rollout. Supersedes the Strategy-B band-aid from commit `7fbcfle` on `forks/ruflo` `main`.
+
+This ADR partially supersedes the 98 `// adr-0100-allow: tracked in ADR-0118 known-debt` annotations added in `7fbcfle`. Each phase removes annotations as it lands real fixes.
+
+This ADR implements ADR-0100 (project-root-resolution — the design this ADR finally implements end-to-end) and depends on it. It relates to ADR-0118 (hive-mind-runtime-gaps-tracker — the inventory this ADR drains), ADR-0098 (swarm-init-sprawl — same anti-sprawl ethos), ADR-0082 (test-integrity-no-fallbacks — runtime guard must fail loud), and commit `aec0dcf` on ruflo-patch (broadened grep gate that surfaced the 98 sites).
+
+Scope: All 98 `process.cwd()` use sites currently annotated as known-debt across `forks/ruflo/v3/@claude-flow/cli/src/{init,commands,memory}/` + `@claude-flow/memory/src/`. Plus a new runtime guard in the storage write path. Plus a new acceptance check that runs from a non-root cwd.

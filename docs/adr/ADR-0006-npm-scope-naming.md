@@ -1,10 +1,15 @@
-# ADR-0006: @sparkleideas as npm Scope
+---
+status: accepted
+date: 2026-03-05
+tags: [npm, naming, codemod]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-## Status
+# @sparkleideas as npm Scope
 
-Implemented
-
-## Context
+## Context and Problem Statement
 
 ### Specification (SPARC-S)
 
@@ -39,7 +44,17 @@ NOT RENAMED:
   @ruvector/*           -> @ruvector/* (use published)
 ```
 
-## Decision
+## Considered Options
+
+* **Use `@sparkleideas` as the npm scope for all rebuilt packages (chosen).**
+* **`@ruflo`** -- Rejected. `ruflo` is a wrapper around `claude-flow`, not the core ecosystem. Naming the scope after the wrapper creates a mismatch: `@ruflo/memory` implies "ruflo's memory" when it is actually "claude-flow's memory, patched." The scope should reflect the core package naming.
+* **`@ruflo`** -- Rejected. Too close to the upstream `ruflo` package name. Creates confusion about whether `@ruflo/cli` is an official upstream package or our fork.
+* **Unscoped packages** (e.g., `claude-flow-patch-memory`) -- Rejected. Clutters the global npm namespace with 20+ unscoped packages. Scoped packages are the standard practice for related package sets. Unscoped names are longer and harder to read.
+* **`@claude-flow-fixed`** -- Rejected. "Fixed" implies the upstream is broken, which is inaccurate -- the code works, it is just not published. "Patch" is more precise: we are applying patches and publishing current code.
+
+## Decision Outcome
+
+Chosen option: "Use `@sparkleideas` as the npm scope for all rebuilt packages", because the scope makes the fork relationship immediately obvious and reduces to a straightforward codemod string replacement.
 
 ### Architecture (SPARC-A)
 
@@ -66,31 +81,16 @@ Use `@sparkleideas` as the npm scope for all rebuilt packages. The scope mirrors
 | `ruvector` | Relatively current (see ADR-0008) |
 | `@ruvector/*` | Same -- no rebuild needed |
 
-### Considered Alternatives
+### Consequences
 
-1. **`@ruflo`** -- Rejected. `ruflo` is a wrapper around `claude-flow`, not the core ecosystem. Naming the scope after the wrapper creates a mismatch: `@ruflo/memory` implies "ruflo's memory" when it is actually "claude-flow's memory, patched." The scope should reflect the core package naming.
-
-2. **`@ruflo`** -- Rejected. Too close to the upstream `ruflo` package name. Creates confusion about whether `@ruflo/cli` is an official upstream package or our fork.
-
-3. **Unscoped packages** (e.g., `claude-flow-patch-memory`) -- Rejected. Clutters the global npm namespace with 20+ unscoped packages. Scoped packages are the standard practice for related package sets. Unscoped names are longer and harder to read.
-
-4. **`@claude-flow-fixed`** -- Rejected. "Fixed" implies the upstream is broken, which is inaccurate -- the code works, it is just not published. "Patch" is more precise: we are applying patches and publishing current code.
-
-## Consequences
-
-### Refinement (SPARC-R)
-
-**Positive:**
-
-- Immediately recognizable relationship: seeing `@sparkleideas/memory` tells you it is a patched version of `@claude-flow/memory`
-- The codemod is a straightforward string replacement: `@claude-flow/` becomes `@sparkleideas/`
-- Users never type the scoped names directly -- they use `ruflo` which depends on `@sparkleideas/*` internally
-- npm scope registration is a one-time operation
-
-**Negative:**
-
-- The scope name is long (20 characters). Internal dependency declarations are verbose. This is cosmetic -- users do not interact with these names.
-- If upstream ever transfers the `@claude-flow` scope to us, the `-patch` suffix becomes misleading. This is a desirable problem to have.
+* Good, because immediately recognizable relationship: seeing `@sparkleideas/memory` tells you it is a patched version of `@claude-flow/memory`.
+* Good, because the codemod is a straightforward string replacement: `@claude-flow/` becomes `@sparkleideas/`.
+* Good, because users never type the scoped names directly -- they use `ruflo` which depends on `@sparkleideas/*` internally.
+* Good, because npm scope registration is a one-time operation.
+* Bad, because the scope name is long (20 characters). Internal dependency declarations are verbose. This is cosmetic -- users do not interact with these names.
+* Bad, because if upstream ever transfers the `@claude-flow` scope to us, the `-patch` suffix becomes misleading. This is a desirable problem to have.
+* Neutral, because npm scopes are free to register for public packages.
+* Neutral, because the scope can be registered under a personal npm account or an npm organization.
 
 **Trade-offs and edge cases:**
 
@@ -98,12 +98,9 @@ Use `@sparkleideas` as the npm scope for all rebuilt packages. The scope mirrors
 - The top-level `ruflo` stays unscoped because it is the user-facing CLI entry point. Users type `npx ruflo`, not `npx @sparkleideas/ruflo`.
 - `claude-flow` (unscoped upstream) becomes `@sparkleideas/claude-flow` (scoped). The codemod must handle this asymmetric mapping.
 
-**Neutral:**
+### Confirmation
 
-- npm scopes are free to register for public packages
-- The scope can be registered under a personal npm account or an npm organization
-
-### Completion (SPARC-C)
+Completion (SPARC-C):
 
 - [ ] npm scope `@sparkleideas` registered on npmjs.com
 - [ ] Codemod handles all mappings in the table above, including the asymmetric `claude-flow` -> `@sparkleideas/claude-flow` case

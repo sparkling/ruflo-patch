@@ -1,28 +1,31 @@
-# ADR-0047: Quantization, Federated Learning & Index Health
+---
+status: accepted
+date: 2026-03-16
+tags: [quantization, federated-learning, index-health, controllers]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-## Status
+# Quantization, Federated Learning & Index Health
 
-Accepted
-
-## Date
-
-2026-03-16
-
-## Deciders
-
-sparkling team
-
-## Methodology
-
-SPARC + MADR
-
-## Context
+## Context and Problem Statement
 
 ADR-0039 Phases 12-14 identified three controllers that address memory scalability (4-32x compression), cross-session knowledge sharing (federated learning), and index health monitoring. Currently, 768-dim Float32 embeddings use 3KB each (100K memories = 300MB). Sessions are isolated with no knowledge transfer. Index degradation is invisible until users notice slow searches.
 
-## Decision: Specification (SPARC-S)
+## Considered Options
 
-### Controllers
+* Wire B9 QuantizedVectorStore (Level 2, composite), A11 FederatedLearningManager (Level 4), and B3 IndexHealthMonitor (Level 4) (chosen).
+
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "Wire B9 QuantizedVectorStore, A11 FederatedLearningManager, and B3 IndexHealthMonitor", because together they address memory scalability (4-32x compression so agents run indefinitely instead of OOM), cross-session knowledge transfer (federated learning that also unblocks FederatedSession), and proactive index-health monitoring before users notice degradation.
+
+### Specification (SPARC-S)
+
+#### Controllers
 
 | ID | Class | Lines | Level | Type | Description |
 |----|-------|:-----:|:-----:|------|-------------|
@@ -30,7 +33,7 @@ ADR-0039 Phases 12-14 identified three controllers that address memory scalabili
 | A11 | FederatedLearningManager | 436 | 4 | Leaf | 3 components: EphemeralLearningAgent, FederatedLearningCoordinator, Manager. Pure JS path works. Quality-weighted embedding consolidation. Byzantine tolerance via 2-sigma outlier filtering + reputation-weighted trimmed mean. 95% functional without native SONA. |
 | B3 | IndexHealthMonitor | 96 | 4 | Leaf | Passive latency recording, multi-factor assessment, HNSW parameter recommendations. 35 upstream tests. |
 
-### B9 Sub-Components (auto-created, NOT wired separately)
+#### B9 Sub-Components (auto-created, NOT wired separately)
 
 | Sub-component | ID | Compression | Quality Loss | Use When |
 |--------------|-----|:-----------:|:------------:|----------|
@@ -39,20 +42,20 @@ ADR-0039 Phases 12-14 identified three controllers that address memory scalabili
 
 B7 has 28 upstream tests. B8 uses K-means per subspace with ADC distance tables.
 
-### B9 Factory Functions
+#### B9 Factory Functions
 
 - `createScalar8BitStore()` -- 4x compression, <1% recall loss
 - `createScalar4BitStore()` -- 8x compression, ~3-5% recall loss
 - `createProductQuantizedStore()` -- 8-32x compression, K-means per subspace
 
-### A11 Byzantine Tolerance
+#### A11 Byzantine Tolerance
 
 - 2-sigma outlier filtering: reject updates >2 standard deviations from mean
 - Reputation-weighted trimmed mean: trusted agents' updates weighted higher
 - 95% functional without native SONA -- pure JS quality-weighted path works
 - This is the path to unblocking FederatedSession (P4-E)
 
-## Decision: Pseudocode (SPARC-P)
+### Pseudocode (SPARC-P)
 
 ```
 // controller-registry.ts -- B9 at Level 2 (alongside vectorBackend)
@@ -85,7 +88,7 @@ case 'indexHealth':
   return new IndexHealthMonitor({ sampleInterval: 60000 })
 ```
 
-## Decision: Architecture (SPARC-A)
+### Architecture (SPARC-A)
 
 - B9 at Level 2 alongside vectorBackend. Auto-creates B7 or B8 based on config -- B7/B8 NOT wired separately.
 - A11 at Level 4 (depends on A6 from Phase 11 for full SONA integration, but 95% works without).
@@ -94,16 +97,16 @@ case 'indexHealth':
 - A11 provides the API that FederatedSessionManager needs -- path to unblocking FederatedSession.
 - B3 emits events for alerting and returns HNSW parameter recommendations.
 
-## Decision: Refinement (SPARC-R)
+### Refinement (SPARC-R)
 
 - B9 config at construction time locks the quantization method. Cannot switch scalar to product without recreating the store.
 - A11 Byzantine tolerance is sufficient for untrusted multi-agent environments. 2-sigma filtering with reputation weighting prevents poisoning attacks.
 - B3 at 96 lines is the smallest controller in the integration plan. 35 upstream tests confirm correctness. Passive recording means zero overhead during normal operation.
 - Phase 12 (A11): 4h. Phase 13 (B9): 6h. Phase 14 (B3): 3h. All depend on Phase 11.
 
-## Decision: Completion (SPARC-C)
+### Completion (SPARC-C)
 
-### Checklist
+#### Checklist
 
 - [x] Wire B9 QuantizedVectorStore at Level 2 (~500 lines)
 - [x] Wire A11 FederatedLearningManager at Level 4 (~436 lines)
@@ -113,7 +116,21 @@ case 'indexHealth':
 - [x] Add bridge functions for health assessment queries
 - [x] Register MCP tools for B9 (quantize-status) and B3 (health-report)
 
-### Testing
+### Consequences
+
+* Good, because 4-32x memory reduction allows agents to run indefinitely instead of OOM after 3 days.
+* Good, because federated learning enables cross-session knowledge transfer (agents learn from each other).
+* Good, because A11 unblocks FederatedSession (P4-E) -- provides the API FederatedSessionManager needs.
+* Good, because passive index health monitoring catches degradation before users notice.
+* Good, because B9 is a single registry entry delivering the full quantization stack (scalar + product).
+* Bad, because B9 config locks the quantization method at construction -- cannot switch without recreating.
+* Bad, because A11 adds complexity to session lifecycle management.
+* Bad, because B3 recommendations are advisory only -- no auto-apply without operator confirmation.
+* Neutral, because there are risks: product quantization K-means training requires representative sample data (cold-start problem); A11 reputation weighting needs seed data for new agents (default reputation = 1.0); and B3 at 96 lines has limited assessment capability -- may need extension for edge cases.
+
+### Confirmation
+
+#### Testing
 
 ```js
 // tests/unit/quantization-federated-health.test.mjs
@@ -164,7 +181,7 @@ describe('ADR-0047: quantization, federated learning & index health', () => {
 });
 ```
 
-### Testing Guidance
+#### Testing Guidance
 
 **Unit test file**: `tests/unit/adr-0047-quantization-federated-health.test.mjs`
 
@@ -203,7 +220,7 @@ describe('ADR-0047: quantization, federated learning & index health', () => {
 - `selectBackend` threshold logic in bridge: `npm run deploy` (full acceptance)
 - Acceptance check changes only: `npm run deploy`
 
-### Success Criteria
+#### Success Criteria
 
 - 8-bit quantization memory usage <25% of Float32 baseline
 - B9 insert + search round-trip produces recall >99% (8-bit) or >95% (4-bit)
@@ -211,31 +228,8 @@ describe('ADR-0047: quantization, federated learning & index health', () => {
 - A11 Byzantine filtering rejects outliers beyond 2-sigma
 - B3 health assessment returns actionable HNSW parameter recommendations
 
-## Consequences
+## More Information
 
-### Positive
+This decision was recorded by the sparkling team using the SPARC + MADR methodology.
 
-- 4-32x memory reduction allows agents to run indefinitely instead of OOM after 3 days
-- Federated learning enables cross-session knowledge transfer (agents learn from each other)
-- A11 unblocks FederatedSession (P4-E) -- provides the API FederatedSessionManager needs
-- Passive index health monitoring catches degradation before users notice
-- B9 is a single registry entry delivering full quantization stack (scalar + product)
-
-### Negative
-
-- B9 config locks quantization method at construction -- cannot switch without recreating
-- A11 adds complexity to session lifecycle management
-- B3 recommendations are advisory only -- no auto-apply without operator confirmation
-
-### Risks
-
-- Product quantization K-means training requires representative sample data (cold-start problem)
-- A11 reputation weighting needs seed data for new agents (default reputation = 1.0)
-- B3 at 96 lines has limited assessment capability -- may need extension for edge cases
-
-## Related
-
-- **ADR-0039**: Upstream controller integration roadmap (parent, Phases 12-14)
-- **ADR-0046**: Self-learning pipeline & native acceleration (Phase 11 prerequisite)
-- **ADR-005** (upstream): Self-Learning Pipeline Integration (B2, B3 Phase 2)
-- **ADR-059/060** (upstream): FederatedSession (#1222) -- A11 unblocks this
+The original record cross-referenced related decisions: ADR-0039 (upstream controller integration roadmap, the parent, covering Phases 12-14); ADR-0046 (self-learning pipeline & native acceleration, the Phase 11 prerequisite); upstream ADR-005 (Self-Learning Pipeline Integration, B2, B3 Phase 2); and upstream ADR-059/060 (FederatedSession, #1222), which A11 unblocks.

@@ -1,12 +1,15 @@
-# ADR-0152: 3-way skill drift — reality / USERGUIDE / guidance MCP audit (119 skills surveyed)
+---
+status: proposed
+date: 2026-05-06
+tags: [skills, audit, drift, guidance]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: Proposed
-- **Date**: 2026-05-06
-- **Deciders**: Henrik Pettersen
-- **Related**: ADR-0148 (skill ↔ MCP tool surface audit), ADR-0149 (guidance MCP coverage gaps — quantified by this ADR), ADR-0151 (per-skill orphan-command decision matrix), ADR-0136 (claudemd-generator plugin/skill discovery)
-- **Scope**: Three-way comparison of every skill across (1) on-disk reality, (2) USERGUIDE.md advertisement, (3) live `guidance_*` MCP tool index. Identifies which skills the AI can actually discover via standard channels.
+# 3-way skill drift — reality / USERGUIDE / guidance MCP audit (119 skills surveyed)
 
-## Context
+## Context and Problem Statement
 
 The AI's discovery surface for ruflo skills runs through three layers:
 
@@ -189,7 +192,15 @@ ADR-0149 already proposes the Phase 3 autodiscovery fix. This ADR could just be 
 
 (empty — pending decision to proceed)
 
-## References
+## More Information
+
+Original status: Proposed.
+
+This ADR relates to ADR-0148 (skill ↔ MCP tool surface audit — Categories A/B/C/D), ADR-0149 (guidance MCP coverage gaps — quantified by this ADR; this ADR's Prong 2/3 root), ADR-0151 (per-skill orphan-command decision matrix — overlaps the TRIPLE_DRIFT class), and ADR-0136 (claudemd-generator plugin/skill discovery).
+
+Scope: Three-way comparison of every skill across (1) on-disk reality, (2) USERGUIDE.md advertisement, (3) live `guidance_*` MCP tool index. Identifies which skills the AI can actually discover via standard channels.
+
+References:
 
 - ADR-0148 (skill ↔ MCP tool surface audit — Categories A/B/C/D)
 - ADR-0149 (guidance MCP coverage gaps — this ADR's Prong 2/3 root)

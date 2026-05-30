@@ -1,9 +1,17 @@
-# ADR-0118 Execution Plan — Hive-mind runtime gaps T1-T11
+---
+status: accepted
+date: 2026-05-02
+tags: [hive-mind, execution-plan, swarm]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: Living plan (per ADR-0094 pattern)
-- **Date**: 2026-05-02
-- **Purpose**: Wave-based execution plan for implementing 11 task ADRs (T1-T11) using parallel agent swarms (up to 15 agents)
-- **Companion to**: ADR-0118 (parent tracker), ADR-0118b-review-notes-triage.md (resolved decisions)
+# Execution Plan — Hive-mind runtime gaps T1-T11
+
+## Context and Problem Statement
+
+This is a living, wave-based execution plan (per the ADR-0094 pattern) for implementing 11 task ADRs (T1-T11) using parallel agent swarms (up to 15 agents). It is the companion to ADR-0118 (parent tracker) and ADR-0118b-review-notes-triage.md (resolved decisions). It records how the T-series implementation work is sequenced into waves, which files each task touches, and the inter-wave gates.
 
 ## Constraints
 
@@ -168,8 +176,11 @@ Before launching Wave 1:
 - [ ] Henrik acks ESCALATION RULE for T9 (Wave 3) — if thresholds degenerate, spawn design ADR
 - [ ] Optional: spawn read-only orientation agent that re-reads each ADR's §Specification + §Architecture and reports any updated line refs the ADR may carry post-edit
 
-## References
+## More Information
 
+Original status: Living plan (per ADR-0094 pattern). Purpose: Wave-based execution plan for implementing 11 task ADRs (T1-T11) using parallel agent swarms (up to 15 agents). Companion to ADR-0118 (parent tracker) and ADR-0118b-review-notes-triage.md (resolved decisions).
+
+References:
 - ADR-0118 (parent tracker)
 - ADR-0118b-review-notes-triage.md (resolved Henrik decisions H1-H6)
 - ADR-0119 through ADR-0128, ADR-0130, ADR-0131 (per-task ADRs)

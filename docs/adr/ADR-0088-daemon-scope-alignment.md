@@ -1,36 +1,15 @@
-# ADR-0088: Daemon Scope Alignment — Scheduler Only, Never Hot Path
+---
+status: accepted
+date: 2026-04-15
+tags: [daemon, scheduler, ipc, scope]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: Implemented (2026-04-15) — **Amended 2026-04-20** (capability gate removed, see §Amendment 2026-04-20)
-- **Date**: 2026-04-15
-- **Implementation commits**:
-  - fork: `c3ad3ebc9` (daemon scope alignment), `f182ab90d` (comment fix), **PENDING (2026-04-20)** (capability gate removal)
-  - patch: `62d4f22` (ADR + tests + acceptance), `1c790d4` (stale Phase 4 check removal), `99a6418` (status → Implemented), `3ecc509` (flake root-cause fixes), `6e0379a` + `bbf78f8` (bash arithmetic bugs uncovered while debugging)
-- **Scope**: Fork (`@claude-flow/cli`), Patch repo (`ruflo-patch` acceptance tests)
-- **Related**: upstream ADR-014, ADR-019, ADR-020, ADR-050; our ADR-0082, ADR-0086
+# Daemon Scope Alignment — Scheduler Only, Never Hot Path
 
-## Amendment 2026-04-20 — Capability gate removed
-
-The original decision (§Decision item 8) made the SessionStart `daemon start` hook **conditional** on `which claude` succeeding at init time. Observation that forced the amendment:
-
-- **The probe runs at init time, not at hook-invocation time.** Users who install Claude Code *after* `cli init --full` never get the daemon wired, even when it would now work. Re-running init is required to re-probe — an invisible trap.
-- **The hook is already fail-safe.** The wired command is `npx @claude-flow/cli@latest daemon start --quiet 2>/dev/null || true` — it silently no-ops when the daemon cannot start (claude absent, already running, socket collision). Always wiring it is strictly cheaper than probing + remembering the result.
-- **Two workers are always useful.** `consolidate` and `preload` (explicitly listed in §Preserve) run regardless of whether `claude` is on PATH. A degraded-mode daemon still delivers their value; it is not "worse than not starting."
-- **Test harness reality.** The bash acceptance runner never fires `SessionStart`, so the capability gate's observable side effect is purely "does settings.json contain a daemon-start hook entry" — the probe controls a *string in a JSON file*, not actual daemon behavior.
-
-Changes landing in fork commit (pending):
-
-- Delete `claudeCliAvailable()` helper from `v3/@claude-flow/cli/src/init/settings-generator.ts` (~24 lines including docblock)
-- Delete unused `import { execSync } from 'node:child_process'`
-- Remove the `if (claudeCliAvailable()) { ... }` gate around the daemon-start hook push; push unconditionally
-- Update §Decision item 8 below: "wire unconditionally; the `|| true` trailer is the honest capability gate at runtime"
-
-Acceptance check `check_adr0088_conditional_init` (originally asserted "no claude → no daemon-start entry") is **retired** — its premise no longer holds. `check_adr0088_conditional_init_with_claude` (positive case) becomes the unconditional check: **init always wires the daemon-start hook**. Paired unit test `adr0088-init-conditional-wiring.test.mjs` is updated to assert unconditional wiring.
-
-Preserves the rest of ADR-0088: daemon is still scheduler-only, still not in hot path, still not a memory/MCP RPC server. Only the init-time capability gate is reverted.
-
-- **Related**: upstream ADR-014, ADR-019, ADR-020, ADR-050; our ADR-0082, ADR-0086
-
-## Context
+## Context and Problem Statement
 
 ### Upstream's stated design (ADR-014, extended 2026-01-05 through 2026-01-07)
 
@@ -82,7 +61,33 @@ Verified from code across both the fork and patch repos:
 
 ADR-014's 2026-01-07 extension added the IPC server intending the daemon to be the single writer for memory ops (ADR-059 Phase 4 framed this same way). ADR-050, written later, **rejected exactly this architecture**. The IPC server shipped anyway; the rejection did not propagate. Nobody wired a caller. The result: ~140 LOC of dead code, misleading status output, and an unresolved architectural question.
 
-## Decision
+## Considered Options
+
+### Option A: Delete the daemon entirely
+
+Remove `daemon` command + worker scheduler + `HeadlessWorkerExecutor` + PID/state/socket files. Move `consolidate` to a session-end hook. Delete ADR-014/019/020 from upstream's design (would require upstream PR and ADR supersedure).
+
+**Rejected**: Breaks `--headless` mode, breaks RVF appliance mode (ADR-058), deletes 1387 LOC of upstream work we have no right to discard unilaterally. ADR-014 and ADR-019 are still in force upstream.
+
+### Option B: Wire the IPC server (Strategist proposal from 2026-04-15 hive)
+
+Wire `memory-router.ts` to try `DaemonIPCClient.store/search` when the socket is up. Add `mcp.exec` IPC method. Move hook fan-out into daemon. Estimated 500-700 LOC.
+
+**Rejected**: Directly contradicts ADR-050. The strategist proposed this under the assumption the daemon SHOULD be in the hot path; ADR-050 (which predates the proposal and the strategist did not consider) already decided the opposite. Any such expansion would require a new ADR that supersedes ADR-050, with data showing the file-based path has become the bottleneck. That data does not exist today.
+
+### Option C: Status quo — keep dead code, don't wire auto-start
+
+Leave `DaemonIPCClient`, the probe, the misleading status lines. Don't wire SessionStart. Don't detect capability.
+
+**Rejected**: 95 LOC of dead code with misleading status lines is not neutral. Every future maintainer will waste time understanding why `DaemonIPCClient` exists with no callers. The misleading `"IPC Active"` print causes user confusion (verified — previous session's perf analyst was initially led to investigate daemon-IPC as a memory optimization path because of it).
+
+### Option D (chosen): Scoped scheduler + capability-gated auto-start + dead code removal
+
+~120 net LOC across 3 packages. No new architecture. Restores upstream's own stated design. Aligns with both ADR-014 (daemon exists as scheduler) and ADR-050 (no daemon in hot path).
+
+## Decision Outcome
+
+Chosen option: "Option D — scoped scheduler + capability-gated auto-start + dead code removal", because it restores upstream's own stated design (ADR-014 daemon-as-scheduler + ADR-050 no-daemon-in-hot-path) without inventing new architecture, while removing ~140 LOC of dead code and misleading status output.
 
 The daemon is scoped to: **a cross-platform timer scheduler for background monitoring workers. Runs real AI analysis in headless mode when `claude` CLI is on PATH; runs in degraded local mode otherwise. Not part of any CLI hot path.**
 
@@ -111,6 +116,7 @@ It is explicitly **not**:
 8. Conditional SessionStart auto-start wiring in `init/settings-generator.ts`:
    - If `claude` detected during init: wire the SessionStart hook per ADR-014's original intent
    - If not: do not wire it — starting a degraded-mode daemon is worse than not starting one
+   (Amended 2026-04-20: wire unconditionally; the `|| true` trailer is the honest capability gate at runtime — see the Amendment 2026-04-20 section.)
 9. Replace `"IPC Socket: LISTENING"` in `daemon status` with `"AI Mode: headless"` or `"AI Mode: local"` based on current capability
 
 **Preserve (no changes):**
@@ -121,51 +127,51 @@ It is explicitly **not**:
 - PID file, state file, socket file, timer scheduling, resource gating
 - `runtime/headless.ts` and the CI/appliance paths that depend on the daemon
 
-## Consequences
+### Consequences
 
-### Positive
+**Positive:**
 
-- Restores ADR-050 compliance — the memory/hooks hot path is in-process only, no silent daemon fallback
-- Restores ADR-014's original intent — SessionStart auto-start wires when capability exists
-- Honest UX — `daemon status` tells users exactly what mode they're in; no more "Active" without an active client
-- Removes ~140 LOC of dead code across 3 files
-- Zero impact on headless-AI users — ADR-019/020 paths unchanged
-- No new architecture to explain — we are *restoring* upstream's own decisions, not inventing alternatives
+* Good, because it restores ADR-050 compliance — the memory/hooks hot path is in-process only, no silent daemon fallback.
+* Good, because it restores ADR-014's original intent — SessionStart auto-start wires when capability exists.
+* Good, because of honest UX — `daemon status` tells users exactly what mode they're in; no more "Active" without an active client.
+* Good, because it removes ~140 LOC of dead code across 3 files.
+* Good, because there is zero impact on headless-AI users — ADR-019/020 paths unchanged.
+* Good, because there is no new architecture to explain — we are *restoring* upstream's own decisions, not inventing alternatives.
 
-### Negative
+**Negative:**
 
-- Users without `claude` CLI on PATH get no auto-start — defensible because the daemon cannot do anything useful for them anyway
-- ADR-059 Phase 4 "single writer via IPC" is formally abandoned — it was never shipped in production, but the architecture document implied it would be
-- Requires touching `auto-memory-hook.mjs` in both fork and patch repo copies (keep in sync)
+* Bad, because users without `claude` CLI on PATH get no auto-start — defensible because the daemon cannot do anything useful for them anyway. (Amended 2026-04-20 — now wired unconditionally.)
+* Bad, because ADR-059 Phase 4 "single writer via IPC" is formally abandoned — it was never shipped in production, but the architecture document implied it would be.
+* Bad, because it requires touching `auto-memory-hook.mjs` in both fork and patch repo copies (keep in sync).
 
-### Trade-offs
+**Trade-offs:**
 
-- We could delete the daemon entirely. Rejected: breaks 1387 LOC of upstream headless-AI investment and the `runtime/headless.ts` CI path.
-- We could expand the daemon to host memory ops. Rejected: directly contradicts ADR-050, no version negotiation, silent fallback violates ADR-0082, zero adoption of the existing IPC surface.
+* Neutral, because we could delete the daemon entirely. Rejected: breaks 1387 LOC of upstream headless-AI investment and the `runtime/headless.ts` CI path.
+* Neutral, because we could expand the daemon to host memory ops. Rejected: directly contradicts ADR-050, no version negotiation, silent fallback violates ADR-0082, zero adoption of the existing IPC surface.
 
-## Alternatives Considered
+### Confirmation
 
-### Option A: Delete the daemon entirely
+Implemented 2026-04-15. Unit tests: 2615 pass, 0 fail (`adr0088-dead-code-removal.test.mjs` 17 tests, `adr0088-capability-detection.test.mjs` 15 tests, `adr0088-init-conditional-wiring.test.mjs` 14 tests, plus updated `adr0084-router-phase3.test.mjs`). Acceptance tests: 242/242 pass (verified across 4 runs after flake fixes); all 5 ADR-0088 acceptance checks pass consistently. See the Implementation Results, Acceptance Criteria, and Files Affected sections below for the full verification record.
 
-Remove `daemon` command + worker scheduler + `HeadlessWorkerExecutor` + PID/state/socket files. Move `consolidate` to a session-end hook. Delete ADR-014/019/020 from upstream's design (would require upstream PR and ADR supersedure).
+## Amendment 2026-04-20 — Capability gate removed
 
-**Rejected**: Breaks `--headless` mode, breaks RVF appliance mode (ADR-058), deletes 1387 LOC of upstream work we have no right to discard unilaterally. ADR-014 and ADR-019 are still in force upstream.
+The original decision (§Decision item 8) made the SessionStart `daemon start` hook **conditional** on `which claude` succeeding at init time. Observation that forced the amendment:
 
-### Option B: Wire the IPC server (Strategist proposal from 2026-04-15 hive)
+- **The probe runs at init time, not at hook-invocation time.** Users who install Claude Code *after* `cli init --full` never get the daemon wired, even when it would now work. Re-running init is required to re-probe — an invisible trap.
+- **The hook is already fail-safe.** The wired command is `npx @claude-flow/cli@latest daemon start --quiet 2>/dev/null || true` — it silently no-ops when the daemon cannot start (claude absent, already running, socket collision). Always wiring it is strictly cheaper than probing + remembering the result.
+- **Two workers are always useful.** `consolidate` and `preload` (explicitly listed in §Preserve) run regardless of whether `claude` is on PATH. A degraded-mode daemon still delivers their value; it is not "worse than not starting."
+- **Test harness reality.** The bash acceptance runner never fires `SessionStart`, so the capability gate's observable side effect is purely "does settings.json contain a daemon-start hook entry" — the probe controls a *string in a JSON file*, not actual daemon behavior.
 
-Wire `memory-router.ts` to try `DaemonIPCClient.store/search` when the socket is up. Add `mcp.exec` IPC method. Move hook fan-out into daemon. Estimated 500-700 LOC.
+Changes landing in fork commit (pending):
 
-**Rejected**: Directly contradicts ADR-050. The strategist proposed this under the assumption the daemon SHOULD be in the hot path; ADR-050 (which predates the proposal and the strategist did not consider) already decided the opposite. Any such expansion would require a new ADR that supersedes ADR-050, with data showing the file-based path has become the bottleneck. That data does not exist today.
+- Delete `claudeCliAvailable()` helper from `v3/@claude-flow/cli/src/init/settings-generator.ts` (~24 lines including docblock)
+- Delete unused `import { execSync } from 'node:child_process'`
+- Remove the `if (claudeCliAvailable()) { ... }` gate around the daemon-start hook push; push unconditionally
+- Update §Decision item 8 below: "wire unconditionally; the `|| true` trailer is the honest capability gate at runtime"
 
-### Option C: Status quo — keep dead code, don't wire auto-start
+Acceptance check `check_adr0088_conditional_init` (originally asserted "no claude → no daemon-start entry") is **retired** — its premise no longer holds. `check_adr0088_conditional_init_with_claude` (positive case) becomes the unconditional check: **init always wires the daemon-start hook**. Paired unit test `adr0088-init-conditional-wiring.test.mjs` is updated to assert unconditional wiring.
 
-Leave `DaemonIPCClient`, the probe, the misleading status lines. Don't wire SessionStart. Don't detect capability.
-
-**Rejected**: 95 LOC of dead code with misleading status lines is not neutral. Every future maintainer will waste time understanding why `DaemonIPCClient` exists with no callers. The misleading `"IPC Active"` print causes user confusion (verified — previous session's perf analyst was initially led to investigate daemon-IPC as a memory optimization path because of it).
-
-### Option D (chosen): Scoped scheduler + capability-gated auto-start + dead code removal
-
-~120 net LOC across 3 packages. No new architecture. Restores upstream's own stated design. Aligns with both ADR-014 (daemon exists as scheduler) and ADR-050 (no daemon in hot path).
+Preserves the rest of ADR-0088: daemon is still scheduler-only, still not in hot path, still not a memory/MCP RPC server. Only the init-time capability gate is reverted.
 
 ## Implementation Results (2026-04-15)
 
@@ -281,8 +287,11 @@ Wire both check files via `run_check_bg` + `collect_parallel` per ADR-0079 Tier 
 - `lib/acceptance-adr0088-checks.sh` — 5 check functions
 - `scripts/test-acceptance.sh` — source and wire the new acceptance check file
 
-## References
+## More Information
 
+Original status: "Implemented (2026-04-15) — **Amended 2026-04-20** (capability gate removed, see §Amendment 2026-04-20)", recorded Date 2026-04-15. Implementation commits — fork: `c3ad3ebc9` (daemon scope alignment), `f182ab90d` (comment fix), PENDING (2026-04-20) (capability gate removal); patch: `62d4f22` (ADR + tests + acceptance), `1c790d4` (stale Phase 4 check removal), `99a6418` (status → Implemented), `3ecc509` (flake root-cause fixes), `6e0379a` + `bbf78f8` (bash arithmetic bugs uncovered while debugging). Scope: Fork (`@claude-flow/cli`), Patch repo (`ruflo-patch` acceptance tests). Related decisions: upstream ADR-014, ADR-019, ADR-020, ADR-050; our ADR-0082, ADR-0086.
+
+References:
 - upstream: `v3/implementation/adrs/ADR-014-workers-system.md`
 - upstream: `v3/implementation/adrs/ADR-019-headless-runtime-package.md`
 - upstream: `v3/implementation/adrs/ADR-020-headless-worker-integration.md`

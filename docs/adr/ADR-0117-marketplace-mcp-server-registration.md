@@ -1,10 +1,98 @@
-# ADR-0117: Marketplace plugin MCP server registration (`ruflo` key, fork CLI)
+---
+status: accepted
+date: 2026-05-02
+tags: [mcp, plugin, marketplace, init]
+supersedes: []
+depends-on: [ADR-0113, ADR-0116]
+implements: []
+---
 
-- **Status**: ⚠ **Revising 2026-05-03** — Phases 1-4 of original Decision shipped in code (dual-namespace via umbrella `plugin.json` `mcpServers`); now unwinding to the **service-method** approach (init-time registration via `mcp-generator.ts`). See §Revision 2026-05-03.
-- **Date**: 2026-05-02 (initial), 2026-05-03 (revision)
-- **Deciders**: Henrik Pettersen
-- **Depends on**: ADR-0113 (plugin system integration completion), ADR-0116 (hive-mind marketplace plugin)
-- **Scope**: Fork-side artifact for `sparkling/ruflo` distribution. Per `feedback-no-upstream-donate-backs.md`, this stays on `sparkling/main`; we do not file a PR against `ruvnet/ruflo`.
+# Marketplace plugin MCP server registration (`ruflo` key, fork CLI)
+
+## Context and Problem Statement
+
+ADR-0113 Phase C (`b24e46829`) rebranded plugin documentation: 524 occurrences across 121 `.md` files in `forks/ruflo/plugins/**` and `.claude-plugin/**` flipped from `mcp__claude-flow__*` to `mcp__ruflo__*`. ADR-0113 Phase D (`64491a274`) renamed bin self-id log tags to `[ruflo-mcp]`. The MCP server announces `name: 'ruflo'` (`mcp-server.ts:367,471`).
+
+But Claude Code's MCP tool-namespace prefix is `mcp__<key>__<tool>` where `<key>` is the user-visible server name in `.mcp.json` (or in a plugin's `mcpServers` block) — **not** the server's announced `name` field. ADR-0113's audit-finding #3 (corrected 2026-05-02) conflated the two.
+
+Empirical state in the fork (verified `/tmp/ruflo-e2e-rZHup/`, 2026-05-01):
+
+| Surface | Path | Current value | Effect |
+|---|---|---|---|
+| Init MCP server registration | `forks/ruflo/v3/@claude-flow/cli/src/init/mcp-generator.ts:95` | `mcpServers['claude-flow']` running `@sparkleideas/cli@latest mcp start` | Init exposes tools as `mcp__claude-flow__*`; init-bundled skills (9 files, 75 refs) match this |
+| Marketplace MCP entry | `forks/ruflo/.claude-plugin/plugin.json:52-57` | `mcpServers."claude-flow"` running `npx claude-flow@alpha mcp start` | (a) duplicate key collides with init's; (b) wrong package — pulls original upstream from public npm, not the fork |
+| Marketplace hooks | `forks/ruflo/.claude-plugin/hooks/hooks.json` | 5× `npx claude-flow@alpha hooks <subcmd>` | Wrong package |
+| Plugin skill MCP refs | `forks/ruflo/plugins/**/SKILL.md` | 121 files, 524 `mcp__ruflo__*` refs | No `ruflo`-keyed server registered → refs resolve to nothing |
+
+The init surface is internally consistent and works. Only the marketplace surface is broken, in two ways: wrong server-key (so plugin docs' `mcp__ruflo__*` refs don't resolve) and wrong package (the args spawn upstream's public-npm package instead of the fork's CLI).
+
+## Adversarial-review history
+
+This ADR went through three rejected drafts before arriving at the current scope. Each rejection narrowed the scope further:
+
+1. **First draft — dual namespace, parallel servers.** Init keeps `claude-flow`-keyed server; marketplace adds a parallel `ruflo`-keyed server. Rejected: *"Why would you have 2 competing names for the same service?"*
+2. **Second draft — MCP-namespace-only flip in init.** Single namespace `ruflo`; flip init's server-key + 9 init-bundled skill files + 2 init-time generators. Skip env vars, project dirs, OS data dirs. Rejected: *"We need this ADR to make all required changes, not to defer."*
+3. **Third draft — wholesale `claude-flow` → `ruflo` rebrand.** 10 phases, ~522 files (helper scripts, bin scripts, Codex initializer, env vars, project dirs, OS data dirs, atomic writer+reader flips, migration plan). Rejected: *"All we need is for the plugins to work. The wholesale removal of claude-flow is a massive undertaking."*
+
+Each rejection was internally consistent, but they pull in opposite directions: (1) wants single namespace, (2) wants no-defer completeness, (3) wants minimal scope. The only point that satisfies all three is to **define the goal narrowly: make plugin marketplace installs work end-to-end** — then accept whichever side-effect cost is smallest.
+
+The smallest-cost solution is to register the marketplace plugin's MCP server under a different key (`ruflo`) than init's (`claude-flow`), point both at the same fork-CLI binary, and accept dual-namespace exposure when both are installed. This trades ~75 redundant tool entries in the system prompt for a 5-file change instead of 522.
+
+## Considered Options
+
+* **Service-method registration via init (chosen, revised 2026-05-03)** — register `mcpServers['ruflo']` once at init time via `mcp-generator.ts`; flip the 9 init-bundled skills; remove the umbrella plugin's `mcpServers` block so the umbrella matches the other 33 minimal-manifest plugins.
+* **Dual-namespace parallel servers (original Decision, superseded 2026-05-03)** — register the marketplace plugin's MCP server under the key `ruflo` (pointing at the fork CLI) while init stays on `claude-flow`; accept two MCP server registrations spawning the same binary under two namespace prefixes.
+* **Alternative A — wholesale `claude-flow` → `ruflo` rebrand** — flip every `claude-flow` artifact-naming convention (~522 files). Rejected — far larger than warranted by "make plugins work."
+* **Alternative B — revert `b24e46829`, single namespace `claude-flow`** — undo the plugin-doc rebrand (121 files / 524 refs). Rejected — throws away brand identity work and reintroduces upstream's name as the user-facing identifier.
+* **Alternative C — keep marketplace `mcpServers.claude-flow` key, just fix the args** — leave the key as `claude-flow`, change only the args. Rejected — plugin docs' `mcp__ruflo__*` refs continue to fail.
+* **Alternative D — marketplace adds no `mcpServers` entry; rely on init** — remove the `mcpServers` block, but init exposes only `mcp__claude-flow__*`, so plugin docs' `mcp__ruflo__*` refs are still broken. Rejected for the same reason as C.
+
+## Decision Outcome
+
+Chosen option: "Service-method registration via init", because all 33 marketplace plugins follow a uniform service-method pattern (minimal manifest, single MCP server registered once at init time), and editing init is cheap (1-line key flip + 9 init-bundled skill ref flips) while avoiding leaving the umbrella plugin as a structural outlier among the 33.
+
+### Decision (revised 2026-05-03)
+
+**Register the `ruflo` MCP server via init's service-method**, not via the umbrella plugin's `mcpServers` block. After this revision lands:
+
+- Init's `mcp-generator.ts` registers `mcpServers['ruflo']` running the fork CLI binary
+- The 9 init-bundled skill files referencing `mcp__claude-flow__*` flip to `mcp__ruflo__*`
+- The umbrella `forks/ruflo/.claude-plugin/plugin.json` no longer carries an `mcpServers` block (matches the structural pattern of the other 33 marketplace plugins, all of which have minimal manifests)
+- Plugin skill docs (524 `mcp__ruflo__*` refs across 121 files) resolve via init's single `ruflo` registration — same path the other 33 plugins assume
+- `hooks.json` and codemod Pass 5 are kept (orthogonal — they enforce "fork CLI not upstream CLI" regardless of the MCP server registration mechanism)
+
+**Out of scope** (deliberately, to keep this revision narrow):
+- Renaming `.claude-flow/` project dir, `CLAUDE_FLOW_*` env vars, OS data dirs, or any infrastructure naming. Those are different concerns from MCP-server tool-namespace resolution and live in a separate (not-yet-written) ADR if anyone wants them flipped.
+- Removing the marketplace's `claude-flow`-keyed entries from upstream USERGUIDE prose or marketplace metadata. The wholesale rebrand path (Alternative A) remains rejected.
+
+### Decision (original — superseded 2026-05-03)
+
+**Register the marketplace plugin's MCP server under the key `ruflo`, pointing at the fork-published CLI.** Init stays unchanged on `claude-flow`. When both surfaces are installed, two MCP server registrations exist (`claude-flow` and `ruflo`), both spawning the same `@sparkleideas/cli mcp start` binary, exposing the same tools under two namespace prefixes.
+
+After this ADR lands:
+- Marketplace `.claude-plugin/plugin.json` registers `mcpServers.ruflo` running `npx @sparkleideas/cli@latest mcp start`
+- Marketplace `.claude-plugin/hooks/hooks.json` shells out to `npx @sparkleideas/cli@latest hooks <subcmd>` (5 occurrences)
+- Init continues to register `mcpServers.claude-flow` running the same binary; init-bundled skills/agents/commands continue to reference `mcp__claude-flow__*`
+- Plugin skill docs (524 `mcp__ruflo__*` refs) actually resolve because Claude Code now exposes a `ruflo` namespace
+- Codemod gets one new pass to keep `claude-flow@alpha` from sneaking back via upstream merges
+
+The dual-namespace cost is bounded and easy to revisit. If the system-prompt token bloat from listing ~75 tools twice becomes a measured problem, the future fix is one of:
+- Have init only register a `ruflo` server (forwards-compatible, but scope of full rebrand)
+- Have marketplace not register a server at all (rely on init's `claude-flow` server, revert plugin docs)
+
+This ADR doesn't preempt those.
+
+### Consequences
+
+* Good, because `/plugin install <name>@ruflo` delivers functioning tools via the same service-method path the other 33 marketplace plugins assume.
+* Good, because editing init is cheap (1-line key flip + 9 init-bundled skill ref flips) and avoids leaving the umbrella plugin as a structural outlier among the 33.
+* Good, because it preserves the brand-identity work that landed cleanly in `b24e46829` (tools resolve as `mcp__ruflo__*`).
+* Bad, because flipping init's server-key without updating the 9 init-bundled skills would break tool resolution for `init --full` users until Phase R3 lands — sequencing is load-bearing.
+* Neutral, because env var names (`CLAUDE_FLOW_*`), the `config.claudeFlow` config-field name, `.claude-flow/` project dir, and OS data dirs stay unchanged — infrastructure naming is a separate concern, out of scope.
+
+### Confirmation
+
+Phase R6 (real-install verification) gates the Status flip from "Revising" → "Accepted". After R-1, R-2, R-3 land and the fork is republished to Verdaccio: re-init a test project, inspect the generated `.mcp.json` for `mcpServers.ruflo`, install one marketplace plugin via Claude Code, restart the session, and confirm `mcp__ruflo__memory_search` appears in the deferred-tool list and invokes successfully — with `mcp__claude-flow__*` tools NOT listed (no parallel server). The acceptance check `lib/acceptance-adr0117-marketplace-mcp.sh` (rewritten in Phase R4) asserts init registers `ruflo` and that no `mcpServers` block in the umbrella `plugin.json` shadows it.
 
 ## Revision 2026-05-03 — switch to service-method registration
 
@@ -34,66 +122,6 @@ The original Decision's three "future fix" alternatives (§Decision lines 49-52)
 | 4 | `lib/acceptance-adr0117-marketplace-mcp.sh` | Asserts marketplace `mcpServers.ruflo` exists | **Rewrite** — assert init `mcpServers.ruflo` exists; assert umbrella `plugin.json` has no MCP-server-registration block |
 
 See §Implementation plan (revised 2026-05-03) below for the corrected phase sequence.
-
-## Adversarial-review history
-
-This ADR went through three rejected drafts before arriving at the current scope. Each rejection narrowed the scope further:
-
-1. **First draft — dual namespace, parallel servers.** Init keeps `claude-flow`-keyed server; marketplace adds a parallel `ruflo`-keyed server. Rejected: *"Why would you have 2 competing names for the same service?"*
-2. **Second draft — MCP-namespace-only flip in init.** Single namespace `ruflo`; flip init's server-key + 9 init-bundled skill files + 2 init-time generators. Skip env vars, project dirs, OS data dirs. Rejected: *"We need this ADR to make all required changes, not to defer."*
-3. **Third draft — wholesale `claude-flow` → `ruflo` rebrand.** 10 phases, ~522 files (helper scripts, bin scripts, Codex initializer, env vars, project dirs, OS data dirs, atomic writer+reader flips, migration plan). Rejected: *"All we need is for the plugins to work. The wholesale removal of claude-flow is a massive undertaking."*
-
-Each rejection was internally consistent, but they pull in opposite directions: (1) wants single namespace, (2) wants no-defer completeness, (3) wants minimal scope. The only point that satisfies all three is to **define the goal narrowly: make plugin marketplace installs work end-to-end** — then accept whichever side-effect cost is smallest.
-
-The smallest-cost solution is to register the marketplace plugin's MCP server under a different key (`ruflo`) than init's (`claude-flow`), point both at the same fork-CLI binary, and accept dual-namespace exposure when both are installed. This trades ~75 redundant tool entries in the system prompt for a 5-file change instead of 522.
-
-## Context
-
-ADR-0113 Phase C (`b24e46829`) rebranded plugin documentation: 524 occurrences across 121 `.md` files in `forks/ruflo/plugins/**` and `.claude-plugin/**` flipped from `mcp__claude-flow__*` to `mcp__ruflo__*`. ADR-0113 Phase D (`64491a274`) renamed bin self-id log tags to `[ruflo-mcp]`. The MCP server announces `name: 'ruflo'` (`mcp-server.ts:367,471`).
-
-But Claude Code's MCP tool-namespace prefix is `mcp__<key>__<tool>` where `<key>` is the user-visible server name in `.mcp.json` (or in a plugin's `mcpServers` block) — **not** the server's announced `name` field. ADR-0113's audit-finding #3 (corrected 2026-05-02) conflated the two.
-
-Empirical state in the fork (verified `/tmp/ruflo-e2e-rZHup/`, 2026-05-01):
-
-| Surface | Path | Current value | Effect |
-|---|---|---|---|
-| Init MCP server registration | `forks/ruflo/v3/@claude-flow/cli/src/init/mcp-generator.ts:95` | `mcpServers['claude-flow']` running `@sparkleideas/cli@latest mcp start` | Init exposes tools as `mcp__claude-flow__*`; init-bundled skills (9 files, 75 refs) match this |
-| Marketplace MCP entry | `forks/ruflo/.claude-plugin/plugin.json:52-57` | `mcpServers."claude-flow"` running `npx claude-flow@alpha mcp start` | (a) duplicate key collides with init's; (b) wrong package — pulls original upstream from public npm, not the fork |
-| Marketplace hooks | `forks/ruflo/.claude-plugin/hooks/hooks.json` | 5× `npx claude-flow@alpha hooks <subcmd>` | Wrong package |
-| Plugin skill MCP refs | `forks/ruflo/plugins/**/SKILL.md` | 121 files, 524 `mcp__ruflo__*` refs | No `ruflo`-keyed server registered → refs resolve to nothing |
-
-The init surface is internally consistent and works. Only the marketplace surface is broken, in two ways: wrong server-key (so plugin docs' `mcp__ruflo__*` refs don't resolve) and wrong package (the args spawn upstream's public-npm package instead of the fork's CLI).
-
-## Decision (superseded 2026-05-03 — see §Decision (revised 2026-05-03) below)
-
-**Register the marketplace plugin's MCP server under the key `ruflo`, pointing at the fork-published CLI.** Init stays unchanged on `claude-flow`. When both surfaces are installed, two MCP server registrations exist (`claude-flow` and `ruflo`), both spawning the same `@sparkleideas/cli mcp start` binary, exposing the same tools under two namespace prefixes.
-
-After this ADR lands:
-- Marketplace `.claude-plugin/plugin.json` registers `mcpServers.ruflo` running `npx @sparkleideas/cli@latest mcp start`
-- Marketplace `.claude-plugin/hooks/hooks.json` shells out to `npx @sparkleideas/cli@latest hooks <subcmd>` (5 occurrences)
-- Init continues to register `mcpServers.claude-flow` running the same binary; init-bundled skills/agents/commands continue to reference `mcp__claude-flow__*`
-- Plugin skill docs (524 `mcp__ruflo__*` refs) actually resolve because Claude Code now exposes a `ruflo` namespace
-- Codemod gets one new pass to keep `claude-flow@alpha` from sneaking back via upstream merges
-
-The dual-namespace cost is bounded and easy to revisit. If the system-prompt token bloat from listing ~75 tools twice becomes a measured problem, the future fix is one of:
-- Have init only register a `ruflo` server (forwards-compatible, but scope of full rebrand)
-- Have marketplace not register a server at all (rely on init's `claude-flow` server, revert plugin docs)
-
-This ADR doesn't preempt those.
-
-## Decision (revised 2026-05-03)
-
-**Register the `ruflo` MCP server via init's service-method**, not via the umbrella plugin's `mcpServers` block. After this revision lands:
-
-- Init's `mcp-generator.ts` registers `mcpServers['ruflo']` running the fork CLI binary
-- The 9 init-bundled skill files referencing `mcp__claude-flow__*` flip to `mcp__ruflo__*`
-- The umbrella `forks/ruflo/.claude-plugin/plugin.json` no longer carries an `mcpServers` block (matches the structural pattern of the other 33 marketplace plugins, all of which have minimal manifests)
-- Plugin skill docs (524 `mcp__ruflo__*` refs across 121 files) resolve via init's single `ruflo` registration — same path the other 33 plugins assume
-- `hooks.json` and codemod Pass 5 are kept (orthogonal — they enforce "fork CLI not upstream CLI" regardless of the MCP server registration mechanism)
-
-**Out of scope** (deliberately, to keep this revision narrow):
-- Renaming `.claude-flow/` project dir, `CLAUDE_FLOW_*` env vars, OS data dirs, or any infrastructure naming. Those are different concerns from MCP-server tool-namespace resolution and live in a separate (not-yet-written) ADR if anyone wants them flipped.
-- Removing the marketplace's `claude-flow`-keyed entries from upstream USERGUIDE prose or marketplace metadata. The wholesale rebrand path (Alternative A) remains rejected.
 
 ## Implementation plan (revised 2026-05-03)
 
@@ -331,7 +359,7 @@ Revised acceptance:
 3. **Upstream-merge regressions.** Future merges from `ruvnet/ruflo` will reintroduce `claude-flow@alpha` strings in `.claude-plugin/**/*.json`. Codemod Pass 5 catches this at build time. Required, not optional.
 4. **Codemod false positives.** Pass 5's pattern `claude-flow@alpha` is broad enough that it could match prose in `docs/adr/**` or commit-message text. Scope-limit by file path (only `.claude-plugin/**` and `plugins/**`); negative-test cases enforce.
 
-## Considered alternatives
+## Pros and Cons of the Options
 
 ### Alternative A — wholesale `claude-flow` → `ruflo` rebrand
 
@@ -362,13 +390,21 @@ Remove the `mcpServers` block from marketplace `plugin.json` entirely. Plugin do
 
 **Rejected** for the same reason as C.
 
-## Status note (revised 2026-05-03)
+## More Information
+
+Original status: ⚠ **Revising 2026-05-03** — Phases 1-4 of original Decision shipped in code (dual-namespace via umbrella `plugin.json` `mcpServers`); now unwinding to the **service-method** approach (init-time registration via `mcp-generator.ts`). See §Revision 2026-05-03. Dates: 2026-05-02 (initial), 2026-05-03 (revision).
+
+This ADR depends on ADR-0113 (plugin system integration completion) and ADR-0116 (hive-mind marketplace plugin).
+
+Scope: Fork-side artifact for `sparkling/ruflo` distribution. Per `feedback-no-upstream-donate-backs.md`, this stays on `sparkling/main`; we do not file a PR against `ruvnet/ruflo`.
+
+### Status note (revised 2026-05-03)
 
 This ADR is now the minimum-cost fix to make `/plugin install <name>@ruflo` deliver functioning tools **via the same service-method path the other 33 marketplace plugins assume**. It deliberately does not pursue wholesale rebrand of `.claude-flow/`, `CLAUDE_FLOW_*` env vars, or OS data dirs — those are orthogonal naming concerns.
 
 ADR-0113's audit-finding #3 inline correction (added 2026-05-02) and ADR-0116's `Depends on: ADR-0117` annotation continue to apply: this ADR is what makes `mcp__ruflo__*` references actually resolve. The 2026-05-03 revision changes **how** the resolution happens (init-time server-key flip rather than parallel umbrella-plugin registration); the dependency itself stays.
 
-## Implementation log
+### Implementation log
 
 Phases 1-4 of original Decision shipped in code on `forks/ruflo/main` and `ruflo-patch/main` between 2026-05-02 and 2026-05-03 (verified 2026-05-03 by file inspection — git history shows the changes bundled inside `9e3463bdf` "chore: bump versions to 2.7.47-patch.417" and the upstream-merge commit `55f2ea0f8`, not surfaced as ADR-aligned individual commits). Revision 2026-05-03 unwinds those and lands the corrected service-method approach.
 

@@ -1,9 +1,6 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-13
-accepted: 2026-05-14
-implemented: 2026-05-18
 tags: [memory, architecture, mcp, governance, substrate]
 supersedes: [ADR-0112]
 depends-on: [ADR-0177]
@@ -275,6 +272,8 @@ These two claims are bound together: runtime-enforced placement (rejected option
 * Bad, because runtime defeats remain (`as any`, `eval`, runtime imports) — caught by ESLint or review, not by the compiler. The claim is "no store-tree code can obtain substrate except via context", not "no code path bypasses the archivist."
 
 ## More Information
+
+Original status: accepted 2026-05-14, implemented 2026-05-18, completed.
 
 * [ADR-0179](ADR-0179-restore-controller-instrumentation-lost-in-adr0085-bridge-deletion.md) — restores the six lost features. ADR-0180 codifies *where* they land (the archivist) and *how* their invocation is enforced (the type system). ADR-0179 and ADR-0180 are peer decisions: 0179 catalogs the features and motivates restoration; 0180 establishes the architecture under which they're restored.
 * [ADR-0177](ADR-0177-adopt-upstream-agentdb-rvf-vision.md) — RVF-primary substrate. ADR-0180 sits above the substrate and is substrate-agnostic; works equally for RVF and SQLite stores.

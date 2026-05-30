@@ -1,14 +1,15 @@
-# ADR-0128: Differentiated swarm topology runtime behaviour (T10)
+---
+status: accepted
+date: 2026-05-02
+tags: [hive-mind, topology, coordination]
+supersedes: []
+depends-on: [ADR-0116, ADR-0118]
+implements: []
+---
 
-- **Status**: Implemented (2026-05-03) per ADR-0118 §Status (T10 complete)
-- **Date**: 2026-05-02
-- **Deciders**: Henrik Pettersen
-- **Depends on**: ADR-0116 (verification matrix supplies the gap row), ADR-0118 (runtime gaps tracker — owns task T10)
-- **Depended on by**: ADR-0127 (T9 adaptive control loop dispatches into the surface this ADR introduces); ADR-0126 (T8) cross-references topology-aware worker prompts but does not require this ADR to land first (see §Cross-task dependency posture)
-- **Related**: ADR-0114 (substrate/protocol/execution layering), ADR-0105 (topology behavior differentiation — earlier framing, accepted as Option C: state layer wired, behavioural layer deferred — this ADR closes the deferred half)
-- **Scope**: Fork-side runtime work in `forks/ruflo/v3/@claude-flow/cli/src/commands/hive-mind.ts` and `forks/ruflo/v3/@claude-flow/swarm/src/unified-coordinator.ts`. Closes ADR-0118 task T10 (one of 10 enumerated runtime gaps).
+# Differentiated swarm topology runtime behaviour (T10)
 
-## Context
+## Context and Problem Statement
 
 ADR-0116's verification matrix flagged a topology-runtime gap. The matrix row title reads "5 swarm topologies" but enumerates six values (`hierarchical / mesh / hierarchical-mesh / ring / star / adaptive`). The actual contract surfaces disagree — see §Topology count reconciliation below; that disagreement is resolved here, not deferred.
 
@@ -56,46 +57,40 @@ Per ADR-0118 §T10, this gap is the natural completion point for the topology tr
 - **(b) Topology-as-strategy-pattern with one class per topology** — extract `HierarchicalTopology`, `MeshTopology`, `RingTopology`, `StarTopology`, `HierarchicalMeshTopology`, `AdaptiveTopology` classes implementing a common `CoordinationStrategy` interface; coordinator delegates.
 - **(c) Single coordinator with topology-aware broadcast filter** — coordinator broadcasts to all workers always; a downstream filter rewrites the worker visibility set per topology.
 
-## Pros and Cons of the Options
-
-### (a) Per-topology dispatch in worker-spawn path
-
-- Pros: minimal surface area; single dispatch site colocated with the existing `spawnAgent`/`spawnFullHierarchy` flow; composes cleanly with T9 (adaptive delegation) by recursing into one of its own branches; preserves ADR-0114 layering with no new abstractions; fork-patch friendly.
-- Cons: six branches in one switch will need to stay in sync — `hierarchical`, `mesh`, `hierarchical-mesh`, `ring`, `star`, `adaptive`. Adding a seventh topology touches one file but six call-sites in tests. Inline switch is easier to grep than scattered classes but harder to unit-test in isolation than (b).
-
-### (b) Strategy-pattern classes
-
-- Pros: each topology isolated; easier to unit-test in isolation; obvious extension point for a future seventh topology.
-- Cons: six new classes plus a `CoordinationStrategy` interface for six branches of broadcast/memory wiring is OO ceremony. The CLAUDE.md guideline "no abstractions for single-use code" applies — each strategy class would have one consumer (the coordinator). The cardinality is fixed (USERGUIDE contract is exactly 6, not "≥ 6 with extension expected"); the speculative-flexibility argument fails. A switch with 6 branches in one file is grep-able and edit-local; six classes scatter the protocol across files. **The honest reason to skip (b) is not "switch is faster to write" — it's that the strategy pattern would buy isolation we don't need at the cost of grep-locality we do need.**
-
-### (c) Topology-aware broadcast filter
-
-- Pros: coordinator stays uniform; topology becomes a post-hoc visibility rule.
-- Cons: the filter model breaks at the second non-trivial topology. `ring` is not a visibility filter on a mesh broadcast — it's a deterministic chain of memory reads where worker N reads worker (N-1)'s output key; there is no broadcast to filter. `hierarchical-mesh` requires sub-hive instantiation (a structural change), not filtering. `adaptive` cannot be expressed as a filter at all because it picks a topology rather than restricting one. The pattern survives `hierarchical` vs `mesh` and falls over for the rest.
-
 ## Decision Outcome
 
 **Chosen option: (a) per-topology dispatch in `unified-coordinator.ts` worker-spawn path**, because it is the smallest change that promotes topology from prompt string + state-bookkeeping to runtime coordination behaviour. Driver trace: closes the "prompt-only metadata is not behaviour" driver by introducing a single `switch (topology)` at the spawn boundary; satisfies the "T9 unblocking" driver by giving `swarm.mutateTopology()` five concrete dispatch targets to recurse into; satisfies the "ADR-0114 layering" driver by keeping dispatch in the protocol layer (substrate stays agnostic, execution reads context only); satisfies the "no silent fallback" driver by throwing on unknown topology.
 
-## Consequences
+**Replace prompt-only topology metadata with topology-specific worker-coordination protocols, dispatched per-topology in the worker-spawn path.** Each of the six advertised topologies maps to a distinct coordination protocol that governs how workers see each other's outputs and how memory writes flow.
 
-### Positive
+After this ADR lands, the `topology` flag stops being a prompt-decoration string and starts driving runtime behaviour at the `unified-coordinator.ts` worker-spawn site.
 
-- T9 adaptive autoscaling (ADR-0127) has five concrete dispatch targets to switch between at runtime; the `adaptive` branch recurses into one of them.
-- USERGUIDE matrix row lifts (per the count-reconciled wording); ADR-0116 plugin README annotation drops on next materialise run.
-- ADR-0105 Option C closed the state half (TopologyManager wired); this ADR closes the behavioural half (broadcast/memory wiring per topology).
-- `TOPOLOGIES` enum in `commands/hive-mind.ts:30-35` expands from 4 to 6 (`ring` and `star` added), making the CLI surface match the USERGUIDE diagram.
+### Consequences
 
-### Negative
-
-- Six branches to keep in sync. Adding a topology touches the switch + six paired test cases.
-- **Scoped out: topology change during active task.** Open question with two defensible answers: (1) fail loud — `swarm.mutateTopology(target)` throws if any worker has a non-empty active task set; (2) defer — switch is queued until the current task drains. ADR-0127 §Refinement chose option (2) at the queen-decision layer ("Switch is deferred (not abandoned) until all workers report empty active task sets. Defer is bounded by 3 dampening windows; if a switch is deferred past the bound, the consumer abandons the switch attempt loudly"). T10 inherits that choice: the dispatch site does not re-check active tasks; T9's queen consumer is responsible for deferral and abandonment. If T9 lands with a different stance, T10's dispatch must be revisited. **Defensible because** ADR-0127 owns the runtime-mutation semantics and T10 owns the spawn-time dispatch — separating them keeps each ADR's surface narrow; not defensible if a non-T9 caller of `swarm.mutateTopology()` materialises (the surface is currently single-consumer).
-- `hierarchical-mesh` adds sub-queen instantiation logic that does not exist for the other five topologies. Sub-hive failure modes are new code paths; see §Refinement for the sub-queen-failure case.
-- T8 worker prompts: ADR-0128's earlier draft claimed "T8 workers see different peer-output shapes per topology" — but ADR-0126 (T8) §Refinement explicitly assigns fan-out to T10 and does not promise per-topology prompt rendering. The honest consequence: post-T10, worker peer-visibility is enforced at the protocol layer (broadcast/memory permissions) regardless of what the worker prompt says. If the worker prompt and the protocol disagree, the protocol wins and the prompt becomes misleading. Aligning the prompt with the active topology is a follow-up that lives in T8's surface, not T10's.
+* Good, because T9 adaptive autoscaling (ADR-0127) has five concrete dispatch targets to switch between at runtime; the `adaptive` branch recurses into one of them.
+* Good, because the USERGUIDE matrix row lifts (per the count-reconciled wording); ADR-0116 plugin README annotation drops on next materialise run.
+* Good, because ADR-0105 Option C closed the state half (TopologyManager wired); this ADR closes the behavioural half (broadcast/memory wiring per topology).
+* Good, because the `TOPOLOGIES` enum in `commands/hive-mind.ts:30-35` expands from 4 to 6 (`ring` and `star` added), making the CLI surface match the USERGUIDE diagram.
+* Bad, because of six branches to keep in sync. Adding a topology touches the switch + six paired test cases.
+* Bad, because **scoped out: topology change during active task.** Open question with two defensible answers: (1) fail loud — `swarm.mutateTopology(target)` throws if any worker has a non-empty active task set; (2) defer — switch is queued until the current task drains. ADR-0127 §Refinement chose option (2) at the queen-decision layer ("Switch is deferred (not abandoned) until all workers report empty active task sets. Defer is bounded by 3 dampening windows; if a switch is deferred past the bound, the consumer abandons the switch attempt loudly"). T10 inherits that choice: the dispatch site does not re-check active tasks; T9's queen consumer is responsible for deferral and abandonment. If T9 lands with a different stance, T10's dispatch must be revisited. **Defensible because** ADR-0127 owns the runtime-mutation semantics and T10 owns the spawn-time dispatch — separating them keeps each ADR's surface narrow; not defensible if a non-T9 caller of `swarm.mutateTopology()` materialises (the surface is currently single-consumer).
+* Bad, because `hierarchical-mesh` adds sub-queen instantiation logic that does not exist for the other five topologies. Sub-hive failure modes are new code paths; see §Refinement for the sub-queen-failure case.
+* Bad, because of T8 worker prompts: ADR-0128's earlier draft claimed "T8 workers see different peer-output shapes per topology" — but ADR-0126 (T8) §Refinement explicitly assigns fan-out to T10 and does not promise per-topology prompt rendering. The honest consequence: post-T10, worker peer-visibility is enforced at the protocol layer (broadcast/memory permissions) regardless of what the worker prompt says. If the worker prompt and the protocol disagree, the protocol wins and the prompt becomes misleading. Aligning the prompt with the active topology is a follow-up that lives in T8's surface, not T10's.
 
 ### How workers know which topology is active
 
 The dispatch site in `unified-coordinator.ts` configures each worker's `hive-mind_broadcast` subscription set and `hive-mind_memory` permissions at spawn time. Workers do not query a runtime variable; the topology is enforced by what the protocol layer lets them subscribe to and write. The queen prompt continues to mention the topology as context (`commands/hive-mind.ts:90`), but that string is descriptive, not load-bearing. After T10, the load-bearing surface is the spawn-time wiring, not the prompt substring.
+
+### Confirmation
+
+- **Unit tests** (`tests/unit/`): one dispatch test per topology asserting the correct broadcast/memory wiring is selected for each `topology` flag value (six tests, named `adr0128_dispatch_<topology>_wires_correct_permissions`); one test `adr0128_unknown_topology_throws` verifying the default branch throws per `feedback-no-fallbacks.md`; one test `adr0128_adaptive_delegates_to_t9` verifying the `adaptive` branch invokes the ADR-0127 control-loop entry point and recurses into the returned topology.
+- **Integration tests** (`tests/unit/*.test.mjs`, real I/O): per-topology broadcast-pattern assertions under a fixed objective and worker count, named:
+  - `adr0128_hierarchical_zero_peer_broadcasts` — workers do not subscribe to each other.
+  - `adr0128_mesh_full_peer_visibility_O_N_squared` — every worker sees every other worker's outputs.
+  - `adr0128_ring_deterministic_N_step_chain` — worker N reads worker (N-1 mod N), writes for (N+1 mod N); zero broadcasts.
+  - `adr0128_star_zero_worker_memory_writes` — only the queen writes to `hive-mind_memory`.
+  - `adr0128_hierarchical_mesh_sub_hive_mesh_plus_subqueen_reports` — sub-hive internals are mesh; sub-queens report upward only.
+  - `adr0128_adaptive_resolves_to_concrete_topology` — `adaptive` ends in one of the five via T9.
+- **Acceptance tests** (`lib/acceptance-adr0128-checks.sh` wired into `scripts/test-acceptance.sh`): each of the six topologies exercised in a real init'd project against published `@sparkleideas/*` packages, asserting the peer-visibility shape via captured `hive-mind_broadcast` / `hive-mind_memory` traces. Per `feedback-all-test-levels.md`, all three levels ship in the same commit as the implementation; per `feedback-no-squelch-tests.md`, no assertion is weakened to mask flakiness.
 
 ## Cross-task dependency posture
 
@@ -104,6 +99,23 @@ ADR-0118 §Dependency graph lists T10 as depending on T8 and T9. The dependency 
 - **T9 → T10 (T9 depends on T10, hard).** ADR-0127 §Decision calls `swarm.mutateTopology(target)` and assumes `target ∈ {hierarchical, mesh}` are runtime dispatch targets. ADR-0127 §Refinement (`cov-high` handler) explicitly notes "Until T10 lands, `swarm.mutateTopology()` returns the not-implemented marker; consumer logs and continues" — confirming T9 already encodes T10 as a hard dep. ADR-0127 line 6 names ADR-0128 as a depended-on ADR. **T10 must land before T9.**
 - **T8 ↔ T10 (symmetric).** ADR-0126 §Specification ("Multi-match disposition contract") explicitly defers fan-out to T10 ("multi-worker fan-out is a topology concern handled by T10 (ADR-0128), not this ADR") but does not promise per-topology rendering of worker prompts. T8's 8 worker prompts can land without T10 (they ship as topology-agnostic templates); T10's dispatch can land without T8 (it operates on broadcast/memory permissions, not prompt content). Whichever lands second tightens the cross-reference. **No hard ordering between T8 and T10.**
 - **ADR-0118 dependency graph line 41** ("T10 → T8, T9") overstates T8 as a hard dep. Update ADR-0118 to read T10 → T9 only, with T8 as a soft cross-reference.
+
+## Pros and Cons of the Options
+
+### (a) Per-topology dispatch in worker-spawn path
+
+- Good, because of minimal surface area; single dispatch site colocated with the existing `spawnAgent`/`spawnFullHierarchy` flow; composes cleanly with T9 (adaptive delegation) by recursing into one of its own branches; preserves ADR-0114 layering with no new abstractions; fork-patch friendly.
+- Bad, because six branches in one switch will need to stay in sync — `hierarchical`, `mesh`, `hierarchical-mesh`, `ring`, `star`, `adaptive`. Adding a seventh topology touches one file but six call-sites in tests. Inline switch is easier to grep than scattered classes but harder to unit-test in isolation than (b).
+
+### (b) Strategy-pattern classes
+
+- Good, because each topology is isolated; easier to unit-test in isolation; obvious extension point for a future seventh topology.
+- Bad, because six new classes plus a `CoordinationStrategy` interface for six branches of broadcast/memory wiring is OO ceremony. The CLAUDE.md guideline "no abstractions for single-use code" applies — each strategy class would have one consumer (the coordinator). The cardinality is fixed (USERGUIDE contract is exactly 6, not "≥ 6 with extension expected"); the speculative-flexibility argument fails. A switch with 6 branches in one file is grep-able and edit-local; six classes scatter the protocol across files. **The honest reason to skip (b) is not "switch is faster to write" — it's that the strategy pattern would buy isolation we don't need at the cost of grep-locality we do need.**
+
+### (c) Topology-aware broadcast filter
+
+- Good, because the coordinator stays uniform; topology becomes a post-hoc visibility rule.
+- Bad, because the filter model breaks at the second non-trivial topology. `ring` is not a visibility filter on a mesh broadcast — it's a deterministic chain of memory reads where worker N reads worker (N-1)'s output key; there is no broadcast to filter. `hierarchical-mesh` requires sub-hive instantiation (a structural change), not filtering. `adaptive` cannot be expressed as a filter at all because it picks a topology rather than restricting one. The pattern survives `hierarchical` vs `mesh` and falls over for the rest.
 
 ## Validation
 
@@ -116,12 +128,6 @@ ADR-0118 §Dependency graph lists T10 as depending on T8 and T9. The dependency 
   - `adr0128_hierarchical_mesh_sub_hive_mesh_plus_subqueen_reports` — sub-hive internals are mesh; sub-queens report upward only.
   - `adr0128_adaptive_resolves_to_concrete_topology` — `adaptive` ends in one of the five via T9.
 - **Acceptance tests** (`lib/acceptance-adr0128-checks.sh` wired into `scripts/test-acceptance.sh`): each of the six topologies exercised in a real init'd project against published `@sparkleideas/*` packages, asserting the peer-visibility shape via captured `hive-mind_broadcast` / `hive-mind_memory` traces. Per `feedback-all-test-levels.md`, all three levels ship in the same commit as the implementation; per `feedback-no-squelch-tests.md`, no assertion is weakened to mask flakiness.
-
-## Decision
-
-**Replace prompt-only topology metadata with topology-specific worker-coordination protocols, dispatched per-topology in the worker-spawn path.** Each of the six advertised topologies maps to a distinct coordination protocol that governs how workers see each other's outputs and how memory writes flow.
-
-After this ADR lands, the `topology` flag stops being a prompt-decoration string and starts driving runtime behaviour at the `unified-coordinator.ts` worker-spawn site.
 
 ## Implementation plan
 
@@ -236,8 +242,15 @@ T9 adaptive delegation: the `adaptive` branch of the T10 dispatch calls into ADR
 4. **Test fragility**: trace-based assertions on broadcast counts can flap if call ordering varies. Mitigation: assert structural properties (zero, O(N), O(N²)) rather than exact call sequences.
 5. **CLI enum expansion side effects**: adding `ring` and `star` to `TOPOLOGIES` at `commands/hive-mind.ts:30-35` changes the surface validated at line 399. Mitigation: parametric CLI test that accepts each of the 6 values and rejects unknown ones.
 
-## References
+## More Information
 
+Original status: Implemented (2026-05-03) per ADR-0118 §Status (T10 complete).
+
+This ADR depends on ADR-0116 (verification matrix supplies the gap row) and ADR-0118 (runtime gaps tracker — owns task T10). It is depended on by ADR-0127 (T9 adaptive control loop dispatches into the surface this ADR introduces); ADR-0126 (T8) cross-references topology-aware worker prompts but does not require this ADR to land first (see §Cross-task dependency posture). It is related to ADR-0114 (substrate/protocol/execution layering) and ADR-0105 (topology behavior differentiation — earlier framing, accepted as Option C: state layer wired, behavioural layer deferred — this ADR closes the deferred half).
+
+Scope: Fork-side runtime work in `forks/ruflo/v3/@claude-flow/cli/src/commands/hive-mind.ts` and `forks/ruflo/v3/@claude-flow/swarm/src/unified-coordinator.ts`. Closes ADR-0118 task T10 (one of 10 enumerated runtime gaps).
+
+References:
 - ADR-0116: hive-mind marketplace plugin (verification matrix; topology row title says "5", body lists 6 — see §Topology count reconciliation)
 - ADR-0118: hive-mind runtime gaps tracker (T10 task definition; §Dependency graph line 41 needs correction per §Cross-task dependency posture)
 - ADR-0126: T8 — differentiate worker-type runtime behaviour (soft cross-reference; T8 §Refinement defers fan-out to T10)
@@ -247,7 +260,7 @@ T9 adaptive delegation: the `adaptive` branch of the T10 dispatch calls into ADR
 - ADR-0109: worker failure handling (sub-queen failure path, star-hub failure path)
 - USERGUIDE Hive Mind topology contract: `<summary>🐝 <strong>Swarm Topology</strong>` diagram at `/Users/henrik/source/ruvnet/ruflo/docs/USERGUIDE.md:1125-1158` (visualises 4 topologies); `<summary>👑 <strong>Hive-Mind Coordination</strong>` block at line 2370 (names "Adaptive Topology")
 
-## Review notes
+### Review notes
 
 Open questions for follow-up that this review surfaced but did not resolve. Triage stamps per `/docs/adr/ADR-0118b-review-notes-triage.md`:
 

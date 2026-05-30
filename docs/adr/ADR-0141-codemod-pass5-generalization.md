@@ -1,12 +1,15 @@
-# ADR-0141: Generalize codemod Pass 5 — broaden tag filter + path scope for `claude-flow@<ver>` rewrite
+---
+status: accepted
+date: 2026-05-04
+tags: [codemod, pipeline, rebrand]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: **Accepted (2026-05-04)** — implemented across 3 commits (`25aa5e5` tests-first + `558efb9` Pass 5 generalization impl + commit 3 release verification below). Combined with ADR-0143 Pass 7, all 348 surveyed hits in expanded scope eliminated. Highest-density file (verification-quality SKILL.md, 73 hits) now shows 0 `claude-flow@` + 73 `@sparkleideas/ruflo@` refs (full chain Pass 1 → Pass 5 → Pass 7 fired).
-- **Date**: 2026-05-04
-- **Deciders**: Henrik Pettersen
-- **Related**: ADR-0117 (the original Pass 5 — `claude-flow@alpha` rewrite, scope-limited to `.claude-plugin/**` + `plugins/**` + `v3/@claude-flow/cli/.claude/{agents,commands,skills}/**`), commit `8aba0ad` on ruflo-patch (Pass 6 — `npx ruflo` rewrite, the `ruflo`-side analog of this gap; closed 2026-05-04 after a Verdaccio 404 on `GET /ruflo`)
-- **Scope**: `scripts/codemod.mjs` Pass 5 only — broadens the regex tag filter and the path scope predicate. Does not touch any other codemod pass and does not patch fork source.
+# Generalize codemod Pass 5 — broaden tag filter + path scope for `claude-flow@<ver>` rewrite
 
-## Context
+## Context and Problem Statement
 
 ADR-0117's Pass 5 rewrites `claude-flow@alpha` → `@sparkleideas/cli@latest` in marketplace + init-bundled trees. Its narrow scope was deliberate: avoid mutating historical ADR prose or upstream-source comments that legitimately reference the upstream tag.
 
@@ -50,9 +53,16 @@ Pass 6 (commit `8aba0ad`) closed the analogous `ruflo`-side gap by recognising t
 
 Per memory `feedback-data-loss-zero-tolerance.md` and the user's stated preference ("Zero failures is the only acceptable outcome"), shipping 207 broken commands is unacceptable when the codemod is the right enforcement layer.
 
-## Decision
+## Considered Options
 
-Generalize Pass 5 along two orthogonal axes. Both ship together as a single codemod change.
+* **Generalize Pass 5 along two axes — broaden the tag filter and expand the path scope (chosen).**
+* **Option A — Mirror Pass 6's "no path scoping" approach (rejected)** — drop path scoping entirely, rely on the `@<ver>` anchor as the false-hit guard. Rejected because Pass 5's path scope serves a real purpose Pass 6's doesn't: ADR archives DO contain literal `claude-flow@alpha` prose for historical accuracy (verified in `docs/adr/ADR-0117-marketplace-mcp-server-registration.md` and the existing Pass-5 negative test). Pass 6's regex anchors on `npx` which is also command-shape; Pass 5's regex anchors on `@<ver>` which can validly appear in prose.
+* **Option B — Patch each file in fork source (rejected)** — hand-edit the 125 files in `forks/ruflo`, commit upstream of the codemod. Rejected per memory `feedback-patches-in-fork.md` interpretation: this IS a scope rename (just outside import/require contexts), so the codemod is the right charter. Plus: fork patches don't survive upstream merges — the same regression returns next time we pull.
+* **Option C — Skip generalization; accept the gap (rejected)** — leave Pass 5 as-is; users hit 404s when running shipped commands. Rejected per memory `feedback-data-loss-zero-tolerance.md` ("Zero tolerance for silent data loss") and the user's audit prompt specifically calling out the gap. A 207-hit broken command surface is not "acceptable rate of loss".
+
+## Decision Outcome
+
+Chosen option: "Generalize Pass 5 along two orthogonal axes", because the codemod is the right enforcement layer (it auto-protects future upstream merges) and a 207-hit broken-command surface fails the zero-tolerance bar. Both axes ship together as a single codemod change.
 
 ### Axis 1 — Tag filter broadening
 
@@ -96,21 +106,18 @@ Existing `.claude-plugin/**` and `plugins/**` scopes are kept verbatim — no be
 | Bare `claude-flow` brand mentions (no `@<ver>`) | Out of scope — these are 3.1k brand prose mentions, not package references; addressed (or not) by separate brand-rebrand work |
 | `npx claude-flow` shellouts without `@<ver>` | Subset of broader `npx <pkg>` pattern; defer to a Pass-6-equivalent for `claude-flow` if/when needed (currently uncovered, acknowledged debt) |
 
-## Consequences
+### Consequences
 
-### Positive
+* Good, because ~200 of 207 broken commands are fixed in a single codemod change.
+* Good, because future upstream merges are auto-protected — any new `claude-flow@latest` introduced by an upstream sync gets rewritten on next `npm run release`.
+* Good, because no fork patches are required — pure codemod change, fork source stays untouched.
+* Good, because no new test suite is needed — extends the existing Pass-5 test set with new positive/negative cases under the same `describe` block.
+* Bad, because the tag whitelist needs maintenance if npm introduces new dist-tags (e.g. `canary`); easy to extend.
+* Bad, because sister-tree duplication remains — `forks/ruflo/.claude/skills/verification-quality/SKILL.md` and `v3/@claude-flow/mcp/.claude/skills/verification-quality/SKILL.md` are byte-identical; we rewrite both rather than dedupe at source. Dedup is a separate concern (out of scope per ADR-0117 ethos).
 
-- **~200 of 207 broken commands fixed** in a single codemod change
-- **Future upstream merges auto-protected** — any new `claude-flow@latest` introduced by an upstream sync gets rewritten on next `npm run release`
-- **No fork patches required** — pure codemod change, fork source stays untouched
-- **No new test suite** — extends existing Pass-5 test set with new positive/negative cases under the same `describe` block
+### Confirmation
 
-### Negative
-
-- **Tag whitelist needs maintenance** if npm introduces new dist-tags (e.g. `canary`); easy to extend
-- **Sister-tree duplication remains** — `forks/ruflo/.claude/skills/verification-quality/SKILL.md` and `v3/@claude-flow/mcp/.claude/skills/verification-quality/SKILL.md` are byte-identical; we rewrite both rather than dedupe at source. Dedup is a separate concern (out of scope per ADR-0117 ethos)
-
-### Acceptance criteria
+Acceptance criteria:
 
 1. `tests/pipeline/codemod.test.mjs` adds:
    - Positive: `claude-flow@latest` rewrites in `.claude/skills/foo/SKILL.md`
@@ -121,26 +128,6 @@ Existing `.claude-plugin/**` and `plugins/**` scopes are kept verbatim — no be
    - Negative: `subclaude-flow@latest` (word-boundary) untouched
 2. After running `npm run release`, `grep -rE 'claude-flow@(alpha|latest|beta|next|[0-9])'` against `/tmp/ruflo-build/` outside the negative-scope dirs returns 0 hits
 3. `npm run test:unit` passes (codemod is product code per `tests/CLAUDE.md`)
-
-## Alternatives considered
-
-### Option A — Mirror Pass 6's "no path scoping" approach
-
-Drop path scoping entirely, rely on the `@<ver>` anchor as the false-hit guard.
-
-**Rejected** because Pass 5's path scope serves a real purpose Pass 6's doesn't: ADR archives DO contain literal `claude-flow@alpha` prose for historical accuracy (verified in `docs/adr/ADR-0117-marketplace-mcp-server-registration.md` and the existing Pass-5 negative test). Pass 6's regex anchors on `npx` which is also command-shape; Pass 5's regex anchors on `@<ver>` which can validly appear in prose.
-
-### Option B — Patch each file in fork source
-
-Hand-edit the 125 files in `forks/ruflo`, commit upstream of the codemod.
-
-**Rejected** per memory `feedback-patches-in-fork.md` interpretation: this IS a scope rename (just outside import/require contexts), so the codemod is the right charter. Plus: fork patches don't survive upstream merges — the same regression returns next time we pull.
-
-### Option C — Skip generalization; accept the gap
-
-Leave Pass 5 as-is; users hit 404s when running shipped commands.
-
-**Rejected** per memory `feedback-data-loss-zero-tolerance.md` ("Zero tolerance for silent data loss") and the user's audit prompt specifically calling out the gap. A 207-hit broken command surface is not "acceptable rate of loss".
 
 ## Pre-flight findings (verified 2026-05-04)
 
@@ -269,7 +256,15 @@ After commit 3: ADR-0141 closes — flip Status to Accepted in a follow-up doc c
 - **Commits 1+2 landed**: codemod broadened. To revert, `git revert <commit-2>` restores `/claude-flow@alpha/g` regex + narrow scope. Tests in commit 1 stay (re-skipped or removed)
 - **All landed, regression discovered**: `git revert <commit-2>` is sufficient; commits 1 and 3 are harmless without 2
 
-## Reference
+## More Information
+
+Original status: **Accepted (2026-05-04)** — implemented across 3 commits (`25aa5e5` tests-first + `558efb9` Pass 5 generalization impl + commit 3 release verification). Combined with ADR-0143 Pass 7, all 348 surveyed hits in expanded scope eliminated. Highest-density file (verification-quality SKILL.md, 73 hits) now shows 0 `claude-flow@` + 73 `@sparkleideas/ruflo@` refs (full chain Pass 1 → Pass 5 → Pass 7 fired).
+
+This ADR relates to ADR-0117 (the original Pass 5 — `claude-flow@alpha` rewrite, scope-limited to `.claude-plugin/**` + `plugins/**` + `v3/@claude-flow/cli/.claude/{agents,commands,skills}/**`) and commit `8aba0ad` on ruflo-patch (Pass 6 — `npx ruflo` rewrite, the `ruflo`-side analog of this gap; closed 2026-05-04 after a Verdaccio 404 on `GET /ruflo`).
+
+Scope: `scripts/codemod.mjs` Pass 5 only — broadens the regex tag filter and the path scope predicate. Does not touch any other codemod pass and does not patch fork source.
+
+References:
 
 - Original Pass 5: `scripts/codemod.mjs:245-269` post-Pass-6 (`CLAUDE_FLOW_ALPHA_RE`, `isPlugin5Scope`, `applyPass5`)
 - Pass 5 tests: `tests/pipeline/codemod.test.mjs:735-1029` (existing `describe('codemod: ADR-0117 Pass 5 …')` block — extend in place)

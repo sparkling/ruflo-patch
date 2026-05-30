@@ -1,16 +1,15 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-24
-tags: [pipeline, publish, bash, set-e, audit-followup, ct-l, error-propagation, hardcoded-paths]
+tags: [pipeline, publish, bash, set-e]
 supersedes: []
-depends-on: [0201, 0231, 0233, 0236]
+depends-on: [ADR-0201, ADR-0231, ADR-0233, ADR-0236]
 implements: []
 ---
 
 # Pipeline robustness + `set -e` discipline (CT-L)
 
-## Context
+## Context and Problem Statement
 
 [[ADR-0233]] §CT-C close-out landed in [[ADR-0236]] (cross-registry
 scope/package-name lint at gate-0). CT-C closed the *registry-drift*
@@ -211,7 +210,7 @@ Per [[ADR-0201]] §"Remediation-ADR pre-flight checklist":
    This ADR enforces that rule at the affected sites and pushes the
    broader cultural enforcement to a lint (option C below).
 
-## Considered options
+## Considered Options
 
 ### A. Per-site triage table + helper extraction in `lib/pipeline-helpers.sh`
 
@@ -353,7 +352,9 @@ shape at `F-02-003`. Status quo means the next release that hits a
 non-"already published" wrapper-publish failure repeats the
 `project-ruflo-wrapper-latest-regression` cycle.
 
-## Decision
+## Decision Outcome
+
+Chosen option: "Option A (per-site disposition + helper extraction) + Option C (lint enforcement)", because it closes the pipeline-robustness findings per-site while a lint guards against future `set -e` regressions.
 
 Adopt **option A (per-site disposition + helper extraction) + option C
 (lint enforcement) for the CRITICAL/WARNING/NOTE set** (effectively
@@ -463,56 +464,48 @@ recoverable-error allowlist).
 14. Update `[[reference-pipeline-publish-paths]]` once helper + lint
     land.
 
-## Consequences
+### Consequences
 
-### Positive
-
-* Closes the `F-02-003` CRITICAL — the exact failure shape that burned
+* Good, because it closes the `F-02-003` CRITICAL — the exact failure shape that burned
   a release per `project-ruflo-wrapper-latest-regression`. A non-
   recoverable wrapper-publish failure now exits non-zero at the
   publish stage; downstream acceptance fails fast rather than testing
   against a stale wrapper.
-* `F-02-005` rebase-then-corrupt-then-push class is eliminated.
-* `F-02-006` portability bug closes at the ~12 affected sites;
+* Good, because `F-02-005` rebase-then-corrupt-then-push class is eliminated.
+* Good, because `F-02-006` portability bug closes at the ~12 affected sites;
   pipeline can run on a non-Henrik-MacBook machine again.
-* `run_phase_norevert` helper formalises the "best-effort with named
+* Good, because `run_phase_norevert` helper formalises the "best-effort with named
   exceptions" pattern — future tolerant-phase additions get explicit
   allowlist review, not implicit `|| log` swallows.
-* Lint gates future regression at <1s pipeline cost.
-* `F-02-013` aggregation fix means multi-exhaustion levels produce
+* Good, because lint gates future regression at <1s pipeline cost.
+* Good, because `F-02-013` aggregation fix means multi-exhaustion levels produce
   per-package issues; diagnosis is no longer truncated.
-
-### Negative
-
-* 12 sites touched across 6 files + 2 new files (helper extension +
+* Bad, because 12 sites touched across 6 files + 2 new files (helper extension +
   lint script). Larger diff than CT-C close-out.
-* `F-02-009` type-error baseline assertion (`<= 256`) is itself a
+* Bad, because `F-02-009` type-error baseline assertion (`<= 256`) is itself a
   hardcoded number; it's a code-smell that the audit notes
   (`reference-best-effort-must-rethrow-fatals` cautions against
   unverified counts). Defended: a CI-asserted baseline is strictly
   better than the current "comment claims 256, nothing verifies it"
   state, and the next agentic-flow upstream-sync re-baselines via
   pre-commit re-measure.
-* `run_phase_norevert` helper introduces a new abstraction; the next
+* Bad, because `run_phase_norevert` helper introduces a new abstraction; the next
   refactor wave may want to retire it if the two deliberate sites get
   per-phase `set -e` segments via subshell + `set -e` rather than
   helper indirection. (Defended: extraction is the lower-risk choice
   today; subshell-per-phase is a non-trivial restructure.)
-* Allowlist file (`config/runtime-externals-allowlist.json`, single
+* Bad, because allowlist file (`config/runtime-externals-allowlist.json`, single
   key today) is a new artifact; same singleton-list shape ADR-0236
   flagged for `EXTRA_WORKSPACE_DIRS`. (Defended: bounded by
   known-unpublished externals — `flow-nexus` is the only documented
   case; growth is reviewed.)
-
-### Neutral
-
-* The two deliberate `-uo pipefail` scripts keep their option, just
+* Neutral, because the two deliberate `-uo pipefail` scripts keep their option, just
   get a header comment and migrate tolerant phases to the helper. The
   shape of the scripts doesn't change.
-* The 4 NOTE-tier findings without a code fix remain documented in
+* Neutral, because the 4 NOTE-tier findings without a code fix remain documented in
   the Sites table for cross-reference (option A's table-row
   discipline applied).
-* `lib/pipeline-helpers.sh` is already a sourceable library with no
+* Neutral, because `lib/pipeline-helpers.sh` is already a sourceable library with no
   `set -euo pipefail` of its own (per its header comment); adding a
   new function is pattern-conformant.
 

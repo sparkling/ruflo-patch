@@ -1,12 +1,15 @@
-# ADR-079: IoT Cognitum Plugin
+---
+status: proposed
+date: 2026-04-29
+tags: [iot, plugin, cognitum, fleet]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-## Status: PROPOSED
+# IoT Cognitum Plugin
 
-## Date: 2026-04-29
-
-## Authors: Claude Flow Team
-
-## Context
+## Context and Problem Statement
 
 Claude Flow v3.5 orchestrates AI agents across development, security, and infrastructure domains -- but lacks a first-class integration with physical device fleets. The Cognitum platform provides AI-powered hardware (the Seed appliance) with on-device vector stores, Ed25519 cryptographic identity, OTA firmware updates, mesh networking, and MCP protocol integration. The `@cognitum-one/sdk` (v0.2.1) exposes 12 typed seed endpoints, mesh routing with failover, mDNS discovery, and a cloud control plane -- all capabilities that map naturally onto Ruflo's agent/swarm model.
 
@@ -44,11 +47,15 @@ If Claude Flow ships this, every Cognitum Seed becomes a Ruflo agent. Every devi
 
 Every Cognitum Seed is modelled as a Ruflo agent with hardware capabilities. The plugin maintains a `DeviceAgent` entity that wraps a `SeedClient` session and exposes the device's resources (store, OTA, mesh, witness) as agent capabilities. The swarm coordinator manages device agents alongside software agents -- same topology, same trust model, same hooks.
 
----
+## Considered Options
 
-## Decision
+* **Build `@claude-flow/plugin-iot-cognitum` as a first-class Claude Flow plugin (chosen)** — bridges Cognitum Seed device fleets into the Ruflo agent/swarm model with device trust scoring, telemetry-driven anomaly detection, fleet-aware OTA orchestration, and edge-cloud federation.
 
-Build `@claude-flow/plugin-iot-cognitum` as a first-class Claude Flow plugin that bridges Cognitum Seed device fleets into the Ruflo agent/swarm model with device trust scoring, telemetry-driven anomaly detection, fleet-aware OTA orchestration, and edge-cloud federation.
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "Build `@claude-flow/plugin-iot-cognitum` as a first-class Claude Flow plugin", because it bridges Cognitum Seed device fleets into the Ruflo agent/swarm model with device trust scoring, telemetry-driven anomaly detection, fleet-aware OTA orchestration, and edge-cloud federation.
 
 ---
 
@@ -1747,22 +1754,30 @@ Pass criteria: All verify statements pass.
 
 ---
 
-## 19. Consequences
+### Consequences
 
 **Positive:**
-- Claude Flow becomes the first agent framework with native IoT device fleet management.
-- Every Cognitum Seed becomes a Ruflo agent, unifying the physical and software agent mesh.
-- SONA learns from device behavior, enabling predictive maintenance without custom ML pipelines.
-- Compliance (IEC 62443, NIST IoT) is structural, not a checklist bolted on after the fact.
-- The device trust model closes the gap between "is this device healthy?" and "should this device be trusted?"
+* Good, because Claude Flow becomes the first agent framework with native IoT device fleet management.
+* Good, because every Cognitum Seed becomes a Ruflo agent, unifying the physical and software agent mesh.
+* Good, because SONA learns from device behavior, enabling predictive maintenance without custom ML pipelines.
+* Good, because compliance (IEC 62443, NIST IoT) is structural, not a checklist bolted on after the fact.
+* Good, because the device trust model closes the gap between "is this device healthy?" and "should this device be trusted?"
 
 **Negative:**
-- Network reliability is lower for physical devices than software agents. Health probes add overhead.
-- The SDK's `undici` dependency adds ~1MB to the plugin; acceptable for a device management plugin.
-- mDNS discovery requires the optional `multicast-dns` peer dependency. Explicit endpoints work without it.
-- Firmware deployment is inherently risky. The canary + rollback mitigation reduces but does not eliminate bricking risk.
+* Bad, because network reliability is lower for physical devices than software agents. Health probes add overhead.
+* Bad, because the SDK's `undici` dependency adds ~1MB to the plugin; acceptable for a device management plugin.
+* Bad, because mDNS discovery requires the optional `multicast-dns` peer dependency. Explicit endpoints work without it.
+* Bad, because firmware deployment is inherently risky. The canary + rollback mitigation reduces but does not eliminate bricking risk.
 
 **Neutral:**
-- The Cognitum SDK is at v0.2.1 -- early but stable (201 passing tests, wire-verified against live hardware). SDK breaking changes will require plugin updates.
-- Device fleet sizes vary from 5 to 5000. The plugin architecture supports both but Phase 5 load testing targets 100 devices.
-- Cloud control plane integration is optional. The plugin works fully offline with direct SeedClient connections.
+* Neutral, because the Cognitum SDK is at v0.2.1 -- early but stable (201 passing tests, wire-verified against live hardware). SDK breaking changes will require plugin updates.
+* Neutral, because device fleet sizes vary from 5 to 5000. The plugin architecture supports both but Phase 5 load testing targets 100 devices.
+* Neutral, because cloud control plane integration is optional. The plugin works fully offline with direct SeedClient connections.
+
+### Confirmation
+
+The decision is confirmed via the Validation Benchmark in Section 15 (a 15-device, two-fleet scenario exercising baseline establishment, anomaly injection, canary firmware deploy, firmware regression detection, and witness chain integrity) plus the per-phase Success Criteria in Section 14 (unit, integration, acceptance, and load tests green).
+
+## More Information
+
+The original record listed the authors as the "Claude Flow Team".

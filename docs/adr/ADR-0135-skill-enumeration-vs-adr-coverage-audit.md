@@ -1,13 +1,17 @@
-# ADR-0135: Skill + plugin enumeration vs ADR coverage audit — USERGUIDE skills, all plugin distribution channels, and skill↔plugin cross-index against fork ADRs
+---
+status: proposed
+date: 2026-05-03
+tags: [skills, plugins, audit, coverage]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: **Proposed (2026-05-03)** — descriptive audit + gap tracker. **Revised 2026-05-03** with (a) full plugin enumeration across all distribution channels (Claude Code marketplace, npm optional, WASM bundled, IPFS registry, undocumented on-disk), (b) skill↔plugin cross-index, and (c) **verification appendix** with parallel-swarm cross-reference results against actual implementation (5 follow-up ADRs identified). **Revised 2026-05-05** with (d) init-bundle reality check: `npx @sparkleideas/ruflo@latest init --full` ships **33 standalone skills**, not the USERGUIDE-claimed 37 — see Finding 11. No implementation work; subsequent ADRs will reference this matrix when adding fork-side coverage to currently-uncovered surfaces.
-- **Date**: 2026-05-03
-- **Deciders**: Henrik Pettersen
-- **Related**: ADR-0103 (readme-claims-investigation-roadmap — closest existing tracker, but scoped to README claims, not full skill+plugin coverage matrix), ADR-0051 (remove-direct-integrations-use-plugins), ADR-0113 (plugin-system-integration-completion), ADR-0116 (hive-mind-marketplace-plugin), ADR-0117 (marketplace-mcp-server-registration), ADR-078/3-digit (agent-llm-federation-plugin), ADR-079/3-digit (iot-cognitum-plugin)
-- **Scope**: (1) All 37 skills enumerated in upstream `ruvnet/ruflo` USERGUIDE `Skills System` section (3992–4115). (2) All plugins mentioned anywhere in USERGUIDE: 8 Claude Code marketplace plugins (504–520), 14 npm optional plugins (1796–1894), 6 RuVector WASM plugins (1918–1929), 19 IPFS-registry plugins (3594–3634, names not enumerated). (3) All 32 plugin directories under upstream `plugins/`. (4) All 142 fork ADRs.
-- **Sources**: `ruvnet/ruflo` USERGUIDE.md `main` @ 2026-05-03 (7,557 lines), upstream `.claude/skills/` (38 dirs), upstream `plugins/` (32 dirs), `docs/adr/` (142 ADRs)
+# Skill + plugin enumeration vs ADR coverage audit — USERGUIDE skills, all plugin distribution channels, and skill↔plugin cross-index against fork ADRs
 
-## Context
+## Context and Problem Statement
+
+This is a descriptive audit + gap tracker. It was revised 2026-05-03 with (a) full plugin enumeration across all distribution channels (Claude Code marketplace, npm optional, WASM bundled, IPFS registry, undocumented on-disk), (b) skill↔plugin cross-index, and (c) a verification appendix with parallel-swarm cross-reference results against actual implementation (5 follow-up ADRs identified). It was revised again 2026-05-05 with (d) an init-bundle reality check: `npx @sparkleideas/ruflo@latest init --full` ships **33 standalone skills**, not the USERGUIDE-claimed 37 — see Finding 11. There is no implementation work here; subsequent ADRs reference this matrix when adding fork-side coverage to currently-uncovered surfaces.
 
 A prior session denied the existence of `/hive-mind-advanced` despite three USERGUIDE references and 11 SKILL.md files across upstream repos (memory `feedback-hive-mind-advanced-exists.md`). That denial exposed a broader problem: there is no canonical mapping from upstream skill surface → fork ADR coverage, so it is easy to lose track of what we have implemented, partially implemented, or carry as upstream-only.
 
@@ -470,3 +474,13 @@ Real path: `/Users/henrik/source/ruvnet/ruflo/v3/@claude-flow/plugins/examples/r
 4. **ADR-NNNN — RuVector WASM class export contract**: rename classes to add `Plugin` suffix OR update USERGUIDE to use the actual class names. Currently the docs and code disagree. Also enumerate the 7th sibling `SONALearning`.
 5. **ADR-NNNN — IPFS registry CID drift policy**: the registry CID changes when plugins are added (CID is content-addressed). USERGUIDE pinned a specific CID that's already stale. Either refresh on each release or remove the CID claim and reference the live registry only.
 6. **ADR-NNNN — init-bundle skill set policy**: `init --full` ships 33 skills, USERGUIDE Matrix A enumerates 37, USERGUIDE header claims 42 (per Finding 11). Decide which is canonical and reconcile: either bundle the 4 missing specialized skills (`performance-analysis`, `agentic-jujutsu`, `worker-benchmarks`, `worker-integration`), or remove them from Matrix A as never-bundled, or add a third "ships standalone vs plugin vs unbundled" axis to Matrix A. Also decide whether `browser` (bundled but unenumerated) deserves a Matrix A row.
+
+## More Information
+
+Original status: **Proposed (2026-05-03)** — descriptive audit + gap tracker. Revised 2026-05-03 with full plugin enumeration, skill↔plugin cross-index, and a verification appendix; revised 2026-05-05 with the init-bundle reality check (Finding 11). No implementation work; subsequent ADRs reference this matrix when adding fork-side coverage to currently-uncovered surfaces.
+
+This audit relates to ADR-0103 (readme-claims-investigation-roadmap — closest existing tracker, but scoped to README claims, not full skill+plugin coverage matrix), ADR-0051 (remove-direct-integrations-use-plugins), ADR-0113 (plugin-system-integration-completion), ADR-0116 (hive-mind-marketplace-plugin), ADR-0117 (marketplace-mcp-server-registration), ADR-078 (3-digit, agent-llm-federation-plugin), and ADR-079 (3-digit, iot-cognitum-plugin).
+
+Scope: (1) All 37 skills enumerated in upstream `ruvnet/ruflo` USERGUIDE `Skills System` section (3992–4115). (2) All plugins mentioned anywhere in USERGUIDE: 8 Claude Code marketplace plugins (504–520), 14 npm optional plugins (1796–1894), 6 RuVector WASM plugins (1918–1929), 19 IPFS-registry plugins (3594–3634, names not enumerated). (3) All 32 plugin directories under upstream `plugins/`. (4) All 142 fork ADRs.
+
+Sources: `ruvnet/ruflo` USERGUIDE.md `main` @ 2026-05-03 (7,557 lines), upstream `.claude/skills/` (38 dirs), upstream `plugins/` (32 dirs), `docs/adr/` (142 ADRs).

@@ -1,12 +1,15 @@
-# ADR-0148: Skill ↔ MCP tool surface audit — find every skill-referenced MCP tool that has no server handler
+---
+status: proposed
+date: 2026-05-06
+tags: [skills, mcp, audit, tools]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: Findings collected (15-agent swarm, 2026-05-06). Decision phase pending.
-- **Date**: 2026-05-06
-- **Deciders**: Henrik Pettersen
-- **Related**: ADR-0147 (cross-process AgentDB bug refinements — surfaced the pattern), ADR-0136 (claudemd-generator plugin/skill discovery), ADR-0117 (mcp__ruflo__ namespace)
-- **Scope**: Audit every plugin SKILL.md + command in `forks/ruflo/plugins/` and `forks/ruflo/v3/@claude-flow/cli/.claude/skills/` for `mcp__ruflo__*` and `mcp__claude-flow__*` tool references; cross-check against MCP server tool registry. Decide per-tool: implement / remove / stub-with-error / alias.
+# Skill ↔ MCP tool surface audit — find every skill-referenced MCP tool that has no server handler
 
-## Context
+## Context and Problem Statement
 
 ADR-0147 surfaced the pattern: skill writers had documented MCP tools that don't exist server-side. Three confirmed gaps in `ruflo-rag-memory` (`memory_import_claude`, `memory_bridge_status`, `memory_search_unified`) plus two CLI-side gaps (`memory_export`, `memory_import`).
 
@@ -330,7 +333,15 @@ Rejected: order-of-operations wrong. Skills reference fake tools regardless of g
 - (TODO) Phase 4 — regression test pin
 - (TODO) Live verification: zero `MCP tool not found` errors from any plugin's `allowed-tools:`-listed tool
 
-## References
+## More Information
+
+Original status: Findings collected (15-agent swarm, 2026-05-06). Decision phase pending.
+
+This ADR relates to ADR-0147 (cross-process AgentDB bug refinements — surfaced the pattern; §"Bug 5" introduced the SKILL.md drift pattern), ADR-0136 (claudemd-generator plugin/skill discovery — broader context), and ADR-0117 (mcp__ruflo__ namespace).
+
+Scope: Audit every plugin SKILL.md + command in `forks/ruflo/plugins/` and `forks/ruflo/v3/@claude-flow/cli/.claude/skills/` for `mcp__ruflo__*` and `mcp__claude-flow__*` tool references; cross-check against MCP server tool registry. Decide per-tool: implement / remove / stub-with-error / alias.
+
+References:
 
 - ADR-0147 §"Bug 5" (introduced the SKILL.md drift pattern)
 - ADR-0136 (claudemd-generator plugin/skill discovery — broader context)

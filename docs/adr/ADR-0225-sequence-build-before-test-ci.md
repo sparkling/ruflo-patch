@@ -1,9 +1,6 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-21
-accepted-on: 2026-05-21
-implemented-on: 2026-05-21
 tags: [ci-cd, pipeline, build, testing, race-condition, ruflo-publish]
 supersedes: []
 depends-on: []
@@ -86,6 +83,8 @@ is accurate; structure (nested `### Consequences`/`### Confirmation`) and the
 Confirmation match the shipped pipeline. No corrections.
 
 ## More Information
+
+This decision was completed; accepted and implemented on 2026-05-21.
 
 * **Surfaced by** ADR-0167 amendment 2026-05-21 (JS `loadFromDisk` RVFR-prefix fix) — the fix that exposed the chicken-and-egg.
 * **Pipeline cascade** — ADR-0038 (cascading test pipeline) defines the `preflight → pipeline → unit → … → acceptance` layering; this ADR refines *where* the build sits relative to the unit layer in the publish orchestration.

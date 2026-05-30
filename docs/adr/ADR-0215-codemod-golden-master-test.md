@@ -1,11 +1,9 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-19
-implemented-date: 2026-05-22
 tags: [codemod, pipeline, test, golden-master, skills, content-invariant, swarm-reviewed]
 supersedes: []
-depends-on: [0201]
+depends-on: [ADR-0201]
 implements: []
 ---
 
@@ -509,6 +507,8 @@ legacy of the original draft (the chosen outcome is the content-invariant
 gate); the `ADR-0013` prose reference is unprefixed. Left as-is; cosmetic.
 
 ## More Information
+
+This decision was completed; implemented on 2026-05-22.
 
 ### Motivating finding
 

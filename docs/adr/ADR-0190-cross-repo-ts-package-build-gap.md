@@ -1,57 +1,13 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-19
-accepted: 2026-05-28
-implemented: 2026-05-28
-methodology: [MADR]
-decision-makers: [Henrik Pettersen]
-tags: [pipeline, publish, typescript, build, cross-repo, fail-loud, ADR-0082]
-related: [0038, 0082, 0150, 0189]
-audience: ai-executor
+tags: [pipeline, publish, typescript]
+supersedes: []
+depends-on: [ADR-0082, ADR-0189]
+implements: []
 ---
 
-> **Status note (2026-05-28)**: Option 1 (recommended starting point)
-> implemented. `scripts/check-cross-repo-builds.mjs` walks every
-> `forks/*/npm/packages/*/package.json`, validates that `main`/`module`/
-> `types`/`exports` entries exist as files in the source tree. Per-
-> platform NAPI sub-packages (covered by ADR-0189's NAPI coverage gate)
-> are excluded by substring allowlist. Wired into
-> `scripts/ruflo-publish.sh` as `cross-repo-builds-advisory`
-> (advisory-first per the ADR-0209/0242 pattern; `CROSS_REPO_BUILDS_
-> ADVISORY=1` makes the script exit 0 while logging the count + first
-> 10 violators).
->
-> **Detector scoped to the publish set (2026-05-28 swarm verification).**
-> The first-pass "162 violations, each a ship-time hazard, remediate
-> per-package" framing was WRONG on the load-bearing word *hazard*. A
-> violation only ships a broken package if the package is actually
-> PUBLISHED. The pipeline publishes exactly the names in
-> `config/publish-levels.json` (enforced by `publish.mjs`'s
-> `_publishableNamesSet`). Of the original 162: **161 were in
-> never-published packages** (29 dev/example packages with no publish
-> path — building dist/ for them remediates nothing — plus NAPI
-> false-positives). The detector now (a) maps each source name through
-> the codemod (`applyNameMapping`, exported from `codemod.mjs` — single
-> source of truth) and skips names absent from the publish set, and (b)
-> exempts NAPI parent wrappers (`napi` field / `napi build` script —
-> their `index.js`/`.d.ts` are generated, e.g. `sona`). Scoped result:
-> **7 published packages checked, 1 real hazard** —
-> `@sparkleideas/ruvector` (root meta-pkg: `main: dist/index.js`, empty
-> dist in tarball). The origin case (`ruvllm`) is already fixed.
->
-> **The 1 remaining hazard needs a decision (NOT auto-made — it's a
-> publish-set change):** either (a) git-track
-> `forks/ruvector/npm/packages/ruvector/dist/` (the `ruvllm` stopgap
-> pattern), or (b) drop `@sparkleideas/ruvector` from `publish-levels.json`
-> — the swarm verified **nothing in the publish set depends on it** (it's
-> a standalone meta/CLI pkg), so (b) removes a broken tarball at low cost,
-> but stops `npm i @sparkleideas/ruvector` from resolving for any direct
-> consumer. Stays advisory (`CROSS_REPO_BUILDS_ADVISORY=1`, exit 0) until
-> the 1 hazard is resolved; **promotable to fail-loud the moment it is**
-> (non-advisory exit is 1 today on exactly that 1 package, 0 after).
-
-# ADR-0190: Cross-repo TypeScript package build — codify the contract
+# Cross-repo TypeScript package build — codify the contract
 
 ## Context and Problem Statement
 
@@ -204,36 +160,22 @@ for (const fork of FORKS) {
 // + same allowlist + run-from-pre-flight pattern as check-napi-coverage.mjs
 ```
 
-## Consequences
+### Consequences
 
-**If Option 1 (pre-built dist + detector)**:
-
-* Every cross-repo TS package change requires a fork-main commit
-  with refreshed `dist/`. Cost: one extra `tsc` + commit per change.
-* Detector catches new upstream packages that ship with `dist/` in
-  `.gitignore` but `main` pointing at it (the exact ruvllm shape).
-* `forks/*/main` history accumulates build artifacts; merges with
-  upstream become noisier.
-
-**If Option 2 (pipeline build)**:
-
-* Fork main stays clean.
-* `npm run release` adds ~N × tsc time per cross-repo TS package
-  (typically 30-180s each).
-* New build infrastructure: cross-repo `npm install` cache, build-order
-  graph, `napi build` path handling.
-
-**If Option 3 (drop --ignore-scripts for cross-repo)**:
-
-* Zero new infrastructure. Lowest implementation cost.
-* Highest ongoing review cost: every upstream sync needs a
-  `prepublishOnly` audit per package. If upstream adds an
-  exfiltration script the release runs it.
-
-**If Option 4 (hybrid)**:
-
-* Combines Option 1's enforcement with Option 2's build-where-possible.
-* Highest implementation cost; clearest end-state.
+* Neutral, because under Option 1 (pre-built dist + detector) every cross-repo TS package change requires a fork-main commit with refreshed `dist/` (cost: one extra `tsc` + commit per change); the detector catches new upstream packages that ship with `dist/` in `.gitignore` but `main` pointing at it (the exact ruvllm shape); and `forks/*/main` history accumulates build artifacts so merges with upstream become noisier.
+* Neutral, because under Option 2 (pipeline build) fork main stays clean, but `npm run release` adds ~N × tsc time per cross-repo TS package (typically 30-180s each) and needs new build infrastructure: cross-repo `npm install` cache, build-order graph, `napi build` path handling.
+* Neutral, because Option 3 (drop --ignore-scripts for cross-repo) needs zero new infrastructure (lowest implementation cost) but carries the highest ongoing review cost: every upstream sync needs a `prepublishOnly` audit per package, and if upstream adds an exfiltration script the release runs it.
+* Neutral, because Option 4 (hybrid) combines Option 1's enforcement with Option 2's build-where-possible at the highest implementation cost but the clearest end-state.
 
 This ADR closes when one option is implemented and the detector (or
 build step) is wired into `scripts/ruflo-publish.sh`.
+
+## More Information
+
+Original status: accepted 2026-05-28, implemented 2026-05-28, completed. Original frontmatter recorded `methodology: [MADR]`, `decision-makers: [Henrik Pettersen]`, `audience: ai-executor`, and `related: [0038, 0082, 0150, 0189]`.
+
+Status note (2026-05-28): Option 1 (recommended starting point) implemented. `scripts/check-cross-repo-builds.mjs` walks every `forks/*/npm/packages/*/package.json`, validates that `main`/`module`/`types`/`exports` entries exist as files in the source tree. Per-platform NAPI sub-packages (covered by ADR-0189's NAPI coverage gate) are excluded by substring allowlist. Wired into `scripts/ruflo-publish.sh` as `cross-repo-builds-advisory` (advisory-first per the ADR-0209/0242 pattern; `CROSS_REPO_BUILDS_ADVISORY=1` makes the script exit 0 while logging the count + first 10 violators).
+
+Detector scoped to the publish set (2026-05-28 swarm verification). The first-pass "162 violations, each a ship-time hazard, remediate per-package" framing was WRONG on the load-bearing word *hazard*. A violation only ships a broken package if the package is actually PUBLISHED. The pipeline publishes exactly the names in `config/publish-levels.json` (enforced by `publish.mjs`'s `_publishableNamesSet`). Of the original 162: **161 were in never-published packages** (29 dev/example packages with no publish path — building dist/ for them remediates nothing — plus NAPI false-positives). The detector now (a) maps each source name through the codemod (`applyNameMapping`, exported from `codemod.mjs` — single source of truth) and skips names absent from the publish set, and (b) exempts NAPI parent wrappers (`napi` field / `napi build` script — their `index.js`/`.d.ts` are generated, e.g. `sona`). Scoped result: **7 published packages checked, 1 real hazard** — `@sparkleideas/ruvector` (root meta-pkg: `main: dist/index.js`, empty dist in tarball). The origin case (`ruvllm`) is already fixed.
+
+The 1 remaining hazard needs a decision (NOT auto-made — it's a publish-set change): either (a) git-track `forks/ruvector/npm/packages/ruvector/dist/` (the `ruvllm` stopgap pattern), or (b) drop `@sparkleideas/ruvector` from `publish-levels.json` — the swarm verified **nothing in the publish set depends on it** (it's a standalone meta/CLI pkg), so (b) removes a broken tarball at low cost, but stops `npm i @sparkleideas/ruvector` from resolving for any direct consumer. Stays advisory (`CROSS_REPO_BUILDS_ADVISORY=1`, exit 0) until the 1 hazard is resolved; **promotable to fail-loud the moment it is** (non-advisory exit is 1 today on exactly that 1 package, 0 after).

@@ -1,16 +1,13 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-19
-methodology: [MADR]
-decision-makers: [Henrik Pettersen]
-tags: [autopilot, infrastructure, vitest, tsc, side-effects, ADR-0193, ADR-0195, ADR-0197]
-related: [0193, 0195, 0197]
-upstream-related: []
-audience: ai-executor
+tags: [autopilot, infrastructure, side-effects]
+supersedes: []
+depends-on: [ADR-0193]
+implements: []
 ---
 
-# ADR-0198: Additional side-effect findings from ADR-0193 implementation
+# Additional side-effect findings from ADR-0193 implementation
 
 ## Context and Problem Statement
 

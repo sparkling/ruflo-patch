@@ -1,22 +1,15 @@
-# ADR-0101: Fork README Update Program — Delta Prelude per Fork
+---
+status: accepted
+date: 2026-04-26
+tags: [readme, forks, packaging, documentation]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-> **[IMPLEMENTED 2026-05-29 → see [[ADR-0270]]]** All 5 §Open Decisions answered
-> by the user (installer-audience; ruv-FANN one-paragraph note; migration pointer
-> in every user-facing fork; fix all 6 stale URLs split-by-purpose; single ADR),
-> then **shipped the same day** across all 5 forks: installer prelude + migration
-> pointer + forked-from attribution on the 4 user-facing READMEs
-> (`@sparkleideas/{ruflo,agentdb,ruvector,agentic-flow}`), a one-paragraph
-> fork-identity note on `ruv-FANN`, and all 6 stale `ruvnet/claude-flow` URLs
-> repointed to the sparkling fork (split-by-purpose). Fork commits: ruflo
-> `106d6cc6b`, agentdb `ed23fc6`, ruvector `28a2669ec`, agentic-flow `814d319d`,
-> ruv-FANN `f9494d2`. Re-scoped small after the upstream README rewrite (ruflo
-> 7541→408 lines). See §Open Decisions (resolved) below.
-- **Status**: Proposed 2026-04-26 — planning phase, several decisions deferred to user (see §Open Decisions).
-- **Date**: 2026-04-26
-- **Scope**: Update `README.md` in each of the 4 forks (`forks/ruflo`, `forks/agentic-flow`, `forks/ruv-FANN`, `forks/ruvector`) to reflect that they ship as `@sparkleideas/*` packages built from upstream HEAD with pinned cross-package deps. **Not in scope:** rewriting upstream content, modifying ADRs, the `ruflo-patch` repo's own `README.md`.
-- **Related**: ADR-0027 (fork model — `@claude-flow/*` → `@sparkleideas/*`), memory `reference-fork-workflow` (build branches, push to `sparkling`), memory `feedback-fork-commits` (verify branch + remote before push).
+# Fork README Update Program — Delta Prelude per Fork
 
-## Context
+## Context and Problem Statement
 
 The four forks ship as `@sparkleideas/*` packages. End users who land on the GitHub repo see upstream READMEs that:
 
@@ -45,7 +38,14 @@ All four have `sparkling` remote configured. No fork's README currently mentions
 - Stale `ruvnet/claude-flow` URLs in fork READMEs (verified by ADR-0101 discovery agents — see ADR-0101-companion findings) need updating to `ruvnet/ruflo`
 - Memory `feedback-patches-in-fork` requires bug-fix patches to live in the forks; users need to know where to file issues — currently ambiguous
 
-## Decision
+## Considered Options
+
+* **1. Delta prelude, not wholesale rewrite** (chosen) — prepend a `@sparkleideas`-specific prelude section to each existing README, keeping upstream content intact.
+* **B. Wholesale rewrite** — Rejected: ~15K lines of upstream content to replace; most is still accurate; loses upstream maintainers' voice and deep technical sections we can't easily recreate; creates merge friction every time we sync upstream; no user benefit beyond what a prelude provides.
+
+## Decision Outcome
+
+Chosen option: "Delta prelude, not wholesale rewrite", because most upstream content is still accurate and a self-contained prepended prelude is low-risk, reversible, survives upstream sync, and delivers the user-facing install story (`@sparkleideas` scope, patch model, version pinning) without the merge friction or voice-loss of a 15K-line rewrite.
 
 ### 1. Approach: delta prelude, not wholesale rewrite
 
@@ -174,7 +174,35 @@ Each fork's work splits into **Discovery → Draft → Review → Commit**. Disc
 4. Review and commit happen **per fork sequentially** (one PR at a time so we can correct prelude template based on first PR's review feedback before propagating to later forks).
 5. Promote this ADR from **Proposed → In Progress** when first fork's drafting begins; **In Progress → Implemented** when all 4 PRs merged and verified.
 
-## Open Decisions — RESOLVED 2026-05-29 (user, see [[ADR-0270]])
+### Consequences
+
+**Pros**
+* Good, because it is low-risk, incremental, reversible.
+* Good, because it preserves upstream maintainers' content and voice.
+* Good, because it survives upstream sync (prelude is a self-contained block).
+* Good, because each fork's PR is independently reviewable.
+* Good, because of clear acceptance criteria: prelude renders correctly on GitHub, install commands work, issue-filing guidance matches reality.
+
+**Cons**
+* Bad, because of slight duplication if upstream eventually adds similar packaging notes.
+* Bad, because it doesn't address potentially stale upstream content (out of scope by design).
+* Bad, because there are four separate fork PRs to coordinate.
+* Bad, because the prelude length on `ruflo` (~300 lines on top of 7541) makes the README quite long.
+
+### Confirmation
+
+#### Acceptance criteria (per fork)
+
+- [ ] Prelude added at top of `README.md`, before any upstream content
+- [ ] First install command shown is `@sparkleideas/<pkg>` with current version
+- [ ] At least one paragraph explaining "what's different vs upstream"
+- [ ] Issue-filing guidance present (which repo for which kind of bug)
+- [ ] Link to `ruflo-patch` repo for pipeline/contributors
+- [ ] No `npx @claude-flow/cli` or `npm i claude-flow` install command appears in the prelude (upstream-section examples may stay)
+- [ ] `ruvnet/claude-flow` GitHub URLs updated to `ruvnet/ruflo` per stale-URL policy (decision §Open §4)
+- [ ] Rendered output verified on `sparkling/<fork>` GitHub UI before promotion to Implemented
+
+## Open Decisions — RESOLVED 2026-05-29 (user, see ADR-0270)
 
 All five answered; this ADR is no longer blocked on user input. Re-scope note:
 the upstream README rewrite (ruflo 7541→408 lines, `9250df2df`) shrank the job
@@ -196,34 +224,16 @@ dramatically — the prelude + ~6 stale-URL fixes are now comfortably one commit
 **Status:** **IMPLEMENTED 2026-05-29** — prelude + note + migration pointers + 6
 URL fixes landed across all 5 forks (commit SHAs in the top marker).
 
-## Consequences
-
-**Pros**
-- Low-risk, incremental, reversible
-- Preserves upstream maintainers' content and voice
-- Survives upstream sync (prelude is a self-contained block)
-- Each fork's PR is independently reviewable
-- Clear acceptance criteria: prelude renders correctly on GitHub, install commands work, issue-filing guidance matches reality
-
-**Cons**
-- Slight duplication if upstream eventually adds similar packaging notes
-- Doesn't address potentially stale upstream content (out of scope by design)
-- Four separate fork PRs to coordinate
-- Prelude length on `ruflo` (~300 lines on top of 7541) makes the README quite long
-
-## Acceptance criteria (per fork)
-
-- [ ] Prelude added at top of `README.md`, before any upstream content
-- [ ] First install command shown is `@sparkleideas/<pkg>` with current version
-- [ ] At least one paragraph explaining "what's different vs upstream"
-- [ ] Issue-filing guidance present (which repo for which kind of bug)
-- [ ] Link to `ruflo-patch` repo for pipeline/contributors
-- [ ] No `npx @claude-flow/cli` or `npm i claude-flow` install command appears in the prelude (upstream-section examples may stay)
-- [ ] `ruvnet/claude-flow` GitHub URLs updated to `ruvnet/ruflo` per stale-URL policy (decision §Open §4)
-- [ ] Rendered output verified on `sparkling/<fork>` GitHub UI before promotion to Implemented
-
 ## Status transitions
 
 - **Proposed** (2026-04-26, current) — planning, awaiting user decisions §Open
 - **In Progress** — when discovery agents complete and drafting begins on at least one fork
 - **Implemented** — when all 4 fork PRs merged and READMEs verified live on `sparkling/<fork>`
+
+## More Information
+
+Status: IMPLEMENTED 2026-05-29 (see ADR-0270). All 5 §Open Decisions were answered by the user (installer-audience; ruv-FANN one-paragraph note; migration pointer in every user-facing fork; fix all 6 stale URLs split-by-purpose; single ADR), then shipped the same day across all 5 forks: installer prelude + migration pointer + forked-from attribution on the 4 user-facing READMEs (`@sparkleideas/{ruflo,agentdb,ruvector,agentic-flow}`), a one-paragraph fork-identity note on `ruv-FANN`, and all 6 stale `ruvnet/claude-flow` URLs repointed to the sparkling fork (split-by-purpose). Fork commits: ruflo `106d6cc6b`, agentdb `ed23fc6`, ruvector `28a2669ec`, agentic-flow `814d319d`, ruv-FANN `f9494d2`. Re-scoped small after the upstream README rewrite (ruflo 7541→408 lines). The original pre-implementation status was "Proposed 2026-04-26 — planning phase, several decisions deferred to user." Dated 2026-04-26.
+
+Scope: update `README.md` in each of the 4 forks (`forks/ruflo`, `forks/agentic-flow`, `forks/ruv-FANN`, `forks/ruvector`) to reflect that they ship as `@sparkleideas/*` packages built from upstream HEAD with pinned cross-package deps. Not in scope: rewriting upstream content, modifying ADRs, the `ruflo-patch` repo's own `README.md`.
+
+The original record cross-referenced these related decisions: ADR-0027 (fork model — `@claude-flow/*` → `@sparkleideas/*`); memory `reference-fork-workflow` (build branches, push to `sparkling`); and memory `feedback-fork-commits` (verify branch + remote before push).

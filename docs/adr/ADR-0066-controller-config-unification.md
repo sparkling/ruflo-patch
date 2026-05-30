@@ -1,153 +1,15 @@
-# ADR-0066: Controller Configuration Unification
+---
+status: accepted
+date: 2026-04-05
+tags: [controller, config, embeddings, hnsw]
+supersedes: []
+depends-on: [ADR-0062, ADR-0064, ADR-0065]
+implements: []
+---
 
-- **Status**: Implemented (2026-04-11)
-- **Date**: 2026-04-05
-- **Implemented**: 2026-04-11. P0 dimension/model via getEmbeddingConfig() across ruflo + agentic-flow. P1 controller dedup via getOrCreate(). P2 config-driven thresholds + dimension-mismatch detector.
-- **Deciders**: Henrik Pettersen
-- **Builds on**: ADR-0065 (config centralization), ADR-0062 (storage config), ADR-0064 (controller config alignment)
-- **Architecture**: [Controller Wiring Vision](../architecture/controller-wiring-vision.md)
-- **Analysis**: [ADR-0067 — Original Vision for Controller Wiring](ADR-0067-original-vision-controller-wiring.md)
+# Controller Configuration Unification
 
-## Upstream References
-
-### Upstream ADRs (ruvnet/ruflo v3/implementation/adrs/)
-
-| ADR | Title | Status | Relationship |
-|-----|-------|--------|-------------|
-| **ADR-053** | AgentDB v3 Controller Activation & Runtime Wiring | Implemented | Introduced `ControllerRegistry` + `memory-bridge.ts`. Defined `RuntimeConfig` interface. Listed 12 dead config.json keys (issue #1204) as not-yet-wired. ADR-0066 completes this. |
-| **ADR-055** | AgentDB v3 Controller Bug Remediation | Accepted | Corrected `getController()` → only 5 names (`reflexion`, `skills`, `causalGraph`, `vectorBackend`, `graphAdapter`); all others must be `new X()` directly. Stubs for HierarchicalMemory + MemoryConsolidation. |
-| **ADR-057** | RVF Native Storage Backend | Proposed (unimplemented) | Proposes replacing sql.js with RVF. ADR-0065 P3-1 partially addresses by removing SqlJsBackend. |
-| **ADR-059** | Bug Triage March 2026 | Verified | Issue #1264: ControllerRegistry not exported. Fixed in PR #1298. |
-| **ADR-060** | Remaining Bugs March 2026 | Verified | Issue #1214: `memoryGraph: true` added to memory-bridge config. Issue #1211: hook stdin fixed. |
-| **ADR-064** | Stub Remediation v3.5.22 | Implemented | 22 stubs implemented (WASM, consensus, SONA). `@claude-flow/memory@3.0.0-alpha.12` required for ControllerRegistry. |
-| **ADR-067** | Critical Issue Remediation v3.5.43 | Implemented | #1399: CLI bundled alpha.11 missing ControllerRegistry. Phase 3.3: hardcoded 1536→384 dimension fix. Phase 5.1: daemon reads only config.json. |
-| ADR-006 | Unified Memory Service | Implemented | AgentDB as THE storage layer. Schema uses 768-dim (predates MiniLM adoption). |
-| ADR-009 | Hybrid Memory Backend | Implemented | SQLite + AgentDB combined. RuVector preferred, HNSWLib fallback. |
-| ADR-023 | ONNX Hyperbolic Embeddings Init | Proposed | Writes `.claude-flow/embeddings.json`. Defines 384-dim (MiniLM) and 768-dim (mpnet). |
-| ADR-024 | Embeddings MCP Tools | Implemented | 7 MCP tools. Config in `.claude-flow/embeddings.json`. Hardcodes 384-dim in template. |
-| ADR-028 | Neural Attention Mechanisms | Proposed | Unified AttentionService for 39 RuVector attention types. Only `sublinearAttention` wired. |
-| ADR-048 | Auto Memory Integration | Implemented | Bidirectional bridge between Claude Code auto-memory and AgentDB. |
-| ADR-049 | Self-Learning Memory GNN | Implemented | MemoryGraph, LearningBridge, AgentMemoryScope added. |
-
-### Upstream ADRs (ruvnet/agentic-flow docs/adr/)
-
-| ADR | Title | Relationship |
-|-----|-------|-------------|
-| **ADR-052** (af) | CLI Tool Gap Remediation | Config-driven embedding framework. Swept 22 files for hardcoded dimensions. |
-| **ADR-054** (af) | AgentDB v3 Architecture Review | 21 controllers audited, 50+ issues, WASM attention stubs, TypeScript strictness gaps. |
-| **ADR-056** (af) | RVF/RuVector Integration | RVF primary, SQLite fallback. vectorBackend wired to controllers. COW branch tables. |
-| **ADR-060** (af) | Proof-Gated Graph Intelligence | MutationGuard, all 21 controllers wired into `getController()`. |
-| **ADR-062** (af) | Integration Completion | HookService singleton, DirectCallBridge, AttentionSearch wiring. "Attention → Tools: 0% (F)". |
-| ADR-001 (agentdb-v2) | Backend Abstraction | Defines VectorBackend/LearningBackend/GraphBackend. HNSW defaults: M=16, efC=200, efS=100. |
-
-### Upstream GitHub Issues (ruvnet/ruflo)
-
-| Issue | State | Title | ADR-0066 relevance |
-|-------|-------|-------|-------------------|
-| **#1516** | OPEN | ControllerRegistry doesn't pass embeddingModel+dimension to AgentDB | Core P0: AgentDB falls back to MiniLM 384-dim while config expects mpnet 768-dim |
-| **#1499** | CLOSED | ReasoningBank missing embedder param in ControllerRegistry | P1: embedder must be passed to every controller that needs it |
-| **#1492** | CLOSED | 4 controllers unimplemented (ContextSynthesizer, BatchOps, etc.) | P1: registry gaps |
-| **#1228** | OPEN | ADR-053: AgentDB v3 Controller Activation tracking issue | Reference: 42 exports, 0 instantiated by CLI |
-| **#1399** | CLOSED | AgentDB bridge unavailable — alpha.11 missing ControllerRegistry | Fixed in v3.5.49 |
-| **#1143** | CLOSED | Embedding model + HNSW dimensions hardcoded, ignore embeddings.json | P0: embeddings.json must be single source of truth |
-| **#1041** | OPEN | dimension hardcoded to 1536 in memory-initializer | P0: dimension consistency |
-| #1204 | — | 12 dead config.json keys | ADR-053 deferred item; ADR-0065 partially addressed |
-
-### Upstream GitHub Issues (ruvnet/agentic-flow)
-
-| Issue | State | Title | ADR-0066 relevance |
-|-------|-------|-------|-------------------|
-| **#137** | CLOSED | EmbeddingService bare model name → mock fallback | P0: model names need Xenova/ prefix |
-| **#132** | CLOSED | dist/controllers at wrong path | Build: `dist/src/controllers` vs `dist/controllers` |
-| #133 | OPEN (PR) | Fix controller path to dist/src/controllers | Unmerged fix |
-| #80 | OPEN | agentdb missing dist/controllers/index.js | v2 layout issue |
-| #118 | OPEN | GNNService incorrectly passes config.layers to RuvectorLayer constructor | P1: GNN config mismatch, will panic at runtime |
-| #119 | OPEN | GNN integration affected by RuvectorLayer constructor panic | Same root cause as #118 |
-| #129 | OPEN | retrieveRelevant() returns 0 results after HNSW rebuild | Vector backend data loss after rebuild |
-| #128 | OPEN | reflexion.storeEpisode() does not INSERT into episodes/episode_embeddings | Embeddings never stored |
-
-### Upstream GitHub Issues (ruvnet/RuVector)
-
-| Issue | State | Title | ADR-0066 relevance |
-|-------|-------|-------|-------------------|
-| **#237** | CLOSED | ONNX hardcodes 384-dim in Rust layer | P3: root cause of 384 default in ruvector-core |
-| **#307** | CLOSED | `dimension` vs `dimensions` field name in NAPI | API: registry must use correct field name |
-| **#316** | OPEN | sync embed() returns hash, not semantic vectors | Risk: controller init using sync path gets wrong vectors |
-| #141 | CLOSED | HNSW segfault on 384-dim column with bad query | Confirms dimension mismatch causes hard crashes |
-| **#315** | OPEN | import() does not rebuild HNSW — recall() returns [] after load | Vector backend data loss on import |
-| **#323** | OPEN | ONNX embedder fails on Node 22 LTS with .wasm extension error | Blocks ONNX embedding on current LTS |
-| PR #68 | OPEN | HNSW dimensions hardcoded to 128 in postgres extension typmod | P3: another hardcoded dimension |
-| PR #318 | OPEN | importAsync() + rebuildHnswIndex() to fix recall after import | Fix for #315 — unmerged |
-
-### Upstream Git Commits (key decisions)
-
-| SHA | Date | Repo | Message | Significance |
-|-----|------|------|---------|-------------|
-| `67f143f8e` | 2026-03-14 | ruflo | DM-001: Upgrade to all-mpnet-base-v2 (768-dim) | **Decision point**: 384→768 dimension switch |
-| `a7389f6cc` | 2026-03-18 | ruflo | ADR-052: eliminate all hardcoded embedding dimensions (17 files) | First dimension cleanup sweep |
-| `81fe2c39b` | 2026-03-16 | ruflo | ADR-040: inject embedders, remove dead controllers | Embedder injection pattern established |
-| `5a5bfa6a6` | 2026-04-02 | ruflo | P0: ESM controller-registry, memory-bridge fix | Most recent controller-registry crash fix |
-| `4d87fcd6c` | 2026-04-04 | ruflo | pass embedding config from ControllerRegistry to AgentDB | Attempted fix for #1516 |
-| `121da55` | 2026-03-18 | agentic-flow | ADR-052: eliminate hardcoded dims (22 files) | agentic-flow side of dimension cleanup |
-| `10dfb24` | 2026-03-16 | agentic-flow | accept optional singletons in NightlyLearner and CausalRecall | ADR-0040 singleton pattern |
-
-### Key Open Upstream Issues (still unfixed)
-
-| Issue | Repo | Title | Impact |
-|-------|------|-------|--------|
-| **#1516** | ruvnet/ruflo | ControllerRegistry doesn't pass embeddingModel+dimension to AgentDB | AgentDB falls back to MiniLM 384-dim while config expects 768-dim |
-| **#1521** | ruvnet/ruflo | ReasoningBank still disabled — alpha.12 missing require('path') fix | `agentdb_pattern-store` and `agentdb_pattern-search` always fail |
-| **#1525** | ruvnet/ruflo | Intelligence ↔ Memory Bridge unconnected | Daemon insights don't reach ruflo memory |
-| **#1041** | ruvnet/ruflo | dimension hardcoded to 1536 in memory-initializer | Vector dimension mismatch |
-| **#967** | ruvnet/ruflo | MCP Memory Tools and CLI Use Separate Backends | Data not synced between backends |
-| **#812** | ruvnet/ruflo | MCP memory tools don't use ReasoningBank despite initialization | Semantic search unused |
-| **#316** | ruvnet/RuVector | sync embed() returns hash vectors, not semantic | Corrupts persisted DBs with mixed dimension spaces |
-| **#1228** | ruvnet/ruflo | ADR-053 tracking issue (42 exports, 0 instantiated by CLI) | Still open — controller wiring incomplete |
-
-### ADR Lineage (ruflo-patch)
-
-This ADR is the completion of three overlapping work streams that began in March 2026:
-
-```
-ADR-0033 (activate 27/28 controllers — only 10 actually worked)
- ↓
-ADR-0039 (roadmap: 31 more controllers, identified duplicates)
- ↓ parallel execution:
-ADR-0040 (wiring remediation — singleton injection pattern for NightlyLearner/CausalRecall)
-ADR-0041 (composition-aware — "no duplicate instances" rule, NativeAccelerator singleton)
-ADR-0044 (attention suite — A1-A3, A5; created 4 duplicate AttentionService instances)
-ADR-0046 (self-learning — SelfLearningRvfBackend composite pattern)
-ADR-0047 (quantization/federated — QuantizedVectorStore, FederatedLearningManager)
- ↓ dimension war identified
-ADR-0050 (zero-dim embeddings symptom exposed → D4 bug)
-ADR-0052 (config-driven framework — getEmbeddingConfig(), deriveHNSWParams() created)
- ↓ storage chain
-ADR-0059 (RVF storage backend — fixed hook subprocess drain)
-ADR-0060 (fork patch hygiene — flagged controller-registry.ts as highest merge risk)
-ADR-0061 (controller integration completion — 45 controllers, 10 bugs fixed, 8 duplicates)
- ↓ config chain
-ADR-0062 (storage config unification — dimension split documented, 2 implementation bugs)
-ADR-0063 (storage audit remediation — fixed ADR-0062 bugs, dimension unified to 768)
-ADR-0064 (controller config alignment — getEmbeddingConfig(), dead config, 4 stubs identified)
-ADR-0065 (config centralization — wired config.json/embeddings.json, fixed 384→768, 4 controllers deduped)
- ↓
-ADR-0066 (THIS ADR — completes all remaining gaps across 3 repos)
-```
-
-### Key Upstream PR (#1232 — closed without merge, work split)
-
-PR #1232 "Wave 3: Config unification, embeddings fallback, security hardening" contained
-the most thorough audit of dead config keys and proposed `loadRuntimeConfig()`/`getConfigValue()`
-helpers. It was closed without merge — the work was split across subsequent PRs (#1244, #1300,
-#1362, #1374, #1435). ADR-0066's config.json wiring completes what #1232 proposed.
-
-### Forks are at upstream HEAD
-
-Both forks (`/Users/henrik/source/forks/ruflo/` and `/Users/henrik/source/forks/agentic-flow/`)
-are fully synced with upstream — `git log HEAD..upstream/main` returns empty for both. There are
-no upstream-only commits that we're missing.
-
-## Context
+## Context and Problem Statement
 
 A cross-repo audit of all 46 controllers, 5 storage backends, and 3 embedding pipelines across
 our forks (ruflo, agentic-flow, ruvector) reveals systemic configuration fragmentation originating
@@ -248,7 +110,15 @@ All 3 in-AgentDB instances use `LegacyAttentionAdapter` and cannot share the reg
 | distance metric | cosine | L2 (RVF), cosine (graph-node) | RVF defaults to L2 |
 | graph-node dimension | — | 384 | YES |
 
-## Decision
+## Considered Options
+
+* **Unify controller configuration across all three forks via a prioritized P0–P3 program (chosen)** — fix dimension/model defaults to read from embeddings.json, deduplicate controller and AttentionService instances, wire remaining tuning into RuntimeConfig/config.json, implement the 3 stub controllers, and align ruvector defaults.
+
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "Unify controller configuration across all three forks via a prioritized P0–P3 program", because the audit found 36 controllers with hardcoded defaults, 9 dimension inconsistencies, 4 duplicate AttentionService instances, and 3 competing dimension defaults — all stemming from upstream fragmentation that a single coordinated unification can resolve.
 
 ### P0: Fix all dimension defaults to read from embeddings.json
 
@@ -454,53 +324,189 @@ In our ruvector fork, change upstream defaults from 384 to match the canonical 7
 
 `RuVectorBackend.getAdaptiveParams()` should call `deriveHNSWParams(dimension)` instead of using a dataset-size-based lookup table. The formula already accounts for dimension; dataset size should only influence `maxElements`, not M/ef values.
 
-## Consequences
+### Consequences
 
-### Positive
-- Single source of truth for dimension (embeddings.json) across all 3 repos
-- All 46 controllers configurable through config.json (enable/disable + tuning)
-- Singleton pattern for AttentionService eliminates 3 duplicate instances
-- AgentDB's getController() used consistently — no more parallel instances
-- HNSW params flow from embeddings.json, eliminating scattered M=16 hardcodes
-- Stubs become functional (hybridSearch, agentMemoryScope, federatedSession)
-- ruvector defaults align with ruflo's 768-dim standard
+* Good, because there is a single source of truth for dimension (embeddings.json) across all 3 repos.
+* Good, because all 46 controllers are configurable through config.json (enable/disable + tuning).
+* Good, because the singleton pattern for AttentionService eliminates 3 duplicate instances.
+* Good, because AgentDB's getController() is used consistently — no more parallel instances.
+* Good, because HNSW params flow from embeddings.json, eliminating scattered M=16 hardcodes.
+* Good, because stubs become functional (hybridSearch, agentMemoryScope, federatedSession).
+* Good, because ruvector defaults align with ruflo's 768-dim standard.
+* Bad, because of a large changeset across 3 forks (~30 files in ruflo, ~15 in agentic-flow, ~5 in ruvector).
+* Bad, because config.json grows significantly with controller tuning sections.
+* Bad, because changing AgentDB controller constructors to accept injected AttentionService is a breaking change for direct AgentDB consumers.
+* Bad, because ruvector default changes may break existing ruvector-only users who rely on 384.
+* Neutral, because moving from `new X()` to `agentdb.getController()` may surface runtime errors if AgentDB's initialization order changes.
+* Neutral, because enabling controller config through config.json means a bad config file can break the entire controller stack.
+* Neutral, because changing ruvector defaults in Rust requires rebuilding native binaries.
 
-### Negative
-- Large changeset across 3 forks (~30 files in ruflo, ~15 in agentic-flow, ~5 in ruvector)
-- config.json grows significantly with controller tuning sections
-- Changing AgentDB controller constructors to accept injected AttentionService is a breaking change for direct AgentDB consumers
-- ruvector default changes may break existing ruvector-only users who rely on 384
+### Confirmation
 
-### Risks
-- Moving from `new X()` to `agentdb.getController()` may surface runtime errors if AgentDB's initialization order changes
-- Enabling controller config through config.json means a bad config file can break the entire controller stack
-- Changing ruvector defaults in Rust requires rebuilding native binaries
+Acceptance Criteria:
 
-## Acceptance Criteria
-
-### P0
+**P0**
 - [ ] Zero `384` or `1536` dimension fallbacks remain (only `768` or config reads)
 - [ ] Zero hardcoded `all-MiniLM-L6-v2` model strings remain outside MODEL_REGISTRY
 - [ ] `shared/config/defaults.ts` and `schema.ts` use 768 as default dimension
 - [ ] `memory-initializer.ts` SQL seed rows use config dimension, not hardcoded 768
 
-### P1
+**P1**
 - [ ] 6 controllers use `agentdb.getController()` instead of `new X()`
 - [ ] AttentionService created once and injected into CausalMemoryGraph, ExplainableRecall, NightlyLearner
 - [ ] embeddings.json `hnsw.m`, `hnsw.efConstruction`, `hnsw.efSearch` propagated to all backends
 - [ ] RuntimeConfig has tuning fields for nightlyLearner, causalRecall, queryOptimizer, selfLearningRvfBackend, mutationGuard
 - [ ] config.json has corresponding controller sections
 
-### P2
+**P2**
 - [ ] `agentMemoryScope` wired to existing class
 - [ ] `hybridSearch` implemented with BM25 + HNSW fusion
 - [ ] `federatedSession` implemented with shared-SQLite transport
 - [ ] `queryOptimizer` and `auditLogger` registered in AgentDB.getController()
 - [ ] Controller enable/disable configurable via config.json `controllers.enabled`
 
-### P3 (patches to our ruvector and ruflo forks)
+**P3 (patches to our ruvector and ruflo forks)**
 - [ ] ruvector-core, ruvector-cli, graph-node default dimension = 768 (ruvector fork)
 - [ ] RuVectorBackend.getAdaptiveParams() delegates to deriveHNSWParams() (ruflo fork)
+
+## Upstream References
+
+### Upstream ADRs (ruvnet/ruflo v3/implementation/adrs/)
+
+| ADR | Title | Status | Relationship |
+|-----|-------|--------|-------------|
+| **ADR-053** | AgentDB v3 Controller Activation & Runtime Wiring | Implemented | Introduced `ControllerRegistry` + `memory-bridge.ts`. Defined `RuntimeConfig` interface. Listed 12 dead config.json keys (issue #1204) as not-yet-wired. ADR-0066 completes this. |
+| **ADR-055** | AgentDB v3 Controller Bug Remediation | Accepted | Corrected `getController()` → only 5 names (`reflexion`, `skills`, `causalGraph`, `vectorBackend`, `graphAdapter`); all others must be `new X()` directly. Stubs for HierarchicalMemory + MemoryConsolidation. |
+| **ADR-057** | RVF Native Storage Backend | Proposed (unimplemented) | Proposes replacing sql.js with RVF. ADR-0065 P3-1 partially addresses by removing SqlJsBackend. |
+| **ADR-059** | Bug Triage March 2026 | Verified | Issue #1264: ControllerRegistry not exported. Fixed in PR #1298. |
+| **ADR-060** | Remaining Bugs March 2026 | Verified | Issue #1214: `memoryGraph: true` added to memory-bridge config. Issue #1211: hook stdin fixed. |
+| **ADR-064** | Stub Remediation v3.5.22 | Implemented | 22 stubs implemented (WASM, consensus, SONA). `@claude-flow/memory@3.0.0-alpha.12` required for ControllerRegistry. |
+| **ADR-067** | Critical Issue Remediation v3.5.43 | Implemented | #1399: CLI bundled alpha.11 missing ControllerRegistry. Phase 3.3: hardcoded 1536→384 dimension fix. Phase 5.1: daemon reads only config.json. |
+| ADR-006 | Unified Memory Service | Implemented | AgentDB as THE storage layer. Schema uses 768-dim (predates MiniLM adoption). |
+| ADR-009 | Hybrid Memory Backend | Implemented | SQLite + AgentDB combined. RuVector preferred, HNSWLib fallback. |
+| ADR-023 | ONNX Hyperbolic Embeddings Init | Proposed | Writes `.claude-flow/embeddings.json`. Defines 384-dim (MiniLM) and 768-dim (mpnet). |
+| ADR-024 | Embeddings MCP Tools | Implemented | 7 MCP tools. Config in `.claude-flow/embeddings.json`. Hardcodes 384-dim in template. |
+| ADR-028 | Neural Attention Mechanisms | Proposed | Unified AttentionService for 39 RuVector attention types. Only `sublinearAttention` wired. |
+| ADR-048 | Auto Memory Integration | Implemented | Bidirectional bridge between Claude Code auto-memory and AgentDB. |
+| ADR-049 | Self-Learning Memory GNN | Implemented | MemoryGraph, LearningBridge, AgentMemoryScope added. |
+
+### Upstream ADRs (ruvnet/agentic-flow docs/adr/)
+
+| ADR | Title | Relationship |
+|-----|-------|-------------|
+| **ADR-052** (af) | CLI Tool Gap Remediation | Config-driven embedding framework. Swept 22 files for hardcoded dimensions. |
+| **ADR-054** (af) | AgentDB v3 Architecture Review | 21 controllers audited, 50+ issues, WASM attention stubs, TypeScript strictness gaps. |
+| **ADR-056** (af) | RVF/RuVector Integration | RVF primary, SQLite fallback. vectorBackend wired to controllers. COW branch tables. |
+| **ADR-060** (af) | Proof-Gated Graph Intelligence | MutationGuard, all 21 controllers wired into `getController()`. |
+| **ADR-062** (af) | Integration Completion | HookService singleton, DirectCallBridge, AttentionSearch wiring. "Attention → Tools: 0% (F)". |
+| ADR-001 (agentdb-v2) | Backend Abstraction | Defines VectorBackend/LearningBackend/GraphBackend. HNSW defaults: M=16, efC=200, efS=100. |
+
+### Upstream GitHub Issues (ruvnet/ruflo)
+
+| Issue | State | Title | ADR-0066 relevance |
+|-------|-------|-------|-------------------|
+| **#1516** | OPEN | ControllerRegistry doesn't pass embeddingModel+dimension to AgentDB | Core P0: AgentDB falls back to MiniLM 384-dim while config expects mpnet 768-dim |
+| **#1499** | CLOSED | ReasoningBank missing embedder param in ControllerRegistry | P1: embedder must be passed to every controller that needs it |
+| **#1492** | CLOSED | 4 controllers unimplemented (ContextSynthesizer, BatchOps, etc.) | P1: registry gaps |
+| **#1228** | OPEN | ADR-053: AgentDB v3 Controller Activation tracking issue | Reference: 42 exports, 0 instantiated by CLI |
+| **#1399** | CLOSED | AgentDB bridge unavailable — alpha.11 missing ControllerRegistry | Fixed in v3.5.49 |
+| **#1143** | CLOSED | Embedding model + HNSW dimensions hardcoded, ignore embeddings.json | P0: embeddings.json must be single source of truth |
+| **#1041** | OPEN | dimension hardcoded to 1536 in memory-initializer | P0: dimension consistency |
+| #1204 | — | 12 dead config.json keys | ADR-053 deferred item; ADR-0065 partially addressed |
+
+### Upstream GitHub Issues (ruvnet/agentic-flow)
+
+| Issue | State | Title | ADR-0066 relevance |
+|-------|-------|-------|-------------------|
+| **#137** | CLOSED | EmbeddingService bare model name → mock fallback | P0: model names need Xenova/ prefix |
+| **#132** | CLOSED | dist/controllers at wrong path | Build: `dist/src/controllers` vs `dist/controllers` |
+| #133 | OPEN (PR) | Fix controller path to dist/src/controllers | Unmerged fix |
+| #80 | OPEN | agentdb missing dist/controllers/index.js | v2 layout issue |
+| #118 | OPEN | GNNService incorrectly passes config.layers to RuvectorLayer constructor | P1: GNN config mismatch, will panic at runtime |
+| #119 | OPEN | GNN integration affected by RuvectorLayer constructor panic | Same root cause as #118 |
+| #129 | OPEN | retrieveRelevant() returns 0 results after HNSW rebuild | Vector backend data loss after rebuild |
+| #128 | OPEN | reflexion.storeEpisode() does not INSERT into episodes/episode_embeddings | Embeddings never stored |
+
+### Upstream GitHub Issues (ruvnet/RuVector)
+
+| Issue | State | Title | ADR-0066 relevance |
+|-------|-------|-------|-------------------|
+| **#237** | CLOSED | ONNX hardcodes 384-dim in Rust layer | P3: root cause of 384 default in ruvector-core |
+| **#307** | CLOSED | `dimension` vs `dimensions` field name in NAPI | API: registry must use correct field name |
+| **#316** | OPEN | sync embed() returns hash, not semantic vectors | Risk: controller init using sync path gets wrong vectors |
+| #141 | CLOSED | HNSW segfault on 384-dim column with bad query | Confirms dimension mismatch causes hard crashes |
+| **#315** | OPEN | import() does not rebuild HNSW — recall() returns [] after load | Vector backend data loss on import |
+| **#323** | OPEN | ONNX embedder fails on Node 22 LTS with .wasm extension error | Blocks ONNX embedding on current LTS |
+| PR #68 | OPEN | HNSW dimensions hardcoded to 128 in postgres extension typmod | P3: another hardcoded dimension |
+| PR #318 | OPEN | importAsync() + rebuildHnswIndex() to fix recall after import | Fix for #315 — unmerged |
+
+### Upstream Git Commits (key decisions)
+
+| SHA | Date | Repo | Message | Significance |
+|-----|------|------|---------|-------------|
+| `67f143f8e` | 2026-03-14 | ruflo | DM-001: Upgrade to all-mpnet-base-v2 (768-dim) | **Decision point**: 384→768 dimension switch |
+| `a7389f6cc` | 2026-03-18 | ruflo | ADR-052: eliminate all hardcoded embedding dimensions (17 files) | First dimension cleanup sweep |
+| `81fe2c39b` | 2026-03-16 | ruflo | ADR-040: inject embedders, remove dead controllers | Embedder injection pattern established |
+| `5a5bfa6a6` | 2026-04-02 | ruflo | P0: ESM controller-registry, memory-bridge fix | Most recent controller-registry crash fix |
+| `4d87fcd6c` | 2026-04-04 | ruflo | pass embedding config from ControllerRegistry to AgentDB | Attempted fix for #1516 |
+| `121da55` | 2026-03-18 | agentic-flow | ADR-052: eliminate hardcoded dims (22 files) | agentic-flow side of dimension cleanup |
+| `10dfb24` | 2026-03-16 | agentic-flow | accept optional singletons in NightlyLearner and CausalRecall | ADR-0040 singleton pattern |
+
+### Key Open Upstream Issues (still unfixed)
+
+| Issue | Repo | Title | Impact |
+|-------|------|-------|--------|
+| **#1516** | ruvnet/ruflo | ControllerRegistry doesn't pass embeddingModel+dimension to AgentDB | AgentDB falls back to MiniLM 384-dim while config expects 768-dim |
+| **#1521** | ruvnet/ruflo | ReasoningBank still disabled — alpha.12 missing require('path') fix | `agentdb_pattern-store` and `agentdb_pattern-search` always fail |
+| **#1525** | ruvnet/ruflo | Intelligence ↔ Memory Bridge unconnected | Daemon insights don't reach ruflo memory |
+| **#1041** | ruvnet/ruflo | dimension hardcoded to 1536 in memory-initializer | Vector dimension mismatch |
+| **#967** | ruvnet/ruflo | MCP Memory Tools and CLI Use Separate Backends | Data not synced between backends |
+| **#812** | ruvnet/ruflo | MCP memory tools don't use ReasoningBank despite initialization | Semantic search unused |
+| **#316** | ruvnet/RuVector | sync embed() returns hash vectors, not semantic | Corrupts persisted DBs with mixed dimension spaces |
+| **#1228** | ruvnet/ruflo | ADR-053 tracking issue (42 exports, 0 instantiated by CLI) | Still open — controller wiring incomplete |
+
+### ADR Lineage (ruflo-patch)
+
+This ADR is the completion of three overlapping work streams that began in March 2026:
+
+```
+ADR-0033 (activate 27/28 controllers — only 10 actually worked)
+ ↓
+ADR-0039 (roadmap: 31 more controllers, identified duplicates)
+ ↓ parallel execution:
+ADR-0040 (wiring remediation — singleton injection pattern for NightlyLearner/CausalRecall)
+ADR-0041 (composition-aware — "no duplicate instances" rule, NativeAccelerator singleton)
+ADR-0044 (attention suite — A1-A3, A5; created 4 duplicate AttentionService instances)
+ADR-0046 (self-learning — SelfLearningRvfBackend composite pattern)
+ADR-0047 (quantization/federated — QuantizedVectorStore, FederatedLearningManager)
+ ↓ dimension war identified
+ADR-0050 (zero-dim embeddings symptom exposed → D4 bug)
+ADR-0052 (config-driven framework — getEmbeddingConfig(), deriveHNSWParams() created)
+ ↓ storage chain
+ADR-0059 (RVF storage backend — fixed hook subprocess drain)
+ADR-0060 (fork patch hygiene — flagged controller-registry.ts as highest merge risk)
+ADR-0061 (controller integration completion — 45 controllers, 10 bugs fixed, 8 duplicates)
+ ↓ config chain
+ADR-0062 (storage config unification — dimension split documented, 2 implementation bugs)
+ADR-0063 (storage audit remediation — fixed ADR-0062 bugs, dimension unified to 768)
+ADR-0064 (controller config alignment — getEmbeddingConfig(), dead config, 4 stubs identified)
+ADR-0065 (config centralization — wired config.json/embeddings.json, fixed 384→768, 4 controllers deduped)
+ ↓
+ADR-0066 (THIS ADR — completes all remaining gaps across 3 repos)
+```
+
+### Key Upstream PR (#1232 — closed without merge, work split)
+
+PR #1232 "Wave 3: Config unification, embeddings fallback, security hardening" contained
+the most thorough audit of dead config keys and proposed `loadRuntimeConfig()`/`getConfigValue()`
+helpers. It was closed without merge — the work was split across subsequent PRs (#1244, #1300,
+#1362, #1374, #1435). ADR-0066's config.json wiring completes what #1232 proposed.
+
+### Forks are at upstream HEAD
+
+Both forks (`/Users/henrik/source/forks/ruflo/` and `/Users/henrik/source/forks/agentic-flow/`)
+are fully synced with upstream — `git log HEAD..upstream/main` returns empty for both. There are
+no upstream-only commits that we're missing.
 
 ## 5. Implementation Roadmap
 
@@ -734,3 +740,7 @@ P1-1 and P1-2 change how 7 controllers are obtained in `controller-registry.ts`.
 6. 112+ acceptance checks pass (current 98 + 14 new ADR-0066 checks).
 7. All unit and integration tests pass (`npm run test:unit` exit code 0).
 8. Existing 768-dim databases open and query correctly after all changes (regression fixture).
+
+## More Information
+
+Original status: "Implemented (2026-04-11)". Recorded 2026-04-05; implemented 2026-04-11 — P0 dimension/model via getEmbeddingConfig() across ruflo + agentic-flow; P1 controller dedup via getOrCreate(); P2 config-driven thresholds + dimension-mismatch detector. Deciders: Henrik Pettersen. This ADR builds on ADR-0065 (config centralization), ADR-0062 (storage config), and ADR-0064 (controller config alignment). The accompanying architecture document is `../architecture/controller-wiring-vision.md` (Controller Wiring Vision), and the original-vision analysis is ADR-0067.

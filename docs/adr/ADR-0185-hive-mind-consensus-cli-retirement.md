@@ -1,14 +1,13 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-18
-closed-on: 2026-05-18
-tags: [hive-mind, consensus, cli-retirement, archivist, runtime-activation]
+tags: [hive-mind, consensus, cli]
+supersedes: []
 depends-on: [ADR-0180, ADR-0181, ADR-0184]
 implements: []
 ---
 
-# ADR-0185: Hive-Mind Consensus Cli Retirement
+# Hive-Mind Consensus Cli Retirement
 
 ## Context and Problem Statement
 
@@ -183,6 +182,8 @@ ADR-0185 is implemented and closed. The cli `hive-mind_consensus` handler is now
 **Parity-harness lifecycle** (Wave 6, DA Axis 6): the parity harness (29 cells) + the ruflo-patch wrapper gate (3 cells) are permanent regression guards per ADR-0185 §Architecture. No future wave may delete them — they lock in cli/agentdb response-shape parity for the lifetime of the dispatch pattern.
 
 ## More Information
+
+Original status: accepted and completed, closed on 2026-05-18.
 
 - [ADR-0184 close-out report](../council/ADR-0184-close-out-report.md) — the parent close-out that records the cli retirement spin-out.
 - [ADR-0184: Hive-Mind Consensus Handler Port](ADR-0184-hive-mind-consensus-handler-port.md) — the parent ADR; all 6 per-strategy bodies live in agentdb per Wave 1-6a.

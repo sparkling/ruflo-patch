@@ -1,11 +1,9 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-19
-implemented-date: 2026-05-22
 tags: [skills, cli, dedupe, init, acceptance, runtime, swarm-reviewed]
 supersedes: []
-depends-on: [0201]
+depends-on: [ADR-0201]
 implements: []
 ---
 
@@ -451,6 +449,8 @@ nested, no stale Option-C-as-chosen); state not stale (`skill list` genuinely
 unimplemented, LEDGER row absent).
 
 ## More Information
+
+This decision was completed; implemented on 2026-05-22.
 
 * `docs/audits/2026-05-19-soundness-audit/15-runtime-skills-and-test-coverage.md`
   — F-15-001 (no CLI), F-15-102 (no acceptance check), R-15-A (corpus walk,

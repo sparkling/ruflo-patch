@@ -1,10 +1,9 @@
 ---
 status: superseded
-completed: true
 date: 2026-05-19
-tags: [crdt, quic, federation, dead-code, swarm-reviewed]
+tags: [crdt, quic, federation, dead-code]
 supersedes: []
-depends-on: [0199, 0201]
+depends-on: [ADR-0199, ADR-0201]
 implements: []
 ---
 

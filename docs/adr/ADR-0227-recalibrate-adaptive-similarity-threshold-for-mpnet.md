@@ -1,10 +1,9 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-22
 tags: [memory, embeddings, similarity-threshold, mpnet, recall, adaptive-threshold]
-supersedes: [0004]
-depends-on: [0069, 0073]
+supersedes: [ADR-0004]
+depends-on: [ADR-0069, ADR-0073]
 implements: []
 ---
 
@@ -39,7 +38,15 @@ implements: []
 
 The separating gap is ~0.05–0.25. A `0.3` floor sits **above the bottom of the related band**, so it silently drops genuine matches in 0.25–0.30 (e.g. `"authentication"` ↔ `"jwt authentication tokens…"` = 0.285). This isn't hypothetical: the swarm agents (`architect.md`) and the `rvf-orphan-numid` acceptance check search **without** an explicit threshold, so they get `0.3` and miss that band.
 
+## Considered Options
+
+* **Recalibrate the adaptive ONNX floor to `0.15` and route the MCP path through `getAdaptiveThreshold` (chosen)** — `0.15` sits in the measured gap (admits related ≥0.28, rejects unrelated ≤0.04).
+* **Keep the `0.3` floor (ADR-0167's stance)** — rejected: empirically above the bottom of the measured related band, so it silently drops genuine matches in the 0.25–0.30 range.
+* **Lower the hardcoded default to `0.1` (ADR-0004's approach for hash embeddings)** — obsolete: its targets were deleted in the v3 restructure and the change was reverted; not the right value for the mpnet model the fork actually runs.
+
 ## Decision Outcome
+
+Chosen option: "Recalibrate the adaptive ONNX floor to 0.15 and route the MCP path through `getAdaptiveThreshold`", because `0.15` sits in the measured separating gap and restores the systemic recall the `0.3` floor was dropping.
 
 1. **`getAdaptiveThreshold` ONNX floor: `0.3 → 0.15`** (`@claude-flow/memory/src/embedding-adapter.ts`). `0.15` sits in the measured gap (admits related ≥0.28, rejects unrelated ≤0.04). The **hardcoded** fallback stays `0.3` (we still mirror upstream's code default); only the fork's adaptive layer changes. Hash-fallback stays `0.05`.
 2. **Route MCP `memory_search` through `getAdaptiveThreshold`** (`mcp-tools/memory-tools.ts`): pass `input.threshold` (possibly `undefined`) through instead of hardcoding `?? 0.3`. The hardcode defeated the adaptive layer for the MCP path (only CLI/router benefited). Explicit `threshold:0` and positive values remain honored end-to-end.

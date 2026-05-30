@@ -1,11 +1,9 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-19
-implemented-date: 2026-05-22
-tags: [policy, lint, arch-test, error-handling, no-fallbacks, enforcement, swarm-reviewed]
+tags: [policy, lint, arch-test, no-fallbacks]
 supersedes: []
-depends-on: [0201]
+depends-on: [ADR-0201]
 implements: []
 ---
 
@@ -161,6 +159,8 @@ A fresh 6-expert council re-verified ADR-0209 against fork HEAD + upstream. **Op
 **Upstream + devil's-advocate minority:** because the detector's shape is upstream's deliberate idiom and its enforcement value is unevidenced (no demonstrated post-gate regression), consider dropping the build-time counter entirely and relying on the fixed regression assertion + the `Result`/`loadStoreOrCreate` helpers (landed only with their first real caller) + integration tests. Recorded for batch ratification; Option E's direction stands.
 
 ## More Information
+
+Lifecycle dates from the original record: accepted 2026-05-19, implemented 2026-05-22. This ADR was swarm-reviewed.
 
 * **ADR-0082** — parent policy (Rule 3: no silent product fallbacks).
 * **ADR-0191** — undiscriminating-catch triage; Cluster A/B/C/D/E taxonomy; release-3 lesson "only the integration-test signal can" tell contract from paranoia (lines 481-499); 342-entry baseline allowlist (Phase D).

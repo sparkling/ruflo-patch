@@ -1,24 +1,11 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-25
-implemented: 2026-05-28
-tags: [memory, mcp-tools, cli, export, upstream-disposition, archivist]
+tags: [memory, mcp-tools, cli, export, archivist]
 supersedes: []
 depends-on: [ADR-0177, ADR-0181, ADR-0246, ADR-0253]
 implements: []
 ---
-
-> **Status note (2026-05-28)**: Both phases shipped. Phase 1 (`memory_export`
-> MCP tool + envelope shape) landed via fork commit `adb91ab3d` (pre-existing
-> in fork; verified registered at `forks/ruflo/.../memory-tools.ts:1346`).
-> Phase 2 (`memory retrieve --value-only` flag) landed via fork commit
-> `662957caa`. 2 smokes wired via `lib/acceptance-adr0255-checks.sh`; full
-> release pipeline 2/2 PASS. Ledger row `0c31cbad4` finalized
-> `superseded-by-local` with both commit SHAs. Phase 3 golden-test scenarios
-> covered by the 2 wired smokes (envelope shape + value round-trip + format
-> typed-error + includeVectors typed-error). Phase 4 ledger close paired in
-> this commit.
 
 # Fork-native `memory_export` capability (closes ledger row `0c31cbad4`)
 
@@ -322,31 +309,25 @@ For follow-up phases / future ADRs:
 5. **Does the 100k limit need a `truncated: true` field?** If a real consumer hits the cap, the silent truncation is a `[[feedback-no-fallbacks]]` smell. A follow-up ADR can add the field + a CLI warning when `entries.length >= 100000`.
 6. **Should the fork's CLI `--include-vectors` flag default flip be reverted when `includeVectors: true` actually ships?** Phase 1 flips it to `false` because `true` would always throw. Future Phase 5 (full vector serialization) MAY flip it back to `true` if that's the conventional expectation; or keep `false` because exports without vectors are dramatically smaller. Decision belongs to the `includeVectors` Phase ADR.
 
-## Consequences
+### Consequences
 
-### Positive
+* Good, because **CLI runtime gap closed.** `claude-flow memory export -o backup.json` works after Phase 1; no MCPClientError, no missing-tool fallback.
+* Good, because **Substrate seam preserved.** The new MCP tool reads through `routeMemoryOp` like every other read-side memory tool. No SQL-direct path; no audit-chain bypass; no daemon-Archivist coupling.
+* Good, because **Cross-fork schema compatibility.** `ruflo-memory-export/v1` schema string mirrors upstream; downstream tools that recognize the schema work against fork exports without rewrites.
+* Good, because **Honest gaps.** CSV/binary/`includeVectors=true` fail loudly with typed errors instead of silently writing JSON or dropping vectors. The CLI's flag surface that previously advertised these as no-op-fallbacks now matches actual behavior.
+* Good, because **Phase 2 (`--value-only`) unblocks cost-tracker piping.** Mirrors upstream's pipe-friendly intent against the fork's `memory_retrieve` MCP tool.
+* Good, because **Ledger row resolved with a clear trigger.** Row `0c31cbad4` flips to `superseded-by-local` with the explicit condition (Phase 1 lands in fork).
+* Bad, because **Two surfaces to maintain.** The CLI verb and the MCP tool both need to stay in sync. The cost is small (the response shape is narrow) but the doubled surface is real.
+* Bad, because **Format/vector throws are user-visible regressions for any caller previously discovering the CLI flags.** No such caller exists today (the MCP tool was missing; the CLI was unconditionally failing), so the regression is theoretical.
+* Bad, because **`memory_import` is not part of this ADR.** The export is round-trippable in shape, but the import-side tool is still missing. A consumer wanting backup-restore needs Phase 5 (separate ADR).
+* Bad, because **The 100k limit is silent.** Until the follow-up question 5 is resolved, exports of `>100000` entries silently truncate. Surface in test reports as a known cap.
+* Neutral, because **PHASE 6+ marker is shared with `memory_list`.** When the marker flips, both tools flip; no independent retirement plan needed.
+* Neutral, because **No new substrate carve-out.** [[ADR-0253]] unchanged.
+* Neutral, because **No new audit-chain interaction.** [[ADR-0246]] unchanged.
 
-* **CLI runtime gap closed.** `claude-flow memory export -o backup.json` works after Phase 1; no MCPClientError, no missing-tool fallback.
-* **Substrate seam preserved.** The new MCP tool reads through `routeMemoryOp` like every other read-side memory tool. No SQL-direct path; no audit-chain bypass; no daemon-Archivist coupling.
-* **Cross-fork schema compatibility.** `ruflo-memory-export/v1` schema string mirrors upstream; downstream tools that recognize the schema work against fork exports without rewrites.
-* **Honest gaps.** CSV/binary/`includeVectors=true` fail loudly with typed errors instead of silently writing JSON or dropping vectors. The CLI's flag surface that previously advertised these as no-op-fallbacks now matches actual behavior.
-* **Phase 2 (`--value-only`) unblocks cost-tracker piping.** Mirrors upstream's pipe-friendly intent against the fork's `memory_retrieve` MCP tool.
-* **Ledger row resolved with a clear trigger.** Row `0c31cbad4` flips to `superseded-by-local` with the explicit condition (Phase 1 lands in fork).
+## More Information
 
-### Negative
-
-* **Two surfaces to maintain.** The CLI verb and the MCP tool both need to stay in sync. The cost is small (the response shape is narrow) but the doubled surface is real.
-* **Format/vector throws are user-visible regressions for any caller previously discovering the CLI flags.** No such caller exists today (the MCP tool was missing; the CLI was unconditionally failing), so the regression is theoretical.
-* **`memory_import` is not part of this ADR.** The export is round-trippable in shape, but the import-side tool is still missing. A consumer wanting backup-restore needs Phase 5 (separate ADR).
-* **The 100k limit is silent.** Until the follow-up question 5 is resolved, exports of `>100000` entries silently truncate. Surface in test reports as a known cap.
-
-### Neutral
-
-* **PHASE 6+ marker is shared with `memory_list`.** When the marker flips, both tools flip; no independent retirement plan needed.
-* **No new substrate carve-out.** [[ADR-0253]] unchanged.
-* **No new audit-chain interaction.** [[ADR-0246]] unchanged.
-
-## References
+Original status: Accepted 2026-05-25, completed/implemented 2026-05-28. Both phases shipped. Phase 1 (`memory_export` MCP tool + envelope shape) landed via fork commit `adb91ab3d` (pre-existing in fork; verified registered at `forks/ruflo/.../memory-tools.ts:1346`). Phase 2 (`memory retrieve --value-only` flag) landed via fork commit `662957caa`. 2 smokes wired via `lib/acceptance-adr0255-checks.sh`; full release pipeline 2/2 PASS. Ledger row `0c31cbad4` finalized `superseded-by-local` with both commit SHAs. Phase 3 golden-test scenarios covered by the 2 wired smokes (envelope shape + value round-trip + format typed-error + includeVectors typed-error). Phase 4 ledger close paired in this commit.
 
 * Upstream commit: `ruvnet/ruflo` 0c31cbad48ab624a84433451e3dee2af76996550, *"fix(memory): #2073 — export returns real value + --value-only pipe-friendly retrieve"*, 2026-05-20.
 * Fork CLI export command: `forks/ruflo/v3/@claude-flow/cli/src/commands/memory.ts:1151-1233`.

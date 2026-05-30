@@ -1,13 +1,15 @@
-# ADR-0115: Hive iterative-discussion regression — root cause + fix
+---
+status: accepted
+date: 2026-05-02
+tags: [hive-mind, regression, init, orchestration]
+supersedes: []
+depends-on: [ADR-0114]
+implements: []
+---
 
-- **Status**: **[RECONCILED 2026-05-29 → IMPLEMENTED (Regression A); see [[ADR-0270]]]** The Regression-A fix is live in `forks/ruflo` `init/claudemd-generator.ts:72-83` (the "ADR-0115 carve-out" unbundling `hive-mind_spawn` from the anti-sprawl prohibition; also present in this repo's `CLAUDE.md`). Regression B remains explicitly out-of-scope (upstream of ruflo). Original status preserved below. — Proposed (2026-05-02). Two-regression finding from a 5-panellist investigation hive (P1 git archaeology + P3 code reader + P4 memory-rule forensics + P2 behavior diff + DA dissent). Regression A is fixable in the fork; Regression B is upstream of ruflo and out of scope here.
-- **Date**: 2026-05-02
-- **Deciders**: Henrik Pettersen
-- **Methodology**: Investigation hive `hive-1777724839877-...` (hierarchical, byzantine, 5 worker slots) following the orchestrator/executor pattern. CLI for metadata; Agent tool with named role personas for execution. Synthesis held until all 5 panellists reported per `~/.claude/projects/-Users-henrik-source-hm-semantic-modelling/memory/feedback_hive_queen_must_wait_for_all_panellists.md` rule (added 2026-04-26 by the user as scar tissue for the regression this ADR investigates).
-- **Depends on**: ADR-0114 (architectural model + Lens 10 timeline finding). User pushback that produced the timeline question: "some, if not most, of the memory rules in HM, was added after the hive discussions broke after an update to the ruflo plugin."
-- **Closes**: ADR-0114 §Done U5 ("investigate the regression in ruflo's hive plugin between mid-April and late-April 2026").
+# Hive iterative-discussion regression — root cause + fix
 
-## Context
+## Context and Problem Statement
 
 ADR-0114 §Lens 10 established that the hive feature worked out-of-box for 6+ weeks (2026-03-11 → 2026-04-22, 250+ rich council sessions in `~/source/hm/semantic-modelling/`) on just ONT-0021 methodology ODR + CLAUDE.md anchoring — no memory rules required. Then between 2026-04-23 and 2026-04-27, the user added 7 memory rules (`feedback_swarm_*`, `feedback_hive_*`, `feedback_council_*`, `feedback_wait_for_hive*`) as remediation for observed regressions. The 2026-04-26 incident in `feedback_hive_queen_must_wait_for_all_panellists.md` cites two failures in one ADR-0195 deliberation: Queen v1 spawned in parallel with panellists and finished first on speculation; v3 miscounted "all 7 panellists complete" when SHACL Validator hadn't reported.
 
@@ -98,7 +100,17 @@ Three dissents stand:
 
 DA's #1 is decisive: it splits the regression into two components, neither of which is the simple "32c13d322 broke the hive" story.
 
-## Decision — two-regression model
+## Considered Options
+
+* **Two-regression model (chosen)** — decompose the symptom into Regression A (ruflo CLAUDE.md prose, fresh-init projects only) and Regression B (orchestration discipline, observed in hm 2026-04-26), fixing A in the fork and mitigating B via init scaffolding.
+* **Single root-cause "32c13d322 broke the hive"** — Rejected. DA dissent #1 disproves it for hm: hm's CLAUDE.md was last touched 6 hours before `32c13d322` and hm never regenerates via `ruflo init`, so the bundled prohibition never reached hm, yet hm experienced the regression.
+* **Attribute to ADR-0104 Queen-prompt rewrite (`7e9510246` 2026-04-29)** — Rejected; too late (04-29) to explain the 04-26 incidents.
+
+## Decision Outcome
+
+Chosen option: "Two-regression model", because the symptom decomposes into two distinct causes — a fork-fixable CLAUDE.md-prose regression and an upstream/assistant-discipline regression — and conflating them into one root-cause chases a story that the cross-repository git evidence disproves.
+
+### Decision — two-regression model
 
 **Regression A (ruflo CLAUDE.md prose, fresh-init projects only)**:
 - Cause: `32c13d322` bundled `hive-mind_spawn` into the swarm-sprawl `agentOrchestration()` prohibition without separate justification.
@@ -128,24 +140,7 @@ Empirical disproof of "ruflo broke it" for hm: hm's CLAUDE.md and the CLI's hive
 
 **The user's recollection ("the hive discussions broke after an update to the ruflo plugin") was correct in spirit but conflated two regressions.** Regression A IS a ruflo update; Regression B is NOT.
 
-## Empirical test methodology — does CLAUDE.md affect spawned hive?
-
-**User's test question**: "Create a new project with init, and make a manual change to its CLAUDE.md to test. If you run a test against a brand new init project, will that test make use of the claude.md? How are the hives launched for these tests? Does that launch method cause claude.md to be evaluated?"
-
-**Answer**: Yes, CLAUDE.md is evaluated. Mechanism:
-
-1. `ruflo hive-mind spawn --claude -o "<obj>"` invokes `commands/hive-mind.ts` line 261-296.
-2. Line 293: `const claudeProcess = childSpawn('claude', claudeArgs, { stdio: 'inherit', shell: false });`
-3. `childSpawn` is Node `child_process.spawn`. Default cwd is parent's cwd. The parent's cwd is the user's project dir (where they ran `ruflo hive-mind spawn`).
-4. Claude Code launched in a directory containing CLAUDE.md auto-loads it as system context (per Claude Code's documented behavior).
-5. The Queen prompt embedded in `claudeArgs[claudeArgs.length-1]` (line 286) is supplemented by the CLAUDE.md context.
-6. So: anti-sprawl prose in CLAUDE.md → Queen reads it → bias toward Agent tool.
-
-**This is testable empirically**: inject a unique probe string into CLAUDE.md (e.g., `MAGICWORD-xyz123`); run `hive-mind spawn --claude -o "What's the magic word?"`; the spawned Claude WILL find it because Claude Code reads CLAUDE.md on launch.
-
-**For OUR acceptance tests**: any test that runs `npx @sparkleideas/cli@latest hive-mind spawn --claude` (or that exercises the hive's user-facing behavior) IS subject to whatever CLAUDE.md the test project has. Our acceptance harness creates test projects via `init`, so those projects inherit the anti-sprawl prose. Tests that probe hive behavior should either (a) explicitly modify CLAUDE.md to neutralize the prohibition, or (b) test the hive at the CLI substrate layer (which doesn't read CLAUDE.md) rather than via the `--claude` execution path.
-
-## Decision — fix scope
+### Decision — fix scope
 
 **Fix Regression A (in fork)**:
 
@@ -171,25 +166,38 @@ Ship the 7 hm memory rules — or an ONT-0021-equivalent council-protocol skill 
 
 Acceptance: post-init project has `.claude/skills/hive-mind-council/` (or equivalent location) with rule content equivalent to `feedback_hive_queen_must_wait_for_all_panellists.md` plus the methodology sketch from ONT-0021.
 
-## Consequences
+### Consequences
 
-### Positive
+* Good, because fresh-init projects no longer self-suppress hive-mind use via CLAUDE.md prose.
+* Good, because the `hive-mind spawn --claude` path produces Queen output that respects the council protocol when ONT-0021-equivalent scaffolding is in place.
+* Good, because ADR-0098 anti-sprawl intent is preserved (swarm_init prohibition stands; only hive-mind_spawn unbundled).
+* Good, because the two-regression decomposition prevents future investigations from chasing a single root-cause that doesn't exist.
+* Bad, because the anti-sprawl warning was load-bearing for swarm_init reflexive use. Unbundling hive-mind_spawn means we lose protection against reflexive HIVE use too. Trade-off: we accept reflexive hive use because the hive IS the council protocol, and council use is appropriate for non-trivial decisions.
+* Bad, because Regression B remains unfixed in this ADR. Mitigation via init-seeded memory rules works around the symptom; root-cause fix requires Claude Code or upstream Claude model behavioral change.
+* Bad, because any acceptance test that runs hive-mind through `--claude` path is sensitive to whatever CLAUDE.md the test project has. This is now documented; tests must account for it explicitly.
+* Neutral, because Regression A's fix is single-line. Fork commit + tests + push to sparkling. Rollback is one revert.
+* Neutral, because Regression B's mitigation is content/template work, not code work. Could spawn a follow-up ADR for "ship council-protocol scaffolding".
 
-- Fresh-init projects no longer self-suppress hive-mind use via CLAUDE.md prose.
-- The `hive-mind spawn --claude` path produces Queen output that respects the council protocol when ONT-0021-equivalent scaffolding is in place.
-- ADR-0098 anti-sprawl intent is preserved (swarm_init prohibition stands; only hive-mind_spawn unbundled).
-- The two-regression decomposition prevents future investigations from chasing a single root-cause that doesn't exist.
+### Confirmation
 
-### Negative
+The Regression-A fix is verified live in `forks/ruflo` `init/claudemd-generator.ts:72-83` (the "ADR-0115 carve-out" unbundling `hive-mind_spawn` from the anti-sprawl prohibition; also present in this repo's `CLAUDE.md`). Acceptance check `check_adr0115_claudemd_hive_unbundled` greps the installed `@sparkleideas/cli/dist` for the bundled prohibition and expects 0 matches.
 
-- The anti-sprawl warning was load-bearing for swarm_init reflexive use. Unbundling hive-mind_spawn means we lose protection against reflexive HIVE use too. Trade-off: we accept reflexive hive use because the hive IS the council protocol, and council use is appropriate for non-trivial decisions.
-- Regression B remains unfixed in this ADR. Mitigation via init-seeded memory rules works around the symptom; root-cause fix requires Claude Code or upstream Claude model behavioral change.
-- Any acceptance test that runs hive-mind through `--claude` path is sensitive to whatever CLAUDE.md the test project has. This is now documented; tests must account for it explicitly.
+## Empirical test methodology — does CLAUDE.md affect spawned hive?
 
-### Neutral
+**User's test question**: "Create a new project with init, and make a manual change to its CLAUDE.md to test. If you run a test against a brand new init project, will that test make use of the claude.md? How are the hives launched for these tests? Does that launch method cause claude.md to be evaluated?"
 
-- Regression A's fix is single-line. Fork commit + tests + push to sparkling. Rollback is one revert.
-- Regression B's mitigation is content/template work, not code work. Could spawn a follow-up ADR for "ship council-protocol scaffolding".
+**Answer**: Yes, CLAUDE.md is evaluated. Mechanism:
+
+1. `ruflo hive-mind spawn --claude -o "<obj>"` invokes `commands/hive-mind.ts` line 261-296.
+2. Line 293: `const claudeProcess = childSpawn('claude', claudeArgs, { stdio: 'inherit', shell: false });`
+3. `childSpawn` is Node `child_process.spawn`. Default cwd is parent's cwd. The parent's cwd is the user's project dir (where they ran `ruflo hive-mind spawn`).
+4. Claude Code launched in a directory containing CLAUDE.md auto-loads it as system context (per Claude Code's documented behavior).
+5. The Queen prompt embedded in `claudeArgs[claudeArgs.length-1]` (line 286) is supplemented by the CLAUDE.md context.
+6. So: anti-sprawl prose in CLAUDE.md → Queen reads it → bias toward Agent tool.
+
+**This is testable empirically**: inject a unique probe string into CLAUDE.md (e.g., `MAGICWORD-xyz123`); run `hive-mind spawn --claude -o "What's the magic word?"`; the spawned Claude WILL find it because Claude Code reads CLAUDE.md on launch.
+
+**For OUR acceptance tests**: any test that runs `npx @sparkleideas/cli@latest hive-mind spawn --claude` (or that exercises the hive's user-facing behavior) IS subject to whatever CLAUDE.md the test project has. Our acceptance harness creates test projects via `init`, so those projects inherit the anti-sprawl prose. Tests that probe hive behavior should either (a) explicitly modify CLAUDE.md to neutralize the prohibition, or (b) test the hive at the CLI substrate layer (which doesn't read CLAUDE.md) rather than via the `--claude` execution path.
 
 ## §Done
 
@@ -199,13 +207,19 @@ Acceptance: post-init project has `.claude/skills/hive-mind-council/` (or equiva
 - [ ] **R4 — patch repo commit**: ADR-0115 + acceptance check + test wiring.
 - [ ] **R5 — Regression B mitigation (separate scope)**: ship init-seeded scaffolding for council protocol — either as a new skill template, or as memory rule templates that init writes into the user's `~/.claude/projects/<project>/memory/`. Defer to a follow-up ADR if the user agrees.
 
-## Cross-references
+## More Information
 
+Original status: **[RECONCILED 2026-05-29 → IMPLEMENTED (Regression A); see ADR-0270]** The Regression-A fix is live in `forks/ruflo` `init/claudemd-generator.ts:72-83` (the "ADR-0115 carve-out" unbundling `hive-mind_spawn` from the anti-sprawl prohibition; also present in this repo's `CLAUDE.md`). Regression B remains explicitly out-of-scope (upstream of ruflo). — Proposed (2026-05-02). Two-regression finding from a 5-panellist investigation hive (P1 git archaeology + P3 code reader + P4 memory-rule forensics + P2 behavior diff + DA dissent). Regression A is fixable in the fork; Regression B is upstream of ruflo and out of scope here.
+
+Methodology: Investigation hive `hive-1777724839877-...` (hierarchical, byzantine, 5 worker slots) following the orchestrator/executor pattern. CLI for metadata; Agent tool with named role personas for execution. Synthesis held until all 5 panellists reported per `~/.claude/projects/-Users-henrik-source-hm-semantic-modelling/memory/feedback_hive_queen_must_wait_for_all_panellists.md` rule (added 2026-04-26 by the user as scar tissue for the regression this ADR investigates).
+
+This ADR depends on ADR-0114 (architectural model + Lens 10 timeline finding). User pushback that produced the timeline question: "some, if not most, of the memory rules in HM, was added after the hive discussions broke after an update to the ruflo plugin." It closes ADR-0114 §Done U5 ("investigate the regression in ruflo's hive plugin between mid-April and late-April 2026").
+
+Cross-references (the original recorded these as related decisions):
 - ADR-0098 (swarm-init sprawl elimination — Regression A's introducing commit, intent: anti-sprawl for swarm_init)
 - ADR-0114 §Lens 10 (3-layer hive architecture; this ADR closes §Done U5)
 - `feedback_hive_queen_must_wait_for_all_panellists.md` (2026-04-26, primary scar tissue for Regression B)
 - `feedback_swarm_source_of_truth.md` (2026-04-23, first scar-tissue rule, possibly tied to Regression A's CLAUDE.md propagation)
 
-## Revision history
-
+Revision history:
 - **2026-05-02 (initial draft)** — captured 5-panellist investigation hive findings (P1+P3+P4+P2+DA), DA dissent reconciled into the two-regression model, empirical test of CLAUDE.md inheritance via `childSpawn` cwd-default behavior.

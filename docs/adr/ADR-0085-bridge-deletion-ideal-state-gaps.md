@@ -1,13 +1,15 @@
-# ADR-0085: Bridge Deletion & Ideal State Gap Closure
+---
+status: accepted
+date: 2026-04-13
+tags: [memory, bridge, storage, cleanup]
+supersedes: []
+depends-on: [ADR-0084, ADR-0075]
+implements: []
+---
 
-- **Status**: **Implemented (2026-05-03)** — closes ADR-0075 Layers 2 and 5.
-- **Date**: 2026-04-13
-- **Deciders**: Henrik Pettersen
-- **Methodology**: 8-agent hive (queen architect, devil's advocate, registry bootstrap expert, initializer cleanup expert, dead code analyst, test strategy expert, merge conflict analyst, performance impact analyst)
-- **Depends on**: ADR-0084 (Phase 4 single controller), ADR-0075 (ideal state definition)
-- **Closes**: ADR-0075 Layers 2 and 5 residual gaps
+# Bridge Deletion & Ideal State Gap Closure
 
-## Context
+## Context and Problem Statement
 
 ADR-0084 Phase 4 achieved **85% of the ADR-0075 ideal state** (excluding Layer 1 RVF
 storage, which is a separate effort). Six gaps remain between the current architecture
@@ -106,12 +108,15 @@ All 64 memory-bridge.ts exports verified dead:
 | 5. Zero bridge fallbacks | **Yes** — remove try-first blocks, fallbacks already work | — |
 | 6. Reduce data flow layers | **Partial** — removing bridge eliminates one hop; full L1 ideal (Controller → IStorage) requires RVF storage work | L1 (ADR-0075) |
 
-## Decision
+## Considered Options
 
-Close gaps 1, 2, 4, and 5 by deleting memory-bridge.ts and removing all bridge
-dependencies from memory-initializer.ts. Defer gap 3 (AgentDBService) as an upstream
-merge policy decision. Accept gap 6 partially — the bridge hop is eliminated but the
-initializer hop remains until L1 storage work.
+* **Close gaps 1, 2, 4, and 5 by deleting memory-bridge.ts and removing all bridge dependencies from memory-initializer.ts; defer gap 3 (AgentDBService) as upstream merge policy; accept gap 6 partially (chosen).**
+
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "Close gaps 1, 2, 4, and 5 by deleting memory-bridge.ts and removing all bridge dependencies from memory-initializer.ts", because the bridge is verifiably dead (zero external callers, all 64 exports unreferenced or initializer-only) and the upstream creator's recommendation to extract specific functions rather than delete wholesale is honored by relocating `getRegistry()` + helpers to the router. Gap 3 (AgentDBService) is deferred as an upstream merge policy decision, and gap 6 is accepted partially — the bridge hop is eliminated but the initializer hop remains until L1 storage work.
 
 ## Tasks
 
@@ -285,19 +290,20 @@ The bridge deletion breaks 14 test files. Categorized by action:
   Note: `pending-insights.jsonl` is NOT a sidecar — it is a write-ahead event journal
   (primary store for pending edit events, truncated on consolidation). No action needed.
 
-## Consequences
+### Consequences
 
-- **~3,588 net production lines eliminated** from the codebase
-- **Single registry bootstrap** — router owns it, no dual-path confusion
-- **Zero bridge code executed** at runtime (11 try-first paths eliminated)
-- **Cleaner initializer** — memory-initializer is pure SQLite CRUD, no AgentDB coupling
-  (Update: ADR-0086 (2026-04-14) DELETED memory-initializer.ts entirely (Debt 6). All callers rewired to memory-router.ts. The file no longer exists.)
-- **No JSON sidecar** — intelligence reads RVF directly (ADR-0086 Debt 17 replaced SQLite with RVF reads), no redundant file-based IPC
-- **ESM hook handler** — unblocks future async hook improvements
-- **ADR-0075 gap closure**: L2 100%, L5 100% (initializer hop eliminated — file deleted by ADR-0086)
-- **Merge risk**: upstream changes to memory-bridge.ts will cause git conflicts on the
-  deletion. This is a one-time cost — once merged, the file stays deleted and future
-  upstream changes to it are irrelevant (we never executed them anyway).
+* Good, because **~3,588 net production lines** are eliminated from the codebase.
+* Good, because there is a **single registry bootstrap** — router owns it, no dual-path confusion.
+* Good, because **zero bridge code is executed** at runtime (11 try-first paths eliminated).
+* Good, because the initializer is cleaner — memory-initializer is pure SQLite CRUD, no AgentDB coupling. (Update: ADR-0086 (2026-04-14) DELETED memory-initializer.ts entirely (Debt 6). All callers rewired to memory-router.ts. The file no longer exists.)
+* Good, because there is **no JSON sidecar** — intelligence reads RVF directly (ADR-0086 Debt 17 replaced SQLite with RVF reads), no redundant file-based IPC.
+* Good, because the **ESM hook handler** unblocks future async hook improvements.
+* Good, because of ADR-0075 gap closure: L2 100%, L5 100% (initializer hop eliminated — file deleted by ADR-0086).
+* Bad, because upstream changes to memory-bridge.ts will cause git conflicts on the deletion. This is a one-time cost — once merged, the file stays deleted and future upstream changes to it are irrelevant (we never executed them anyway).
+
+### Confirmation
+
+Implemented 2026-05-03 — closes ADR-0075 Layers 2 and 5. The Tasks checklist tracks each task to completion; verification: full unit suite passes (1945 tests, 0 failures), build produces zero new errors (verified 2026-04-14), acceptance checks pass 233/233 (2026-04-14), and new acceptance checks ADR-0085-1 (bridge absent from dist), ADR-0085-2 (initializer zero bridge imports), and ADR-0085-3 (router has initControllerRegistry) are wired into `test-acceptance-fast.sh` as the `adr0085` group. Final grep `grep -r "memory-bridge" cli/src/ --include="*.ts"` returns zero hits in production code.
 
 ## Architecture after ADR-0085
 
@@ -319,3 +325,7 @@ memory-initializer.ts:  DELETED (ADR-0086 Debt 6 — 918-line shim removed after
 writeJsonSidecar:       DELETED (sidecar file no longer written)
 AgentDBService:         Never existed as a class (comment reference removed)
 ```
+
+## More Information
+
+Original status: "**Implemented (2026-05-03)** — closes ADR-0075 Layers 2 and 5." The recorded Date was 2026-04-13. The methodology recorded was an 8-agent hive (queen architect, devil's advocate, registry bootstrap expert, initializer cleanup expert, dead code analyst, test strategy expert, merge conflict analyst, performance impact analyst). This ADR depends on ADR-0084 (Phase 4 single controller) and ADR-0075 (ideal state definition), and closes the residual gaps in ADR-0075 Layers 2 and 5.

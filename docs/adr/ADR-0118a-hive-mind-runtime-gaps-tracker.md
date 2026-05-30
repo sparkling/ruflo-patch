@@ -1,15 +1,17 @@
-# ADR-0118: Hive-mind runtime gaps tracker
+---
+status: accepted
+date: 2026-05-02
+tags: [hive-mind, tracker, runtime]
+supersedes: []
+depends-on: [ADR-0116]
+implements: []
+---
 
-- **Status**: Proposed (2026-05-02), **Living tracker** (per ADR-0094 pattern); all 14 Tns complete (T1-T13 closed earlier; T14 closed 2026-05-03 — sub-queen failure escalation runtime + tests)
-- **Date**: 2026-05-02
-- **Deciders**: Henrik Pettersen
-- **Depends on**: ADR-0116 (hive-mind marketplace plugin — provides the verification matrix audit and the ship vehicle for gap annotations)
-- **Related**: ADR-0104 (queen orchestration), ADR-0113 (plugin system), ADR-0114 (architectural model)
-- **Scope**: Fork-side runtime work in `v3/@claude-flow/cli/src/` and `v3/@claude-flow/swarm/src/`. Per `feedback-patches-in-fork.md`, USERGUIDE-promised features that don't work are bugs and bugs are fixed in fork.
+# Hive-mind runtime gaps tracker
 
-## Context
+## Context and Problem Statement
 
-ADR-0116's verification matrix audited `hive-mind` upstream code against the USERGUIDE contract and surfaced 10 gaps where advertised features ship as documentation only. ADR-0116 is shippable as packaging now; closing the runtime gaps is independent work, factored out into per-task ADRs (ADR-0119 through ADR-0128). This document is the navigation index for that program.
+ADR-0116's verification matrix audited `hive-mind` upstream code against the USERGUIDE contract and surfaced 10 gaps where advertised features ship as documentation only. ADR-0116 is shippable as packaging now; closing the runtime gaps is independent work, factored out into per-task ADRs (ADR-0119 through ADR-0128). This document is the living-tracker (per the ADR-0094 pattern) navigation index for that program. All 14 Tns are complete (T1-T13 closed earlier; T14 closed 2026-05-03 — sub-queen failure escalation runtime + tests).
 
 ## Decision
 
@@ -96,8 +98,15 @@ Per `feedback-no-fallbacks.md` and `feedback-no-squelch-tests.md`, **annotations
 2. **Cross-Tn refactoring**: if multiple Tns end up touching the same file in incompatible ways (e.g. T1, T2, T3 all extending `ConsensusStrategy` enum), batch them in dependency order rather than parallel.
 3. **When to escalate to a design ADR**: each per-task ADR (ADR-0119 through ADR-0128) carries its own "Promote to own ADR if" criterion. Default is to keep the work inside its task ADR unless a design decision exceeds mechanical implementation.
 
-## References
+## More Information
 
+Original status: Proposed (2026-05-02), **Living tracker** (per ADR-0094 pattern); all 14 Tns complete (T1-T13 closed earlier; T14 closed 2026-05-03 — sub-queen failure escalation runtime + tests).
+
+This tracker depends on ADR-0116 (hive-mind marketplace plugin — provides the verification matrix audit and the ship vehicle for gap annotations). It is related to ADR-0104 (queen orchestration), ADR-0113 (plugin system), and ADR-0114 (architectural model).
+
+Scope: Fork-side runtime work in `v3/@claude-flow/cli/src/` and `v3/@claude-flow/swarm/src/`. Per `feedback-patches-in-fork.md`, USERGUIDE-promised features that don't work are bugs and bugs are fixed in fork.
+
+References:
 - Verification matrix audit: ADR-0116 §USERGUIDE-vs-implementation verification matrix
 - Plugin packaging: ADR-0116
 - Living tracker pattern: ADR-0094 (100% acceptance coverage program)

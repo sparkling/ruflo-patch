@@ -1,10 +1,13 @@
-# ADR-0158: Duplicate ODR skill family — `odr-create`, `odr-index`, `odr-review` parallel to the ADR family
+---
+status: accepted
+date: 2026-05-08
+tags: [odr, adr, skills, ontology]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: **[RECONCILED 2026-05-29 → SHIPPED under a different format authority; see [[ADR-0270]]]** The `odr-{create,index,review}` skills exist at `~/.claude/skills/`, but built under the **DCAP / ODR-0095** model — NOT this ADR's ONT-0029 design (`.code.md` companions were explicitly retired). `adr-index` was correctly never turned into a single unified multi-type indexer (a symmetric `odr-index` writes the `odr/*` namespace instead). No engineering remains; this ADR's specified design is obsolete (doc-reconciliation only). Original status preserved below. — Proposed 2026-05-08
-- **Date**: 2026-05-08
-- **Methodology**: SPARC + MADR
-- **Deciders**: Henrik Pettersen
-- **Related**: ADR-0157 (ADR template format — MADR+SPARC+amends, ADR skills only), HM ONT-0029 (ODR Format and Audience Separation, 9-expert council ratified, authoritative for ODR format), upstream `ruflo-adr` plugin (current ADR-only skill family), `forks/ruflo` `b0e28a764` (filename-inference companion patch — superseded by ADR-0157)
+# Duplicate ODR skill family — `odr-create`, `odr-index`, `odr-review` parallel to the ADR family
 
 ## Context and Problem Statement
 
@@ -331,6 +334,10 @@ Per `feedback-no-squelch-tests`, every criterion observable from a test or pipel
 8. **Pipeline acceptance suite** continues to pass at ≥ 675/675.
 
 ## More Information
+
+Original status: "**[RECONCILED 2026-05-29 → SHIPPED under a different format authority; see ADR-0270]** The `odr-{create,index,review}` skills exist at `~/.claude/skills/`, but built under the **DCAP / ODR-0095** model — NOT this ADR's ONT-0029 design (`.code.md` companions were explicitly retired). `adr-index` was correctly never turned into a single unified multi-type indexer (a symmetric `odr-index` writes the `odr/*` namespace instead). No engineering remains; this ADR's specified design is obsolete (doc-reconciliation only). Original status preserved below. — Proposed 2026-05-08." Methodology: SPARC + MADR.
+
+This decision relates to ADR-0157 (ADR template format — MADR+SPARC+amends, ADR skills only), HM ONT-0029 (ODR Format and Audience Separation, 9-expert council ratified, authoritative for ODR format), the upstream `ruflo-adr` plugin (current ADR-only skill family), the filename-inference companion patch `forks/ruflo` `b0e28a764` (superseded by ADR-0157), and the reconciliation reference ADR-0270.
 
 ### Out of scope (deferred)
 

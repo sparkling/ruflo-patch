@@ -1,28 +1,13 @@
 ---
 status: proposed
-completed: false
 date: 2026-05-29
-tags: [learning, skills, flywheel, adr-0268-followons, deferred-with-trigger]
+tags: [learning, skills, flywheel, deferred-with-trigger]
 supersedes: []
 depends-on: [ADR-0268, ADR-0180, ADR-0181, ADR-0147, ADR-0257]
 implements: []
 ---
 
-> **Status (2026-05-29)**: `proposed`, `completed: false` — a queryable
-> defer-with-trigger tracker (per [[ADR-0257]]) for the five follow-ons
-> [[ADR-0268]] deferred. [[ADR-0268]] is `completed: true` (the flywheel —
-> record→promote→retrieve — is delivered + CI-verified); its deferred items
-> were recorded only as prose bullets inside that completed ADR, so an
-> `adr-index` "outstanding work" query (`completed: false`) would never surface
-> them. This ADR is that surface: each item carries an explicit **trigger
-> condition** ("until when") so the work is trackable, not silently aged. A
-> 2026-05-29 validation swarm verified — against fresh upstream + fork HEAD —
-> that **none of the five was ever built upstream** (the upstream `postTask`
-> plan is pseudocode against undefined types; cohesion guard + Phase B are
-> fork-only constructs). So every item is genuine implement-ahead, not a missing
-> port, and every deferral in [[ADR-0268]] is justified.
-
-# ADR-0269 — Skill-promotion flywheel: deferred follow-ons (trigger-tracked)
+# Skill-promotion flywheel: deferred follow-ons (trigger-tracked)
 
 ## Context and Problem Statement
 
@@ -89,6 +74,8 @@ visible in one place.
 * When a trigger fires: build the item (spin a dedicated ADR if large — e.g. the `code`-producer), then strike it from this tracker; when all five are resolved or re-homed, flip this ADR `completed: true`.
 
 ## More Information
+
+Status (2026-05-29): `proposed`, `completed: false` — a queryable defer-with-trigger tracker (per [[ADR-0257]]) for the five follow-ons [[ADR-0268]] deferred. [[ADR-0268]] is `completed: true` (the flywheel — record→promote→retrieve — is delivered + CI-verified); its deferred items were recorded only as prose bullets inside that completed ADR, so an `adr-index` "outstanding work" query (`completed: false`) would never surface them. This ADR is that surface: each item carries an explicit **trigger condition** ("until when") so the work is trackable, not silently aged. A 2026-05-29 validation swarm verified — against fresh upstream + fork HEAD — that **none of the five was ever built upstream** (the upstream `postTask` plan is pseudocode against undefined types; cohesion guard + Phase B are fork-only constructs). So every item is genuine implement-ahead, not a missing port, and every deferral in [[ADR-0268]] is justified.
 
 * [[ADR-0268]] — the flywheel; §"validation swarm + completion" amendment is the source of these deferrals.
 * [[ADR-0180]] §Phase 9 — Phase B implementation tracker.

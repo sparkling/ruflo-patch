@@ -1,36 +1,39 @@
-# ADR-0037: Test Suite Reorganization
+---
+status: accepted
+date: 2026-03-15
+tags: [testing, pipeline, publish]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-## Status
+# Test Suite Reorganization
 
-Accepted (supersedes ADR-0036)
-
-## Date
-
-2026-03-15
-
-## Deciders
-
-sparkling team
-
-## Methodology
-
-SPARC + MADR
-
-## Context
+## Context and Problem Statement
 
 test-verify.sh conflates 3 concerns: publish, test, promote.
 test-acceptance.sh duplicates the test logic.
 Acceptance tests run against bare npm install, not initialized projects.
 Layer numbering and T-numbering add indirection without value.
 
-### Decision Drivers
+## Decision Drivers
 
 1. Publishing is CI/CD infrastructure, not testing
 2. Acceptance tests should run against properly initialized projects
 3. Two scripts with overlapping logic = maintenance burden
 4. Layer numbering (L0-L4) and T-numbers are opaque
 
-## Decision: Specification (SPARC-S)
+## Considered Options
+
+* **Extract publish/promote, unify acceptance into a single harnessed script, and drop opaque numbering (chosen)**.
+
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "Extract publish/promote, unify acceptance into a single harnessed script, and drop opaque numbering", because it separates CI/CD infrastructure (publish/promote) from testing, runs acceptance against properly initialized projects, and removes the maintenance burden of two overlapping scripts and opaque layer/T numbering.
+
+### Specification (SPARC-S)
 
 - Extract publish/promote into dedicated `scripts/publish-verdaccio.sh`
 - Keep `test-acceptance.sh` as the single acceptance test script
@@ -38,7 +41,7 @@ Layer numbering and T-numbering add indirection without value.
 - Drop layer numbering, T-numbering, RQ naming
 - Split T32 into 5 separate checks
 
-## Pseudocode (SPARC-P)
+### Pseudocode (SPARC-P)
 
 Pipeline flow:
 
@@ -63,7 +66,7 @@ harness: install -> init --full -> memory init
 tests: smoke -> structure -> functional -> controller -> e2e
 ```
 
-## Architecture (SPARC-A)
+### Architecture (SPARC-A)
 
 | File | Action |
 |------|--------|
@@ -77,7 +80,7 @@ tests: smoke -> structure -> functional -> controller -> e2e
 | `tests/*.test.mjs` (15 files) | Rename (drop numeric prefix) |
 | `tests/CLAUDE.md` | Rewrite |
 
-## Refinement (SPARC-R)
+### Refinement (SPARC-R)
 
 - Publish gated on unit tests passing (run_tests_ci before publish)
 - Promote runs immediately after publish (local Verdaccio, no external consumers)
@@ -85,7 +88,18 @@ tests: smoke -> structure -> functional -> controller -> e2e
 - Harness failure = abort (infrastructure error, not test failure)
 - Atomic commit for phase 2 to avoid pipeline breakage
 
-## Completion (SPARC-C)
+### Consequences
+
+#### Completion (SPARC-C)
+
+* Good, because publish and test are independent, composable steps
+* Good, because all acceptance tests run against a properly initialized project
+* Good, because single test script to maintain
+* Good, because descriptive names throughout
+* Bad, because harness failure blocks all tests (intentional)
+* Bad, because sync-and-build.sh run_verify() split into run_publish_verdaccio() + run_acceptance()
+
+### Confirmation
 
 Verification:
 1. `npm run test:unit` -- unit tests pass with renamed files
@@ -95,16 +109,8 @@ Verification:
 5. `grep -rn '"T[0-9]' scripts/ lib/` -- no T-numbered IDs remain
 6. Full pipeline: `npm run deploy` -- end-to-end passes
 
-## Consequences
+## More Information
 
-### Positive
+This ADR supersedes ADR-0036 (the prior test-reorganization record, no longer present in the corpus).
 
-- Publish and test are independent, composable steps
-- All acceptance tests run against a properly initialized project
-- Single test script to maintain
-- Descriptive names throughout
-
-### Negative
-
-- Harness failure blocks all tests (intentional)
-- sync-and-build.sh run_verify() split into run_publish_verdaccio() + run_acceptance()
+This record used the SPARC + MADR methodology, with section headings (Specification / Pseudocode / Architecture / Refinement / Completion) remapped to the canonical MADR sections during the ADR-0271 migration, preserving all content. The deciders were the sparkling team. Original status: "Accepted (supersedes ADR-0036)".

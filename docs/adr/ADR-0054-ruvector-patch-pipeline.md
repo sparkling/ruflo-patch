@@ -1,15 +1,15 @@
-# ADR-0054: RuVector Patch Pipeline
-
-**Status**: Implemented (2026-04-21)
-**Date**: 2026-03-22
-**Deciders**: System Architecture
-**Methodology**: SPARC + MADR
-
+---
+status: accepted
+date: 2026-03-22
+tags: [ruvector, pipeline, publish, forks]
+supersedes: []
+depends-on: []
+implements: []
 ---
 
-## S - Specification
+# RuVector Patch Pipeline
 
-### Problem
+## Context and Problem Statement
 
 The `@ruvector/*` packages (`@ruvector/rvf`, `@ruvector/gnn`, `@ruvector/attention`,
 `@ruvector/rvf-node`, `@ruvector/ruvllm`) are consumed as upstream npm dependencies
@@ -40,11 +40,22 @@ reach users unless we either:
 | Observability | CI verifies ruvector functionality; failures are visible |
 | Traceability | Each patch has a GitHub issue, commit, and version bump |
 
----
+## Considered Options
 
-## P - Pseudocode (Design)
+* Patch the 3 cli.js defects, publish the CLI as `@sparkleideas/ruvector`, and wire it into the existing fork build/publish pipeline (chosen).
+* Bundle the fixes into `@sparkleideas/agentic-flow` directly (the alternative reach mechanism considered alongside publishing a scoped `@ruvector/*` fork).
 
-### 1. Patch the 3 defects in cli.js
+## Decision Outcome
+
+Chosen option: "Patch the 3 cli.js defects and publish the CLI as `@sparkleideas/ruvector` via the existing pipeline", because it brings the ruvector fork into the same patch-and-publish model as the other three forks, so fixes reach users automatically while the native WASM `@ruvector/*` packages (which have no defects) stay upstream.
+
+### S - Specification
+
+(See Context and Problem Statement above for the problem and quality attributes.)
+
+### P - Pseudocode (Design)
+
+#### 1. Patch the 3 defects in cli.js
 
 ```
 RV-001: force-learn fix
@@ -63,7 +74,7 @@ RV-003: stats counter sync
     intel.data.stats.total_memories = (intel.data.memories || []).length
 ```
 
-### 2. Publish as `@sparkleideas/ruvector`
+#### 2. Publish as `@sparkleideas/ruvector`
 
 ```
 # RuVector has no build step — cli.js is hand-written JS
@@ -75,7 +86,7 @@ bump version: {upstream-version}-patch.N
 publish to Verdaccio
 ```
 
-### 3. Wire into agentic-flow dependencies
+#### 3. Wire into agentic-flow dependencies
 
 The unscoped `ruvector` CLI is imported in one file:
 - `agentic-flow/agentic-flow/src/intelligence/RuVectorIntelligence.ts:84`:
@@ -99,7 +110,7 @@ stay as upstream deps. Only the CLI package (`ruvector`) needs the scope rename.
 #   import ruvector from 'ruvector' → import ruvector from '@sparkleideas/ruvector'
 ```
 
-### 4. Add to pipeline
+#### 4. Add to pipeline
 
 ```
 # In scripts/copy-source.sh:
@@ -112,7 +123,7 @@ stay as upstream deps. Only the CLI package (`ruvector`) needs the scope rename.
 # Add ruvector version bump
 ```
 
-### 5. Add monitoring
+#### 5. Add monitoring
 
 ```
 # In scripts/test-acceptance.sh:
@@ -121,11 +132,9 @@ stay as upstream deps. Only the CLI package (`ruvector`) needs the scope rename.
 # Add acceptance check: verify stats counters update after trajectory-end
 ```
 
----
+### A - Architecture
 
-## A - Architecture
-
-### Current state
+#### Current state
 
 ```
 Pipeline publishes 4 forks:
@@ -141,7 +150,7 @@ agentic-flow depends on upstream @ruvector/* from public npm:
   @ruvector/ruvllm    ^2.5.1
 ```
 
-### Target state
+#### Target state
 
 ```
 Pipeline publishes 4 forks:
@@ -154,7 +163,7 @@ agentic-flow depends on @sparkleideas/ruvector (patched) from Verdaccio.
 Upstream @ruvector/rvf, @ruvector/gnn, etc. remain as-is (native WASM, no patches needed).
 ```
 
-### What gets published vs what stays upstream
+#### What gets published vs what stays upstream
 
 | Package | Source | Patched? | Publish as |
 |---------|--------|----------|------------|
@@ -167,7 +176,7 @@ Upstream @ruvector/rvf, @ruvector/gnn, etc. remain as-is (native WASM, no patche
 
 Only the CLI package (`ruvector`) has defects. The native WASM packages work correctly.
 
-### Risk assessment
+#### Risk assessment
 
 | Risk | Severity | Mitigation |
 |------|----------|------------|
@@ -176,11 +185,9 @@ Only the CLI package (`ruvector`) has defects. The native WASM packages work cor
 | Scope rename may break internal `require()` paths | Medium | Test import paths after rename |
 | `force-learn` fix may change engine initialization behavior | Low | The fix removes `skipEngine:true` which is the bug |
 
----
+### R - Refinement
 
-## R - Refinement
-
-### Phase 1: Apply patches (3 fixes in 1 file)
+#### Phase 1: Apply patches (3 fixes in 1 file)
 
 All fixes target `/home/claude/src/forks/ruvector/npm/packages/ruvector/bin/cli.js`.
 
@@ -203,7 +210,7 @@ All fixes target `/home/claude/src/forks/ruvector/npm/packages/ruvector/bin/cli.
   intel.data.stats.total_memories = (intel.data.memories || []).length;
   ```
 
-### Phase 2: Pipeline integration
+#### Phase 2: Pipeline integration
 
 **`lib/fork-paths.sh`** — add ruvector path constant:
 ```bash
@@ -227,7 +234,7 @@ Level 1: ['@sparkleideas/ruvector', '@sparkleideas/agentdb', ...]
 
 **`scripts/run-fork-version.sh`** — add version bump for ruvector.
 
-### Phase 3: Acceptance tests
+#### Phase 3: Acceptance tests
 
 Add to `lib/acceptance-security-checks.sh`:
 
@@ -251,18 +258,16 @@ check_ruvector_stats_counters() {
 
 Register in `scripts/test-acceptance.sh` under a new `group-ruvector` phase.
 
-### Phase 4: Monitoring
+#### Phase 4: Monitoring
 
 Add to the existing `neural status` command output:
 - Show ruvector CLI version
 - Show trajectory count from loaded intelligence
 - Flag if stats counters are stale (mismatch between counter and actual data length)
 
----
+### C - Completion
 
-## C - Completion
-
-### Implementation checklist
+#### Implementation checklist
 
 - [ ] RV-001: Fix `force-learn` `tick()` crash in `cli.js`
 - [ ] RV-002: Fix `activeTrajectories` persistence in `cli.js`
@@ -280,7 +285,7 @@ Add to the existing `neural status` command output:
 - [ ] Close GitHub issues #55, #56, #57
 - [ ] Update `config/published-versions.json`
 
-### Estimated effort
+#### Estimated effort
 
 | Phase | Files | Lines |
 |-------|:-----:|:-----:|
@@ -289,7 +294,7 @@ Add to the existing `neural status` command output:
 | Acceptance tests | 2 | ~60 |
 | **Total** | **8** | **~90** |
 
-### Success criteria
+#### Success criteria
 
 - `force-learn` exits 0 (no `tick is not a function`)
 - `trajectory-start` → save → load → `activeTrajectories` present
@@ -297,31 +302,20 @@ Add to the existing `neural status` command output:
 - `npm view @sparkleideas/ruvector@latest` resolves on Verdaccio
 - 59/59 acceptance (3 new ruvector tests)
 
----
+### Consequences
 
-## Consequences
+#### Positive
 
-### Positive
+* Good, because RuVector CLI patches reach users via the normal publish pipeline.
+* Good, because all 4 forks now follow the same patch-and-publish model.
+* Good, because intelligence training (`force-learn`, trajectories, stats) works correctly.
+* Good, because acceptance tests prevent regressions.
 
-- RuVector CLI patches reach users via the normal publish pipeline
-- All 4 forks now follow the same patch-and-publish model
-- Intelligence training (`force-learn`, trajectories, stats) works correctly
-- Acceptance tests prevent regressions
+#### Negative
 
-### Negative
-
-- One more package to maintain in the pipeline
-- `cli.js` is hand-written JS — no TypeScript safety net
-- Future upstream ruvector CLI changes require manual merge (same as other forks)
-
-## Related
-
-- **ADR-0027**: Fork migration and version overhaul — established the fork model
-- **ADR-0038**: Cascading pipeline — established the deploy pipeline
-- **ADR-0052**: Config-driven embedding framework — fixed embedding defaults across all packages
-- **GitHub issues**: #55 (RV-001), #56 (RV-002), #57 (RV-003) in `sparkling/ruflo-patch`
-
----
+* Bad, because there is one more package to maintain in the pipeline.
+* Bad, because `cli.js` is hand-written JS — no TypeScript safety net.
+* Bad, because future upstream ruvector CLI changes require manual merge (same as other forks).
 
 ## Status Update 2026-04-21
 
@@ -366,3 +360,9 @@ The pipeline shape shifted since the 2026-03-22 proposal. The original plan scop
 ### Remaining work
 
 None for the pipeline mechanism itself. The three original CLI-level defects (RV-001/002/003) are *inside* the patched sources the pipeline now ships, so if any survive, that is a fork-patch issue, not a pipeline issue. The GitHub issues #55/#56/#57 in `sparkling/ruflo-patch` can be closed as covered by the broader ruvector-family publish once their individual fixes have a verifying acceptance check (tracked outside this ADR).
+
+## More Information
+
+This decision was recorded by System Architecture using the SPARC + MADR methodology. Original status: "Implemented (2026-04-21)"; originally proposed 2026-03-22.
+
+The original record cross-referenced these related decisions: ADR-0027 (fork migration and version overhaul — established the fork model); ADR-0038 (cascading pipeline — established the deploy pipeline); ADR-0052 (config-driven embedding framework — fixed embedding defaults across all packages); and GitHub issues #55 (RV-001), #56 (RV-002), #57 (RV-003) in `sparkling/ruflo-patch`.

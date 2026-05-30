@@ -1,16 +1,15 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-24
-tags: [pipeline, publish, lint, codemod, fork-version, scope-registry, audit-followup, ct-c]
+tags: [pipeline, publish, lint, codemod]
 supersedes: []
-depends-on: [0201, 0231, 0233]
+depends-on: [ADR-0201, ADR-0231, ADR-0233]
 implements: []
 ---
 
 # Cross-registry scope/package-name lint (CT-C close-out)
 
-## Context
+## Context and Problem Statement
 
 [[ADR-0231]] wave A9 (2026-05-24, eighth amendment) added a fail-loud branch to
 `scripts/publish.mjs::buildPackageMap` that throws when two candidate
@@ -80,7 +79,7 @@ Per [[ADR-0201]] §"Remediation-ADR pre-flight checklist":
    reconciliation step. ADR-0215's codemod golden-master catches
    codemod-output drift but not codemod-vs-fork-version drift.
 
-## Considered options
+## Considered Options
 
 ### A. Pipeline-start cross-registry pairwise lint (warn or fail)
 
@@ -218,7 +217,9 @@ operation against an unknown name. No cross-registry validation.
 * Does not address the "find drift before publishing" use case the
   wave-A9 amendment specifically called out as the next thing needed.
 
-## Decision
+## Decision Outcome
+
+Chosen option: "Option A — pipeline-start cross-registry pairwise lint", because it catches cross-registry drift at pipeline-start in under a second as a fail-loud pre-publish gate.
 
 Adopt **option A — pipeline-start cross-registry pairwise lint** as the
 immediate close-out for CT-C.
@@ -252,44 +253,36 @@ cheap, that lands as a separate non-blocking PR.
 that every entry resolves to a real directory at lint time (the only
 constraint currently is "the value is a path string").
 
-## Consequences
+### Consequences
 
-### Positive
-
-* Closes the wave-A9 defect class — adding a fork package to one
+* Good, because it closes the wave-A9 defect class — adding a fork package to one
   registry without the other is caught at pipeline-start in <1s.
-* The today-known `agentic-jujutsu` drift gets a single-commit fix
+* Good, because the today-known `agentic-jujutsu` drift gets a single-commit fix
   with regression coverage.
-* Establishes a pattern for future cross-cutting registry lints
+* Good, because it establishes a pattern for future cross-cutting registry lints
   (CT-A silent fallbacks, CT-B wrapper-bundled drift, CT-H schema
   vs. handler) — the same "pairwise pre-publish lint" idiom can be
   reused.
-* Honors `feedback-commit-forks-before-release` indirectly: lint runs
+* Good, because it honors `feedback-commit-forks-before-release` indirectly: lint runs
   before fork-version-bump, so a fork pkg.json edit that didn't make
   it into the registry surfaces before the bad bump.
-
-### Negative
-
-* Adds one more pipeline stage that can fail; legitimate-but-new fork
+* Bad, because it adds one more pipeline stage that can fail; legitimate-but-new fork
   packages now require two coordinated edits (`UNSCOPED_MAP` AND
   `UNSCOPED_PUBLISHABLE`) instead of being silently picked up by
   whichever discoverer happens to walk it. (Counter-argument: the
   silent-skip behaviour is precisely the defect this ADR addresses.)
-* Bash-side `_v3_packages` parsing relies on `node -e` extraction;
+* Bad, because bash-side `_v3_packages` parsing relies on `node -e` extraction;
   if the bash literal format changes, the lint becomes fragile. (Mitigation:
   the lint's own test asserts the format; if it changes, the test fails
   loud, not the production pipeline.)
-* Doesn't eliminate the duplication; future audits may re-flag the
+* Bad, because it doesn't eliminate the duplication; future audits may re-flag the
   same five-site shape as a code-smell. (Defended: option B remains
   on the table if the lint proves drift is frequent.)
-
-### Neutral
-
-* The lint runs at pipeline start, costing <1s. No measurable release
+* Neutral, because the lint runs at pipeline start, costing <1s. No measurable release
   time impact.
-* Reuses existing module-export discipline; no new file format or
+* Neutral, because it reuses existing module-export discipline; no new file format or
   toolchain.
-* The `EXTRA_WORKSPACE_DIRS` directory-existence check is a separate
+* Neutral, because the `EXTRA_WORKSPACE_DIRS` directory-existence check is a separate
   invariant from the name-registry checks; the lint script will have
   two phases (name registries, then path registries) even though they
   ship in the same gate.

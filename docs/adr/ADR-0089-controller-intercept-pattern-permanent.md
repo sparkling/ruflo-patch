@@ -1,12 +1,15 @@
-# ADR-0089: Controller Intercept Pattern as Permanent Layer 2 Design
+---
+status: accepted
+date: 2026-04-15
+tags: [controllers, registry, intercept, architecture]
+supersedes: [ADR-0075, ADR-0076]
+depends-on: []
+implements: []
+---
 
-- **Status**: Implemented — 2026-04-21
-- **Date**: 2026-04-15
-- **Scope**: Patch repo (ADR) + acceptance tests. No code changes.
-- **Supersedes (partial)**: ADR-0075 Layer 2 ideal; ADR-0076 Phase 4 acceptance criteria #1-#3
-- **Related**: ADR-0076 (phased plan), ADR-0077 (intercept pattern introduction), ADR-0082 (no silent fallbacks), ADR-0087 (adversarial prompting)
+# Controller Intercept Pattern as Permanent Layer 2 Design
 
-## Context
+## Context and Problem Statement
 
 ADR-0075 defined Layer 2 of the ideal architecture as:
 
@@ -72,7 +75,48 @@ The five problems ADR-0075 listed for Layer 2:
 aesthetic (#4) and philosophical (#5), neither of which causes incorrect
 runtime behavior.
 
-## Decision
+## Considered Options
+
+### A. Execute the original ADR-0076 Phase 4 deletion (3-5 days)
+
+Delete `agentdb-service.ts`, migrate 80+ call sites across 17 files, split
+`controller-registry.ts` into 3 files under 500 LOC each. Close the gap by
+actually doing the work.
+
+**Rejected**: the 3 ADR-0075 problems it would solve are already solved by
+the intercept pattern. The remaining benefits are aesthetic. The cost is 3-5
+days plus permanent upstream merge tax on 17 files forever. Cost exceeds
+benefit by roughly 10:1.
+
+### B. Leave Layer 2 at 75% forever, accept the debt
+
+Don't write ADR-0089. Accept that ADR-0075's definition of ideal includes
+goals we won't meet. Let Layer 2 score as "75% with accepted trade-off".
+
+**Rejected**: the 75% score is misleading in both directions. It suggests
+either "there's work left to do" (false — the work is deferred by design) or
+"this is a genuine gap" (false — it's a deliberate trade-off). Future
+engineers reading the progress report will waste time investigating a
+non-problem. The right fix is to update the definition of "done" to match
+reality, with explicit reasoning and revisit triggers.
+
+### C. Add a source-grep test without writing an ADR
+
+Just add the regression test and move on. No doc change.
+
+**Rejected**: tests enforce rules; ADRs explain them. A future engineer
+opening the test file and asking "why is this rule here?" needs a document
+to read. ADR-0089 is that document.
+
+### D (chosen): Supersede the three Phase 4 structural criteria; add regression test; define revisit trigger
+
+~150 lines of ADR + one unit test file + one acceptance check. Zero
+production code change. Explicit trade-off documentation. Clear revisit
+trigger.
+
+## Decision Outcome
+
+Chosen option: "Option D — supersede the three Phase 4 structural criteria, add a regression test, and define a revisit trigger", because behavioral unity (one instance per controller type at runtime) is what production correctness requires and it is already achieved by the intercept pattern, while structural unity (deleting upstream files, splitting `controller-registry.ts`) is aesthetic and costs a permanent upstream merge tax exceeding its benefit ~10:1.
 
 ### 1. Supersede ADR-0075 Layer 2 definition
 
@@ -127,6 +171,31 @@ permanent merge-conflict maintenance for cosmetic gain.
 Engineers looking at these files should not treat their size as a TODO.
 They should treat the intercept pattern as the intended design.
 
+### Consequences
+
+**Positive:**
+
+* Good, because **Layer 2 scores 100%** against a coherent, revised definition — no longer "75% + debt items" forever.
+* Good, because there are **zero code changes** — the intercept pattern already ships.
+* Good, because **future engineers** won't waste time "fixing" AgentDBService's file size as a TODO — the ADR tells them it's intentional.
+* Good, because a **regression guard is added** — the new test catches upstream refactors that silently bypass the pool.
+* Good, because the **upstream merge cost** stays at its current low level — we don't touch 1,831 LOC of upstream-maintained code.
+
+**Negative:**
+
+* Bad, because of **goalpost perception risk**: a reader comparing ADR-0075 to ADR-0089 might conclude we quit. Mitigation: this ADR is explicit about what changed and why. The 75% score is acknowledged as the pre-ADR-0089 state.
+* Bad, because of **latent bypass risk**: if the regression test is removed or weakened, the intercept pattern can silently stop working. Mitigation: the test is loud and its purpose is documented in both the ADR and the test file itself.
+* Bad, because of **upstream divergence risk**: if upstream deletes `AgentDBService` and we don't notice, our intercept infrastructure becomes dead code. Mitigation: quarterly revisit trigger.
+
+**Trade-offs:**
+
+* Neutral, because the **file size rule** is sacrificed for **upstream merge compatibility**. This is an explicit choice, not a drift. Both values matter; one wins.
+* Neutral, because the **structural "single registry" goal** is sacrificed for the **behavioral "single instance per type" goal**. The latter is what production correctness cares about; the former is what architectural diagrams care about.
+
+### Confirmation
+
+Implemented 2026-04-21. The regression guards required by §"Required regression test" all landed: unit test `tests/unit/adr0089-intercept-enforcement.test.mjs` (187 LOC — source-grep enforcement of every `new *Controller(` inside a `getOrCreate(` wrapper) and acceptance file `lib/acceptance-adr0089-checks.sh` (4 checks: `check_adr0089_intercept_shipped`, `check_adr0089_agentdb_service_wraps` [>=6 wraps], `check_adr0089_controller_registry_wraps` [>=40 wraps], `check_adr0089_pool_live` [2× `agentdb_health` fingerprint stability]) wired into `scripts/test-acceptance.sh`. Full acceptance cascade closed green on 2026-04-21 under ADR-0094. See the Status Update 2026-04-21 section for the complete code evidence.
+
 ## Required regression test (from adversarial review)
 
 The intercept pattern's correctness depends on `AgentDBService` wrapping its
@@ -177,79 +246,6 @@ any of these happen:
 Every quarter, someone should check (1) — upstream AgentDBService status —
 and update this ADR's status if the situation has changed.
 
-## Consequences
-
-### Positive
-
-- **Layer 2 scores 100%** against a coherent, revised definition — no longer
-  "75% + debt items" forever
-- **Zero code changes** — the intercept pattern already ships
-- **Future engineers** won't waste time "fixing" AgentDBService's file size
-  as a TODO — the ADR tells them it's intentional
-- **Regression guard added** — the new test catches upstream refactors that
-  silently bypass the pool
-- **Upstream merge cost** stays at its current low level — we don't touch
-  1,831 LOC of upstream-maintained code
-
-### Negative
-
-- **Goalpost perception risk**: a reader comparing ADR-0075 to ADR-0089 might
-  conclude we quit. Mitigation: this ADR is explicit about what changed and
-  why. The 75% score is acknowledged as the pre-ADR-0089 state.
-- **Latent bypass risk**: if the regression test is removed or weakened, the
-  intercept pattern can silently stop working. Mitigation: the test is loud
-  and its purpose is documented in both the ADR and the test file itself.
-- **Upstream divergence risk**: if upstream deletes `AgentDBService` and we
-  don't notice, our intercept infrastructure becomes dead code. Mitigation:
-  quarterly revisit trigger.
-
-### Trade-offs
-
-- **File size rule** sacrificed for **upstream merge compatibility**. This is
-  an explicit choice, not a drift. Both values matter; one wins.
-- **Structural "single registry" goal** sacrificed for **behavioral "single
-  instance per type" goal**. The latter is what production correctness cares
-  about; the former is what architectural diagrams care about.
-
-## Alternatives Considered
-
-### A. Execute the original ADR-0076 Phase 4 deletion (3-5 days)
-
-Delete `agentdb-service.ts`, migrate 80+ call sites across 17 files, split
-`controller-registry.ts` into 3 files under 500 LOC each. Close the gap by
-actually doing the work.
-
-**Rejected**: the 3 ADR-0075 problems it would solve are already solved by
-the intercept pattern. The remaining benefits are aesthetic. The cost is 3-5
-days plus permanent upstream merge tax on 17 files forever. Cost exceeds
-benefit by roughly 10:1.
-
-### B. Leave Layer 2 at 75% forever, accept the debt
-
-Don't write ADR-0089. Accept that ADR-0075's definition of ideal includes
-goals we won't meet. Let Layer 2 score as "75% with accepted trade-off".
-
-**Rejected**: the 75% score is misleading in both directions. It suggests
-either "there's work left to do" (false — the work is deferred by design) or
-"this is a genuine gap" (false — it's a deliberate trade-off). Future
-engineers reading the progress report will waste time investigating a
-non-problem. The right fix is to update the definition of "done" to match
-reality, with explicit reasoning and revisit triggers.
-
-### C. Add a source-grep test without writing an ADR
-
-Just add the regression test and move on. No doc change.
-
-**Rejected**: tests enforce rules; ADRs explain them. A future engineer
-opening the test file and asking "why is this rule here?" needs a document
-to read. ADR-0089 is that document.
-
-### D (chosen): Supersede the three Phase 4 structural criteria; add regression test; define revisit trigger
-
-~150 lines of ADR + one unit test file + one acceptance check. Zero
-production code change. Explicit trade-off documentation. Clear revisit
-trigger.
-
 ## Files Affected
 
 **Patch repo (this commit):**
@@ -295,19 +291,6 @@ The remaining ~6% gap to 100% is:
 None of these are fixable without upstream divergence or ignoring accepted
 trade-offs.
 
-## References
-
-- ADR-0075 (§"Ideal End State" / "Layer 2: Single Controller Registry") —
-  the original definition this ADR supersedes
-- ADR-0076 (§"Phase 4: Single Controller Registry", §"What was NOT done") —
-  the phased plan and its deferred items
-- ADR-0077 — the intercept pattern introduction that made this ADR possible
-- `controller-intercept.ts`, `controller-bridge.ts` — the code
-- `tests/unit/adr0076-controller-intercept-contract.test.mjs` — the existing
-  pool behavioral test that this ADR references
-- 5-agent ADR-0088 validation session (2026-04-15) — where the 75% Layer 4
-  score was surfaced and the intercept trade-off was examined
-
 ## Status Update 2026-04-21
 
 - Old: Proposed. New: Implemented.
@@ -321,3 +304,15 @@ trade-offs.
   - Acceptance: `lib/acceptance-adr0089-checks.sh` (4 checks: `check_adr0089_intercept_shipped`, `check_adr0089_agentdb_service_wraps` [>=6 wraps], `check_adr0089_controller_registry_wraps` [>=40 wraps], `check_adr0089_pool_live` [2x `agentdb_health` fingerprint stability]) — all 4 wired into `scripts/test-acceptance.sh:860-864` and the aggregator at `:1812-1815`.
 - Rationale: intercept ships, regression guards ship and enforce, full acceptance cascade closed green on 2026-04-21 under ADR-0094. Moves from Proposed to Implemented.
 - Remaining work: none — revisit triggers in §"Revisit trigger" remain open contingencies (quarterly upstream AgentDBService check, upstream constructor refactor detection via regression test, production cache-divergence signal). No proactive work scoped here.
+
+## More Information
+
+Original status: "Implemented — 2026-04-21", with a recorded Date of 2026-04-15. Scope: Patch repo (ADR) + acceptance tests, no code changes. This ADR partially supersedes ADR-0075 Layer 2 ideal and ADR-0076 Phase 4 acceptance criteria #1-#3 (those ADRs otherwise remain in force). It is related to ADR-0076 (phased plan), ADR-0077 (intercept pattern introduction), ADR-0082 (no silent fallbacks), and ADR-0087 (adversarial prompting).
+
+References:
+- ADR-0075 (§"Ideal End State" / "Layer 2: Single Controller Registry") — the original definition this ADR supersedes
+- ADR-0076 (§"Phase 4: Single Controller Registry", §"What was NOT done") — the phased plan and its deferred items
+- ADR-0077 — the intercept pattern introduction that made this ADR possible
+- `controller-intercept.ts`, `controller-bridge.ts` — the code
+- `tests/unit/adr0076-controller-intercept-contract.test.mjs` — the existing pool behavioral test that this ADR references
+- 5-agent ADR-0088 validation session (2026-04-15) — where the 75% Layer 4 score was surfaced and the intercept trade-off was examined

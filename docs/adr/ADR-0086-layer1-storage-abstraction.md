@@ -1,13 +1,15 @@
-# ADR-0086: Layer 1 — Single Storage Abstraction (RVF-First)
+---
+status: accepted
+date: 2026-04-13
+tags: [storage, rvf, memory, sqlite]
+supersedes: []
+depends-on: [ADR-0085, ADR-0075, ADR-0073, ADR-0080]
+implements: []
+---
 
-- **Status**: Accepted — **COMPLETE**. All phases done. T3.3 complete: `better-sqlite3` removed from CLI, `embeddings.ts` and `doctor.ts` rewritten, `memory-initializer.ts` DELETED. All 20 known debt items resolved (19 FIXED/RESOLVED, 1 ACCEPTED TRADE-OFF: debt 15 ControllerRegistry dual-backend). B1-B4 fixed. 6 validation/fix swarms 2026-04-14.
-- **Date**: 2026-04-13
-- **Deciders**: Henrik Pettersen
-- **Depends on**: ADR-0085 (bridge deletion), ADR-0075 (ideal state L1), ADR-0073 (RVF phases), ADR-0080 (storage consolidation)
-- **Informed by**: ADR-0087 (adversarial prompting workflow), hive discussion 2026-04-13
-- **Closes**: ADR-0075 Layer 1 (the last remaining gap to the ideal state)
+# Layer 1 — Single Storage Abstraction (RVF-First)
 
-## Context
+## Context and Problem Statement
 
 ADR-0085 closed Layers 2-5 of the ADR-0075 ideal state. One gap remains:
 
@@ -162,10 +164,15 @@ Verified by `adr0086-storage-contract.test.mjs` (36+ runtime assertions — 4 st
 - **Leave fragile areas alone**: `loadFromDisk()`/`replayWal()`, `persistToDisk()` atomic
   rename, `nativeIdMap`/`nativeReverseMap`, `metadataPath` getter.
 
-## Decision
+## Considered Options
 
-Replace memory-initializer.ts with RvfBackend in 3 phases + pre-work. No SqliteStorage
-adapter. No migration. No dual-backend. RvfBackend already satisfies IStorageContract.
+* **Replace memory-initializer.ts with RvfBackend in 3 phases + pre-work — no SqliteStorage adapter, no migration, no dual-backend (chosen).** RvfBackend already satisfies IStorageContract.
+
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "Replace memory-initializer.ts with RvfBackend in 3 phases + pre-work (no SqliteStorage adapter, no migration, no dual-backend)", because RvfBackend already satisfies IStorageContract (≡ IMemoryBackend, verified), all callers route through memory-router.ts, and no migration is needed since nobody uses the current storage until the work is complete.
 
 ## Tasks
 
@@ -836,3 +843,20 @@ not the dual-import constraint.
 
 Status of Debt-7: closed. Track via the `no-stray-db` CI smoke from
 Phase 7 going forward.
+
+### Consequences
+
+* Good, because ADR-0075's full 5-layer ideal state is achieved — every memory operation follows one path: `MCP Tool -> router -> IStorageContract (RvfBackend) -> in-memory Maps + HNSW`. No SQLite, no dual backends, no migration in the CRUD path.
+* Good, because cold-start latency drops dramatically (RVF eliminates SQLite open + schema check + WAL replay).
+* Good, because ~2,593 net lines are eliminated and four files (memory-bridge.ts, memory-initializer.ts, open-database.ts, rvf-shim.ts) are deleted.
+* Bad, because single-write latency regresses ~3.75x (WAL append vs prepared SQL) and `query()`/`listNamespaces()`/`count()` become O(n) Map scans — costs that compound in long-running daemon processes.
+* Neutral, because ControllerRegistry maintains an independent SQLite path via agentdb for neural/learning controllers (Debt 15, accepted trade-off) — the "no SQLite" claim applies to the CRUD memory path only.
+* Neutral, because hash-fallback embeddings produce lower semantic search quality than ONNX.
+
+### Confirmation
+
+Accepted — COMPLETE. All phases done; T3.3 complete (`better-sqlite3` removed from CLI, `embeddings.ts` and `doctor.ts` rewritten, `memory-initializer.ts` DELETED). All 20 known debt items resolved (19 FIXED/RESOLVED, 1 ACCEPTED TRADE-OFF: debt 15 ControllerRegistry dual-backend). B1-B4 fixed across 6 validation/fix swarms (2026-04-14). Session ended at 240/240 acceptance, 2291 unit tests, 0 failures. Acceptance guards include `acceptance-adr0086-checks.sh` (no-initializer-in-dist, storage-contract-exports, memory-search-works, no-initializer-imports-in-dist) and `adr0086-import-rewire.test.mjs` (zero production imports of memory-initializer).
+
+## More Information
+
+Original status: "Accepted — **COMPLETE**. All phases done. T3.3 complete: `better-sqlite3` removed from CLI, `embeddings.ts` and `doctor.ts` rewritten, `memory-initializer.ts` DELETED. All 20 known debt items resolved (19 FIXED/RESOLVED, 1 ACCEPTED TRADE-OFF: debt 15 ControllerRegistry dual-backend). B1-B4 fixed. 6 validation/fix swarms 2026-04-14." The recorded Date was 2026-04-13. This ADR depends on ADR-0085 (bridge deletion), ADR-0075 (ideal state L1), ADR-0073 (RVF phases), and ADR-0080 (storage consolidation); it is informed by ADR-0087 (adversarial prompting workflow) and a hive discussion of 2026-04-13, and it closes ADR-0075 Layer 1 (the last remaining gap to the ideal state).

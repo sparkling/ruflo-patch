@@ -1,14 +1,15 @@
-# ADR-0109: Worker failure handling / fault tolerance
+---
+status: accepted
+date: 2026-04-29
+tags: [hive-mind, fault-tolerance, workers, consensus]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: Partially superseded by ADR-0131 (T12 complete, 2026-05-03). Original Option E §6 prompt protocol shipped: `commands/hive-mind.ts:495-534` + `hive-mind-tools.ts:2397-2407`. **Residual R8** (sub-queen failure escalation in hierarchical-mesh topology) carried forward to **ADR-0132**.
-- **Date**: 2026-04-29 (promoted 2026-05-01)
-- **Roadmap**: ADR-0103 item 5
-- **Scope**: hive-mind worker-failure detection, retry, quorum-with-loss
-  semantics. Not federated cross-hive consensus.
-- **Inherits**: trusted-clique trust model from ADR-0106. Byzantine
-  adversarial framing is theatrical at this trust boundary.
+# Worker failure handling / fault tolerance
 
-## Context
+## Context and Problem Statement
 
 README claims, surveyed verbatim:
 
@@ -43,6 +44,8 @@ This reframes the ADR's job: explain what fault-tolerance the runtime
 handling (warranted), keep adversarial Byzantine machinery as future
 federation infrastructure (preserve), and align the README to the real
 trust model (mandatory).
+
+This ADR inherits the trusted-clique trust model from ADR-0106. Byzantine adversarial framing is theatrical at this trust boundary. Scope: hive-mind worker-failure detection, retry, quorum-with-loss semantics. Not federated cross-hive consensus.
 
 ## Investigation findings
 
@@ -150,7 +153,7 @@ Summary: the strongest README overclaim of the six items in ADR-0103.
 "Even when some agents fail" is doubly mendacious — there is neither
 detection of failure nor recovery from it.
 
-## Decision options
+## Considered Options
 
 ### Option A — Worker-absence handling in the Queen prompt
 
@@ -211,7 +214,55 @@ reframing). Defer C until A+B prove insufficient. Low blast radius,
 fixes the worst overclaim, preserves PBFT for federated future, keeps
 the trust model honest.
 
-## Test plan
+## Decision Outcome
+
+Chosen option: "Option E (A + B + D), defer C", because the README's "even when some agents fail" / "1/3 failing agents" is the strongest overclaim in ADR-0103, so doc correction (D) is non-negotiable; worker absence is a real, frequent, currently-invisible failure mode that Option A makes loud at the prompt layer and Option B makes loud at the JSON layer (ADR-0106 already endorsed it); and the PBFT implementation is preserved as future federation infrastructure (marked internal, not deleted).
+
+Ship **Option E (A + B + D)**.
+
+- README overclaim is the strongest in ADR-0103; doc correction (D)
+  is non-negotiable. "1/3 failing agents" with unverified-signature
+  PBFT is not honest.
+- Worker absence is a real, frequent, currently-invisible failure
+  mode. Option A makes it loud at the prompt layer (matches ADR-0104).
+- Option B makes it loud at the JSON layer (ADR-0106 already endorsed;
+  pull forward).
+- Option C (new MCP tool) is deferred until A+B prove insufficient.
+- PBFT in `@claude-flow/swarm` is preserved as future federation
+  infrastructure — marked internal, not deleted.
+
+**Concrete per-class wire-up plan for orphaned `swarm/src/consensus/`** (per ADR-0111 §"Orphaned `swarm/src/` classes — per-class wire-up plan", corrected per memory `feedback-no-value-judgements-on-features.md` — "import ALL features"). Earlier draft said "don't wire intra-hive"; that was a value judgement to skip. **All 4 protocols wire** as backends in `mcp__ruflo__hive-mind_consensus` MCP handler:
+
+- `consensus/index.ts` (`ConsensusEngine` factory) — wire as the dispatch layer. Replaces inline `switch (strategy)` with `ConsensusEngine.initialize({algorithm: strategy})`.
+- `raft.ts` — wire as `strategy:'raft'` backend. Real term-based leader election + log replication. Annotation: `// Raft state is in-process per Queen session; cross-hive federation persistence is a separate enhancement.`
+- `gossip.ts` — wire as `strategy:'gossip'` backend. Real epoch propagation. Annotation: `// Gossip epoch state per Queen session; cross-hive persistence is a federation enhancement.`
+- `byzantine.ts` — wire as `strategy:'byzantine'` backend. Structural PBFT (vote-counting, equivocation detection across rounds, `requiredVotes = 2*f + 1`) is real value even with signatures unverified. Annotation: `// signatures field is structural-only; full PBFT identity verification is a separate feature gap (federation layer needs it). Wiring the protocol now means strategy='byzantine' produces real BFT-shape vote tallies; signature-verified adversarial guarantees come later.`
+
+The "securely no-op" finding from §Investigation findings stays as a documented limitation in the code — but it's an annotation, not a gating policy. **Wiring `byzantine.ts` ships real PBFT vote-tallying today.** Adversarial signature verification is a separate feature to fill in later (when independent identity exists across federation boundaries) — not a reason to leave the protocol unwired.
+
+**Cross-reference to ADR-0105 (Topology) — load-bearing for this ADR's Option A worker-absence retry**: ADR-0105's recommendation wires `TopologyManager` (per ADR-0111 §"Orphaned `swarm/src/` classes" disposition). The Queen's worker-absence-protocol (Option A's prompt-block addition) can then call `topology.electLeader()` to designate a replacement worker if the leader role-tagged worker is the absent one — matches TopologyManager's role-indexed map. Without TopologyManager, "designate a replacement" becomes Queen prose-judgment; with TopologyManager, it's a deterministic state operation. This ADR's Option A prompt block should reference `topology.electLeader()` semantics by name once ADR-0105 ships.
+
+**Cross-reference to ADR-087 `graph-backend.ts`**: collaboration history (`getNeighbors` + `recordCollaboration`) lets the Queen's retry decision (Option A) read which workers have historically completed similar tasks successfully — informs which worker to re-spawn. Adopt on the upstream merge per ADR-0111.
+
+Trust-model implication: the system provides **worker-unreliability
+tolerance** (Queen detects and handles crashed/silent workers), not
+**adversarial fault tolerance** (no guarantee against a lying
+worker). README will say so. Adversarial guarantees, if ever
+necessary, are a federated cross-hive ADR with signed-message
+infrastructure (using `swarm/src/consensus/{raft,byzantine,gossip}.ts` as the implementation foundation, marked `@internal` until that scenario ships) — not a tweak to the current path.
+
+### Consequences
+
+* Good, because the strongest README overclaim ("1/3 failing agents", "even when some agents fail") gets corrected to honest trust-model phrasing.
+* Good, because worker absence — a real, frequent, currently-invisible failure mode — becomes loud at both the prompt layer (Option A) and the JSON layer (Option B).
+* Good, because the PBFT implementation is preserved (marked `@internal`) as future federation infrastructure rather than deleted.
+* Good, because the all-4-protocol wiring (per the import-ALL-features rule) ships real Raft/Gossip/PBFT vote-tallying today, with signature verification annotated as a separate later feature.
+* Bad, because Option A relies on the Queen LLM following prompt instructions (no runtime enforcement), and retry-once must be hard-capped to avoid infinite loops (R1).
+* Neutral, because the residual R8 (sub-queen failure escalation in hierarchical-mesh topology) is deferred to ADR-0132, and Option C (new MCP tool) is deferred until A+B prove insufficient.
+
+### Confirmation
+
+#### Test plan
 
 **Regression** (automated, runs in `test:acceptance`):
 
@@ -334,37 +385,6 @@ ruflo-patch commit. No `Co-Authored-By` trailer.
   current trust model.
 - README rewrite of capabilities table — covered by ADR-0101.
 
-## Recommendation
+## More Information
 
-Ship **Option E (A + B + D)**.
-
-- README overclaim is the strongest in ADR-0103; doc correction (D)
-  is non-negotiable. "1/3 failing agents" with unverified-signature
-  PBFT is not honest.
-- Worker absence is a real, frequent, currently-invisible failure
-  mode. Option A makes it loud at the prompt layer (matches ADR-0104).
-- Option B makes it loud at the JSON layer (ADR-0106 already endorsed;
-  pull forward).
-- Option C (new MCP tool) is deferred until A+B prove insufficient.
-- PBFT in `@claude-flow/swarm` is preserved as future federation
-  infrastructure — marked internal, not deleted.
-
-**Concrete per-class wire-up plan for orphaned `swarm/src/consensus/`** (per ADR-0111 §"Orphaned `swarm/src/` classes — per-class wire-up plan", corrected per memory `feedback-no-value-judgements-on-features.md` — "import ALL features"). Earlier draft said "don't wire intra-hive"; that was a value judgement to skip. **All 4 protocols wire** as backends in `mcp__ruflo__hive-mind_consensus` MCP handler:
-
-- `consensus/index.ts` (`ConsensusEngine` factory) — wire as the dispatch layer. Replaces inline `switch (strategy)` with `ConsensusEngine.initialize({algorithm: strategy})`.
-- `raft.ts` — wire as `strategy:'raft'` backend. Real term-based leader election + log replication. Annotation: `// Raft state is in-process per Queen session; cross-hive federation persistence is a separate enhancement.`
-- `gossip.ts` — wire as `strategy:'gossip'` backend. Real epoch propagation. Annotation: `// Gossip epoch state per Queen session; cross-hive persistence is a federation enhancement.`
-- `byzantine.ts` — wire as `strategy:'byzantine'` backend. Structural PBFT (vote-counting, equivocation detection across rounds, `requiredVotes = 2*f + 1`) is real value even with signatures unverified. Annotation: `// signatures field is structural-only; full PBFT identity verification is a separate feature gap (federation layer needs it). Wiring the protocol now means strategy='byzantine' produces real BFT-shape vote tallies; signature-verified adversarial guarantees come later.`
-
-The "securely no-op" finding from §Investigation findings stays as a documented limitation in the code — but it's an annotation, not a gating policy. **Wiring `byzantine.ts` ships real PBFT vote-tallying today.** Adversarial signature verification is a separate feature to fill in later (when independent identity exists across federation boundaries) — not a reason to leave the protocol unwired.
-
-**Cross-reference to ADR-0105 (Topology) — load-bearing for this ADR's Option A worker-absence retry**: ADR-0105's recommendation wires `TopologyManager` (per ADR-0111 §"Orphaned `swarm/src/` classes" disposition). The Queen's worker-absence-protocol (Option A's prompt-block addition) can then call `topology.electLeader()` to designate a replacement worker if the leader role-tagged worker is the absent one — matches TopologyManager's role-indexed map. Without TopologyManager, "designate a replacement" becomes Queen prose-judgment; with TopologyManager, it's a deterministic state operation. This ADR's Option A prompt block should reference `topology.electLeader()` semantics by name once ADR-0105 ships.
-
-**Cross-reference to ADR-087 `graph-backend.ts`**: collaboration history (`getNeighbors` + `recordCollaboration`) lets the Queen's retry decision (Option A) read which workers have historically completed similar tasks successfully — informs which worker to re-spawn. Adopt on the upstream merge per ADR-0111.
-
-Trust-model implication: the system provides **worker-unreliability
-tolerance** (Queen detects and handles crashed/silent workers), not
-**adversarial fault tolerance** (no guarantee against a lying
-worker). README will say so. Adversarial guarantees, if ever
-necessary, are a federated cross-hive ADR with signed-message
-infrastructure (using `swarm/src/consensus/{raft,byzantine,gossip}.ts` as the implementation foundation, marked `@internal` until that scenario ships) — not a tweak to the current path.
+Status: partially superseded by ADR-0131 (T12 complete, 2026-05-03). Original Option E §6 prompt protocol shipped: `commands/hive-mind.ts:495-534` + `hive-mind-tools.ts:2397-2407`. Residual R8 (sub-queen failure escalation in hierarchical-mesh topology) carried forward to ADR-0132. Dated 2026-04-29 (promoted 2026-05-01). Roadmap: ADR-0103 item 5. This ADR is superseded in part by ADR-0131, with its R8 residual carried to ADR-0132.

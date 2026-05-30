@@ -1,56 +1,13 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-26
-amended: 2026-05-28
-implemented: 2026-05-28
-tags: [archivist, replay-verification, test-harness, adr-0181-phase-i, adr-0180-19]
+tags: [archivist, replay-verification, test-harness]
 supersedes: []
 depends-on: [ADR-0180, ADR-0181, ADR-0246]
 implements: []
 ---
 
-> **Status note (2026-05-28)**: Ratified `proposed` → `accepted` (Track C of
-> the post-ADR-0261 plan), then BUILT (per user directive "don't defer
-> anything"). Implementation:
-> - **agentdb fork commit `ec3a2ab`**: `src/archivist/replay-verification.ts`
->   (`verifyAuditLog({auditPath?, maxDepth?, maxFanout?}) → Promise<ReplayReport>`)
->   + `test/archivist/replay-verification.test.ts` (10/10 unit tests pass via
->   `node --import tsx --test`). Exposed from `src/archivist/index.ts`.
-> - **ruflo-patch commit `e78ec95` + smoke fix**: `scripts/smoke-adr0263-
->   replay-verification.mjs` + `lib/acceptance-adr0263-checks.sh` wired into
->   `test-acceptance.sh` + `test-acceptance-fast.sh`. Smoke drives the
->   harness against a real audit log produced by `cli memory store` ops +
->   a synthetic depth-4 negative test.
-> - **Local smoke run (2026-05-28)**: 4/4 PASS. Real audit log: 6 entries,
->   3 roots, depth=0, all 4 rules pass. Synthetic depth-4 → depth-ceiling
->   FAIL as designed.
->
-> Tag `deferred-with-trigger` removed from frontmatter — the harness is now
-> in-tree; future trigger conditions just exercise it via the wired smoke
-> or directly via `verifyAuditLog`. The original Option B trigger
-> conditions in §Decision Outcome are kept as historical record (they
-> describe when ops *should run* the harness; they no longer gate
-> implementation).
->
-> **Scope-honesty correction (2026-05-28 swarm):** the shipped harness
-> implements **audit-log-internal structural checks only** — `depth-ceiling`
-> (≤3), `no-fanout-amplification`, `state-progression`, `terminal-state`. It
-> does **NOT** implement the MODULE.md §replay-verification headline property
-> "replay against a freshly-initialized substrate and assert addressable-key
-> **set-equality**." `VerifyOptions` has no substrate-handle param;
-> `verifyAuditLog` never opens a fresh substrate or compares keys. The source
-> doc-comment's "optional fourth check … when a live substrate handle is
-> provided … weakened to cardinality" is **dead prose** — no such path is
-> wired. So the honest claim is "verifies audit-log internal consistency,"
-> NOT "addressable-key set-equality." The substrate-replay half remains
-> unimplemented and is the natural companion to Trigger #1's still-pending
-> RVF-invariant enforcement (ADR-0246 F-03-002 RVF arm — `RvfBackend.freeze()`
-> exists but is not wired into archivist dispatch). MODULE.md §replay-
-> verification annotated to match. No trigger has silently fired; the only
-> correction here is scope-truth, not behaviour.
-
-# ADR-0263 — Archivist replay-verification test harness (ADR-0181 Phase I successor)
+# Archivist replay-verification test harness (ADR-0181 Phase I successor)
 
 ## Context and Problem Statement
 
@@ -107,6 +64,16 @@ Chosen: **Option B — defer with explicit trigger conditions.**
 * [[ADR-0180]] Open Follow-up #19 cross-reference resolved to `ADR-0263`.
 
 ## More Information
+
+Original status: accepted 2026-05-26; amended and implemented 2026-05-28. Status note (2026-05-28): Ratified `proposed` → `accepted` (Track C of the post-ADR-0261 plan), then BUILT (per user directive "don't defer anything"). Implementation:
+
+- **agentdb fork commit `ec3a2ab`**: `src/archivist/replay-verification.ts` (`verifyAuditLog({auditPath?, maxDepth?, maxFanout?}) → Promise<ReplayReport>`) + `test/archivist/replay-verification.test.ts` (10/10 unit tests pass via `node --import tsx --test`). Exposed from `src/archivist/index.ts`.
+- **ruflo-patch commit `e78ec95` + smoke fix**: `scripts/smoke-adr0263-replay-verification.mjs` + `lib/acceptance-adr0263-checks.sh` wired into `test-acceptance.sh` + `test-acceptance-fast.sh`. Smoke drives the harness against a real audit log produced by `cli memory store` ops + a synthetic depth-4 negative test.
+- **Local smoke run (2026-05-28)**: 4/4 PASS. Real audit log: 6 entries, 3 roots, depth=0, all 4 rules pass. Synthetic depth-4 → depth-ceiling FAIL as designed.
+
+Tag `deferred-with-trigger` removed from frontmatter — the harness is now in-tree; future trigger conditions just exercise it via the wired smoke or directly via `verifyAuditLog`. The original Option B trigger conditions in §Decision Outcome are kept as historical record (they describe when ops *should run* the harness; they no longer gate implementation).
+
+**Scope-honesty correction (2026-05-28 swarm):** the shipped harness implements **audit-log-internal structural checks only** — `depth-ceiling` (≤3), `no-fanout-amplification`, `state-progression`, `terminal-state`. It does **NOT** implement the MODULE.md §replay-verification headline property "replay against a freshly-initialized substrate and assert addressable-key **set-equality**." `VerifyOptions` has no substrate-handle param; `verifyAuditLog` never opens a fresh substrate or compares keys. The source doc-comment's "optional fourth check … when a live substrate handle is provided … weakened to cardinality" is **dead prose** — no such path is wired. So the honest claim is "verifies audit-log internal consistency," NOT "addressable-key set-equality." The substrate-replay half remains unimplemented and is the natural companion to Trigger #1's still-pending RVF-invariant enforcement (ADR-0246 F-03-002 RVF arm — `RvfBackend.freeze()` exists but is not wired into archivist dispatch). MODULE.md §replay-verification annotated to match. No trigger has silently fired; the only correction here is scope-truth, not behaviour.
 
 * [[ADR-0181]] §Closure plan amendment 2026-05-17 — original Phase I deferral
 * [[ADR-0180]] Open Follow-up #19 — replay test harness wiring

@@ -1,11 +1,15 @@
-# ADR-0156: `memory init --force` actually resets, and `init` reports the real backend + path
+---
+status: accepted
+date: 2026-05-07
+tags: [memory, cli, rvf, data-loss]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: **[RECONCILED 2026-05-29 → IMPLEMENTED; see [[ADR-0270]]]** Shipped in fork commit `cfb0cea02` (`memory init --force` reset + honest dbPath display), corroborated by [[ADR-0164]] (`completed: true`). One residual: the contract test `tests/unit/adr0156-memory-init-force.test.mjs` exists but is **not wired into the standard CICD runner** (`[[feedback-always-wire-tests-into-cicd]]`). Original status preserved below. — Proposed 2026-05-07 (revised 2026-05-07T19 after critical review — see Revision history)
-- **Date**: 2026-05-07
-- **Deciders**: Henrik Pettersen
-- **Related**: ADR-0086 (RVF is primary, SQLite is fallback), ADR-0154 (HM-class bug closed by loader-preference; clean-reset is the user-facing escape valve), ADR-0155 (user-facing brand `@sparkleideas/ruflo@latest`), ADR-0082 (no silent fallbacks), `feedback-no-fallbacks`, `feedback-data-loss-zero-tolerance`
+# `memory init --force` actually resets, and `init` reports the real backend + path
 
-## Context
+## Context and Problem Statement
 
 `forks/ruflo/v3/@claude-flow/cli/src/commands/memory.ts:1222-1495` implements `ruflo memory init`. Reading it against the post-ADR-0154 contract surfaces three concrete bugs and one consistency gap:
 
@@ -63,9 +67,21 @@ Three recovery-instruction sites still emit non-canonical names for `memory init
 - `mcp-tools/guidance-tools.ts:590` — `cmd: 'npx @sparkleideas/cli@latest memory init --force'`
 - `mcp-tools/hooks-tools.ts:2734` — `claude-flow memory init`
 
-Per ADR-0155 + ADR-0143, these must be `@sparkleideas/ruflo@latest` (and `ruflo memory init` for the bare command). **This is a 5-line patch under ADR-0155's umbrella, not part of ADR-0156's scope** — see "Scope split" in §Decision below. ADR-0156 focuses on the `--force` semantic + path-honesty bugs. The string fix lands separately and faster.
+Per ADR-0155 + ADR-0143, these must be `@sparkleideas/ruflo@latest` (and `ruflo memory init` for the bare command). **This is a 5-line patch under ADR-0155's umbrella, not part of ADR-0156's scope** — see "Scope split" in §Decision Outcome below. ADR-0156 focuses on the `--force` semantic + path-honesty bugs. The string fix lands separately and faster.
 
-## Decision
+## Considered Options
+
+1. **Wire `--force` to actually reset + report the real backend/path (chosen)** — make the documented contract real, pull `dbPath`/`backend` from resolved router state, and drop fabricated telemetry.
+2. **Auto-detect "stale state" and reset without `--force`** — rejected. Implicit destructive behavior on a frequently-run command violates `Executing actions with care`. Explicit opt-in is the right shape.
+3. **Make `memory init` a pure no-op when state already exists; require manual `rm`** — rejected. The flag exists; users expect it to work; the documented contract is "Overwrite existing database". Honor the documented contract.
+4. **Delete `.swarm/` glob on `--force`** — rejected. `feedback-data-loss-zero-tolerance` + the existence of `.bak-*` / `.disabled-*` / `.migrated-*` files we explicitly want to preserve through a reset rule out anything broader than the canonical sibling set.
+5. **Move `--force` into a separate `memory reset` subcommand** — partially considered. Cleaner conceptually: a clearly-named destructive command + `--force` becomes a deprecated alias that prints "use `memory reset` instead". Rejected for ADR-0156 because it's a UX migration on top of the bug fix; the existing flag has a documented contract; users running it expect it to work. **Worth its own ADR if/when scope expands** — added to "Out of scope" below.
+6. **Do nothing; just fix the documentation to say "currently no-op"** — rejected. Lower risk, but leaves the user with no working reset escape valve and forces continued reliance on manual `rm` recipes. ADR-0154's recovery section already documents the manual approach; codifying "the flag doesn't work, sorry" in the docs is not an improvement.
+7. **Ship only the path-honesty fixes (Bug 2 + Bug 3); skip `--force` semantic fix** — considered. Smaller change, lower risk. Rejected because Bug 2 + Bug 3 are cosmetic and Bug 1 is the user-impacting one. Half-fix doesn't help the people trying to recover from corruption. Worth bundling.
+
+## Decision Outcome
+
+Chosen option: "Wire `--force` to actually reset + report the real backend/path", because Bug 1 (the silent no-op) is the user-impacting failure at the most explicit recovery seam, and honoring the documented "Overwrite existing database" contract restores the clean-state escape valve while honest telemetry satisfies ADR-0082.
 
 ### Scope split
 
@@ -140,21 +156,29 @@ These are an SQLite-era leak that doesn't apply to RVF. Remove from `result` and
 - **Unit**: assert `--force` is a symlink-safe no-op (create a symlink at the canonical path pointing elsewhere, run init `--force`, assert the symlink is removed but the symlink target is NOT touched).
 - **Acceptance**: full e2e in an isolated project — `cli memory init` creates `.swarm/memory.rvf` with SFVR magic; `cli memory init --force` (after writes) clears the canonical sibling set and recreates with SFVR magic + zero entries; backups untouched.
 
-## Consequences
+### Consequences
 
-**Positive**:
-- `--force` becomes the working escape valve. ADR-0154's "operational recovery" section can be simplified — users no longer need to manually `mv` files.
-- The displayed path matches the file actually opened. Eliminates the "I deleted .swarm/memory.db and it didn't help" support burden.
-- `success` reflects reality. Failures fail loud per ADR-0082.
-- Brand consistency with ADR-0155 across all user-facing `memory init` guidance.
+* Good, because `--force` becomes the working escape valve. ADR-0154's "operational recovery" section can be simplified — users no longer need to manually `mv` files.
+* Good, because the displayed path matches the file actually opened. Eliminates the "I deleted .swarm/memory.db and it didn't help" support burden.
+* Good, because `success` reflects reality. Failures fail loud per ADR-0082.
+* Good, because of brand consistency with ADR-0155 across all user-facing `memory init` guidance.
+* Bad, because of a slightly larger `commands/memory.ts` action body (added file enumeration + unlink loop). Acceptable — under 30 lines.
+* Bad, because `memory-router` may need new public getters (`activeBackendPath()`, `activeBackendName()`, `isHealthy()`, `activeFeatures()`). Acceptable — these are values it already tracks internally; promoting them is mechanical.
+* Neutral, because no data migration needed. Existing projects with `.swarm/memory.db` (legacy SQLite) continue to use the existing migrate command (`memory migrate --from-sqlite`). This ADR doesn't change that flow.
+* Neutral, because recovery scripts in operational runbooks (e.g., ADR-0154's "Operational recovery applied 2026-05-07" section) should be updated to reference `memory init --force` once it works, replacing the manual `mv .meta` dance. That update is decoupled from this ADR's acceptance — see §Out of scope. It's a non-blocking documentation follow-up that can land any time after #1-#5 of §Decision ship.
 
-**Negative / accepted trade-off**:
-- Slightly larger `commands/memory.ts` action body (added file enumeration + unlink loop). Acceptable — under 30 lines.
-- `memory-router` may need new public getters (`activeBackendPath()`, `activeBackendName()`, `isHealthy()`, `activeFeatures()`). Acceptable — these are values it already tracks internally; promoting them is mechanical.
+### Confirmation
 
-**Migration**:
-- No data migration needed. Existing projects with `.swarm/memory.db` (legacy SQLite) continue to use the existing migrate command (`memory migrate --from-sqlite`). This ADR doesn't change that flow.
-- Recovery scripts in operational runbooks (e.g., ADR-0154's "Operational recovery applied 2026-05-07" section) should be updated to reference `memory init --force` once it works, replacing the manual `mv .meta` dance. That update is **decoupled from this ADR's acceptance** — see §Out of scope. It's a non-blocking documentation follow-up that can land any time after #1-#5 of §Decision ship.
+Per `feedback-no-squelch-tests`, every criterion must be observable from a test or pipeline output, not just code review.
+
+1. **`--force` deletes the canonical sibling set**: a sentinel `.rvf` file (4 zero bytes) is unlinked by `cli memory init --force`. Verified by the unit test in §Decision step 4 line 1.
+2. **`--force` preserves backups**: `<path>.bak-test`, `<path>.disabled-test`, `<path>.migrated-test` files survive `cli memory init --force`. Verified by unit test.
+3. **`--force` fails loud on peer-held lock**: when a peer process holds `<path>.jslock`, `cli memory init --force` exits non-zero with an error message naming the held lock. Verified by unit test.
+4. **`--force` is symlink-safe**: when `<path>` is a symlink, the symlink is removed but the target is NOT touched. Verified by unit test.
+5. **Displayed `dbPath` matches the file the router opened** for each backend (sqlite, agentdb, rvf, hybrid). Hybrid MUST display all backend paths (§Decision step 2 option a) — option b is acceptable only if the implementer documents in the commit message why option a was infeasible (e.g. router internals genuinely don't expose multi-path getters and the work is out of proportion to this ADR's scope). Verified by unit tests parameterised over backends.
+6. **Fabricated `tablesCreated` / `indexesCreated` / `success` are gone** from the user-visible display. Verified by an output snapshot test that captures the post-init display and asserts none of the three field labels appear.
+7. **`migrate-meta-to-segments.mjs` is referenced in `--help`** as the non-destructive alternative. Verified by parsing the help output for the string.
+8. **No regressions**: pipeline acceptance suite passes ≥ 675/675 (current 674 baseline + the 1 new acceptance test from §Decision step 4); unit suite passes ≥ 4178/4180 (current 4173 pass + 2 skipped + the 5 new unit tests from §Decision step 4). Verified by pipeline run. If the implementer adds additional defensive tests not enumerated above, the totals scale accordingly — the criterion is "zero failures, zero regressions, every new test from §Decision step 4 lands and passes".
 
 ## Risks
 
@@ -168,33 +192,6 @@ These are an SQLite-era leak that doesn't apply to RVF. Remove from `result` and
 | **Ephemeral / `:memory:` backends** | `--force` on a `:memory:` backend should be a no-op with an INFO log; never error. Test this. |
 | **User runs `--force` against a project with 1000 entries by misclick** | Print to-be-deleted list + entry count BEFORE unlinking. Document `migrate-meta-to-segments.mjs` as the non-destructive alternative in `--help`. The flag IS named `--force` so we don't add a confirmation prompt; the printed list is the warning. |
 | **`resetRouter()` interaction with peer in-process holders** | `resetRouter()` clears module-level `_storage` etc.; if another part of the same process still holds a reference to the prior storage instance, it'll keep using it after reset. This is a process-wide design constraint of the existing router — out of scope for ADR-0156. The CLI's `memory init` is invoked from a fresh process so this isn't a problem in practice. |
-
-## Acceptance criteria
-
-Per `feedback-no-squelch-tests`, every criterion must be observable from a test or pipeline output, not just code review.
-
-1. **`--force` deletes the canonical sibling set**: a sentinel `.rvf` file (4 zero bytes) is unlinked by `cli memory init --force`. Verified by the unit test in §Decision step 4 line 1.
-2. **`--force` preserves backups**: `<path>.bak-test`, `<path>.disabled-test`, `<path>.migrated-test` files survive `cli memory init --force`. Verified by unit test.
-3. **`--force` fails loud on peer-held lock**: when a peer process holds `<path>.jslock`, `cli memory init --force` exits non-zero with an error message naming the held lock. Verified by unit test.
-4. **`--force` is symlink-safe**: when `<path>` is a symlink, the symlink is removed but the target is NOT touched. Verified by unit test.
-5. **Displayed `dbPath` matches the file the router opened** for each backend (sqlite, agentdb, rvf, hybrid). Hybrid MUST display all backend paths (§Decision step 2 option a) — option b is acceptable only if the implementer documents in the commit message why option a was infeasible (e.g. router internals genuinely don't expose multi-path getters and the work is out of proportion to this ADR's scope). Verified by unit tests parameterised over backends.
-6. **Fabricated `tablesCreated` / `indexesCreated` / `success` are gone** from the user-visible display. Verified by an output snapshot test that captures the post-init display and asserts none of the three field labels appear.
-7. **`migrate-meta-to-segments.mjs` is referenced in `--help`** as the non-destructive alternative. Verified by parsing the help output for the string.
-8. **No regressions**: pipeline acceptance suite passes ≥ 675/675 (current 674 baseline + the 1 new acceptance test from §Decision step 4); unit suite passes ≥ 4178/4180 (current 4173 pass + 2 skipped + the 5 new unit tests from §Decision step 4). Verified by pipeline run. If the implementer adds additional defensive tests not enumerated above, the totals scale accordingly — the criterion is "zero failures, zero regressions, every new test from §Decision step 4 lands and passes".
-
-## Considered alternatives
-
-1. **Auto-detect "stale state" and reset without `--force`** — rejected. Implicit destructive behavior on a frequently-run command violates `Executing actions with care`. Explicit opt-in is the right shape.
-
-2. **Make `memory init` a pure no-op when state already exists; require manual `rm`** — rejected. The flag exists; users expect it to work; the documented contract is "Overwrite existing database". Honor the documented contract.
-
-3. **Delete `.swarm/` glob on `--force`** — rejected. `feedback-data-loss-zero-tolerance` + the existence of `.bak-*` / `.disabled-*` / `.migrated-*` files we explicitly want to preserve through a reset rule out anything broader than the canonical sibling set.
-
-4. **Move `--force` into a separate `memory reset` subcommand** — partially considered. Cleaner conceptually: a clearly-named destructive command + `--force` becomes a deprecated alias that prints "use `memory reset` instead". Rejected for ADR-0156 because it's a UX migration on top of the bug fix; the existing flag has a documented contract; users running it expect it to work. **Worth its own ADR if/when scope expands** — added to "Out of scope" below.
-
-5. **Do nothing; just fix the documentation to say "currently no-op"** — rejected. Lower risk, but leaves the user with no working reset escape valve and forces continued reliance on manual `rm` recipes. ADR-0154's recovery section already documents the manual approach; codifying "the flag doesn't work, sorry" in the docs is not an improvement.
-
-6. **Ship only the path-honesty fixes (Bug 2 + Bug 3); skip `--force` semantic fix** — considered. Smaller change, lower risk. Rejected because Bug 2 + Bug 3 are cosmetic and Bug 1 is the user-impacting one. Half-fix doesn't help the people trying to recover from corruption. Worth bundling.
 
 ## Origin / source diagnostic (verbatim)
 
@@ -216,14 +213,14 @@ Recommendation captured at the moment this ADR was triggered, preserved verbatim
 >
 > My recommendation: yes, ship it as a small extension of ADR-0155 (no new ADR needed — this is the same rule, broader application). 3 string edits, plus the regression guard in `adr0117-no-bare-ruflo.test.mjs` already covers the contract once we expand its `PATCHED_FILES` list. ~5-line change.
 
-The above recommendation called for a guidance-strings-only patch under ADR-0155's umbrella. The initial ADR-0156 draft bundled those strings with the `--force` semantic + path-honesty fixes uncovered in the same investigation. The post-revision scope split (see §Decision §Scope split and §Revision history) reverts to the original recommendation: **the 3 string fixes land as an ADR-0155-umbrella patch (no new ADR), and ADR-0156 is scoped purely to the `--force` semantic + path-honesty work**. Reasoning: the strings are 5 lines and ship in the next pipeline cycle; the semantic work needs router-API additions and 6 new tests. Splitting lets the cheap fix land fast without waiting on the bigger one. The "Bundling is correct" framing in the previous version of this paragraph was wrong — the critical review correctly identified that decoupling lets each ship at its own pace.
+The above recommendation called for a guidance-strings-only patch under ADR-0155's umbrella. The initial ADR-0156 draft bundled those strings with the `--force` semantic + path-honesty fixes uncovered in the same investigation. The post-revision scope split (see §Decision Outcome §Scope split and §Revision history) reverts to the original recommendation: **the 3 string fixes land as an ADR-0155-umbrella patch (no new ADR), and ADR-0156 is scoped purely to the `--force` semantic + path-honesty work**. Reasoning: the strings are 5 lines and ship in the next pipeline cycle; the semantic work needs router-API additions and 6 new tests. Splitting lets the cheap fix land fast without waiting on the bigger one. The "Bundling is correct" framing in the previous version of this paragraph was wrong — the critical review correctly identified that decoupling lets each ship at its own pace.
 
 ## Out of scope (deferred)
 
 - Re-implementing Phase 5c suppress-meta with session_save/restore awareness (referenced in ADR-0154 G4 reconciliation; remains its own follow-up if/when needed).
 - Refactoring `memory-router.ts`'s internal state shape — the new getters this ADR requires can be thin wrappers over existing internals.
 - A general "reset everything in `.swarm/`" command that includes WAL files from killed processes, orphan locks, etc. Worth its own ADR if user demand surfaces.
-- Migrating `--force` to a new `memory reset` subcommand with `--force` as a deprecated alias (Considered Alternative #4). Worth a separate UX ADR if surfaces signal that `--force` is too easy to misuse despite the printed warning.
+- Migrating `--force` to a new `memory reset` subcommand with `--force` as a deprecated alias (Considered Option #5). Worth a separate UX ADR if surfaces signal that `--force` is too easy to misuse despite the printed warning.
 - Updating ADR-0154 §"Operational recovery applied 2026-05-07" to reference `cli memory init --force` for the file-cleanup step. Decoupled from this ADR — the recovery doc update is non-blocking and can land once #1-#5 above ship; tracked as a documentation follow-up, not a §Acceptance criterion.
 
 ## Revision history
@@ -254,3 +251,9 @@ The above recommendation called for a guidance-strings-only patch under ADR-0155
 - Tightened AC #5: option (a) is required; option (b) requires implementer justification in commit message.
 - AC #6: removed unobservable "reading memory.ts after the change" half; kept only the snapshot test (per `feedback-no-squelch-tests`).
 - AC #8: fixed test-count arithmetic — 675/675 acceptance (was 674), 4178/4180 unit (was 4173 + 5 + 2 skipped).
+
+## More Information
+
+Original status: "**[RECONCILED 2026-05-29 → IMPLEMENTED; see ADR-0270]** Shipped in fork commit `cfb0cea02` (`memory init --force` reset + honest dbPath display), corroborated by ADR-0164 (`completed: true`). One residual: the contract test `tests/unit/adr0156-memory-init-force.test.mjs` exists but is **not wired into the standard CICD runner** (`feedback-always-wire-tests-into-cicd`). Original status preserved below. — Proposed 2026-05-07 (revised 2026-05-07T19 after critical review — see Revision history)."
+
+This decision relates to ADR-0086 (RVF is primary, SQLite is fallback), ADR-0154 (HM-class bug closed by loader-preference; clean-reset is the user-facing escape valve), ADR-0155 (user-facing brand `@sparkleideas/ruflo@latest`), ADR-0082 (no silent fallbacks), and the feedback notes `feedback-no-fallbacks` and `feedback-data-loss-zero-tolerance`. The reconciliation note references ADR-0270 and ADR-0164.

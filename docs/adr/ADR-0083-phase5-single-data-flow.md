@@ -1,13 +1,15 @@
-# ADR-0083: Phase 5 — Single Data Flow Path
+---
+status: accepted
+date: 2026-04-12
+tags: [memory, storage, router, data-flow]
+supersedes: [ADR-0080]
+depends-on: [ADR-0076, ADR-0080]
+implements: []
+---
 
-- **Status**: Implemented (Waves 1-2 completed 2026-04-12; Wave 3 completed via ADR-0084 Phase 3 T3.2, 2026-04-13)
-- **Date**: 2026-04-12
-- **Deciders**: Henrik Pettersen
-- **Methodology**: 8-agent hive (spec reader, bridge inventory, conflict assessor, architect, devil's advocate, advocate, CJS analyst, effort estimator) + queen synthesis
-- **Depends on**: ADR-0076 (Phase 5 original spec), ADR-0080 (Phases 5-6 shim/bridge approach)
-- **Supersedes**: ADR-0080 Phase 5 (RVF-Primary Shim) and Phase 6 (reverse JSON bridge)
+# Phase 5 — Single Data Flow Path
 
-## Context
+## Context and Problem Statement
 
 ### Three disconnected storage systems
 
@@ -158,10 +160,15 @@ write in memory-router.ts as a controlled side-effect, not to rewrite the CJS he
 read SQLite directly via better-sqlite3, proving the native binary and WAL concerns
 manageable in practice. The JSON sidecar was fully eliminated.)
 
-## Decision
+## Considered Options
 
-Implement Phase 5 in 3 waves, migrating low-risk files first and deferring the
-high-conflict file (`hooks-tools.ts`) until upstream stabilizes.
+* **Implement Phase 5 in 3 waves (low-risk → medium-risk → high-risk), migrating to a single `memory-router.ts` entry point (chosen)** — overrides ADR-0080's "abandon Phase 5" / "don't rewire" decisions.
+* **Keep the shim approach (ADR-0080 Phases 4-6)** — Rejected: functional but the bridge count keeps growing (4 bridges in 4 ADRs), `storeEntry()` now writes to 3 places, and each bridge adds test complexity and maintenance burden.
+* **Rewrite `intelligence.cjs` to use better-sqlite3 directly** — Rejected at decision time as impractical (native binary portability, WAL locking conflicts, 5-15ms startup penalty per hook invocation vs 1-2ms for JSON). (Note: later reversed by ADR-0085.)
+
+## Decision Outcome
+
+Chosen option: "Implement Phase 5 in 3 waves, migrating low-risk files first and deferring the high-conflict file (`hooks-tools.ts`) until upstream stabilizes", because the shim approach had reached its ceiling (storeEntry writes to 3 places) and the merge-conflict cost is real but manageable with the staged 3-wave approach.
 
 ### Target architecture
 
@@ -274,6 +281,20 @@ Current tests must verify data flows through each bridge independently. With Pha
 The 6 tests that failed due to the storage silo (ADR-0082) would pass trivially because
 all storage goes through one router.
 
+### Consequences
+
+* Good, because ~825 lines of bridge code are eliminated.
+* Good, because the store path collapses from 3 writes to 1 write (JSON side-effect also eliminated by ADR-0085).
+* Good, because fallback chains are reduced from 39 to ~5.
+* Good, because memory-bridge.ts becomes a private implementation detail; memory-initializer.ts is fully deleted (ADR-0086 Phase 3).
+* Neutral, because merge conflict risk is managed via the 3-wave approach (low → medium → high).
+* Good, because intelligence.cjs now reads SQLite directly (CJS constraint resolved by ADR-0085).
+* Good, because future features wire into one router, not 3 storage systems.
+
+### Confirmation
+
+Implemented across Waves 1-2 (2026-04-12) and Wave 3 (via ADR-0084 Phase 3 T3.2, 2026-04-13); see the Implementation Notes below for the per-wave migration record and ~825 lines eliminated. An 11-agent hive review (2026-04-12) audited 47 acceptance checks across ADR-0059/0074/0080/0083 for post-implementation validity: 3 P0 checks were fixed, 1 P1 sidecar bug found and fixed, 9 P2 stale checks reversed, P3 missing tests added (incl. `check_adr0083_no_dosync_drain`), and 29 checks confirmed sound.
+
 ## Implementation Notes
 
 ### Implemented (2026-04-12)
@@ -353,12 +374,6 @@ framing in Phase 3 unified search checks.
 4. **CJS contract means JSON never goes away** — correct, but Phase 5 centralizes the
    write instead of scattering it.
 
-## Consequences
+## More Information
 
-- ~825 lines of bridge code eliminated
-- Store path collapses from 3 writes to 1 write (JSON side-effect also eliminated by ADR-0085)
-- Fallback chains reduced from 39 to ~5
-- memory-bridge.ts becomes a private implementation detail; memory-initializer.ts fully deleted (ADR-0086 Phase 3)
-- Merge conflict risk managed via 3-wave approach (low → medium → high)
-- intelligence.cjs now reads SQLite directly (CJS constraint resolved by ADR-0085)
-- Future features wire into one router, not 3 storage systems
+Original status: "Implemented (Waves 1-2 completed 2026-04-12; Wave 3 completed via ADR-0084 Phase 3 T3.2, 2026-04-13)", with a recorded Date of 2026-04-12. The methodology recorded was an 8-agent hive (spec reader, bridge inventory, conflict assessor, architect, devil's advocate, advocate, CJS analyst, effort estimator) plus queen synthesis. This ADR depends on ADR-0076 (Phase 5 original spec) and ADR-0080 (Phases 5-6 shim/bridge approach), and supersedes ADR-0080's Phase 5 (RVF-Primary Shim) and Phase 6 (reverse JSON bridge).

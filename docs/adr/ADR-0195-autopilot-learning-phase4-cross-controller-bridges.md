@@ -1,18 +1,13 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-19
-accepted: 2026-05-19
-implemented: 2026-05-19
-methodology: [MADR]
-decision-makers: [Henrik Pettersen]
-tags: [autopilot, learning, sona, cross-controller, phase4, ADR-0193, ADR-059]
-related: [0192, 0193, 0194]
-upstream-related: [agentic-flow/ADR-059]
-audience: ai-executor
+tags: [autopilot, learning, sona, cross-controller]
+supersedes: []
+depends-on: [ADR-0193]
+implements: []
 ---
 
-# ADR-0195: AutopilotLearning Phase 4 — cross-controller bridges
+# AutopilotLearning Phase 4 — cross-controller bridges
 
 ## Context and Problem Statement
 
@@ -219,7 +214,16 @@ Cons:
 
 ## Decision Outcome
 
-**Chosen: Option 1 (shared event bus owned by AgentDBService).** Accepted 2026-05-19; implementation in scope per the phases below.
+Chosen option: "Option 1 (shared event bus owned by AgentDBService)", because a single `EventEmitter` owned by AgentDBService gives one stable subscription point that survives across AutopilotLearning instance churn, mirrors the existing `getSonaService()` pattern, and introduces no circular import. Accepted 2026-05-19; implementation in scope per the phases below.
+
+### Consequences
+
+* Good, because there is one stable subscription point — it survives across AutopilotLearning instance churn because the bus outlives any single producer.
+* Good, because it mirrors the existing `getSonaService()` pattern on AgentDBService (agentdb-service.ts:1238-1241): "service exposes shared resources to transient consumers".
+* Good, because there is no circular import: AutopilotLearning already depends on AgentDBService; LearningSystem already depends on it via the registry.
+* Good, because subscribers attaching late do NOT lose events emitted before subscription — but Phase 4 documents this as expected and reasonable (lost-pre-subscription is acceptable when subscribers boot before producers, which is the actual init order).
+* Bad, because it adds an `events` field to AgentDBService that isn't currently there.
+* Bad, because there is one more thing to clean up if AgentDBService is torn down (rare; the service is a process singleton).
 
 ## Scope when implemented
 

@@ -1,15 +1,15 @@
-# ADR-0052: Config-Driven Embedding Framework
-
-**Status**: Implemented (v3.5.15-patch.107, 2026-03-19)
-**Date**: 2026-03-18 (implemented 2026-03-19)
-**Deciders**: System Architecture
-**Methodology**: SPARC + MADR
-
+---
+status: accepted
+date: 2026-03-18
+tags: [embeddings, config, dimensions, framework]
+supersedes: []
+depends-on: []
+implements: []
 ---
 
-## S - Specification
+# Config-Driven Embedding Framework
 
-### Problem
+## Context and Problem Statement
 
 Embedding dimension values (384, 768, 1024, 1536) are scattered as bare literals
 across 20+ source files in the ruflo and agentic-flow codebases. The codebase has
@@ -84,11 +84,23 @@ read from a single resolved config object.
 | Resilience      | Layered fallbacks: file -> env -> model map -> sane defaults   |
 | Performance     | Config resolution is cached; no repeated file reads at runtime |
 
----
+## Considered Options
 
-## P - Pseudocode (Design)
+* Introduce a single config-driven embedding framework (`getEmbeddingConfig()` + MODEL_REGISTRY + layered resolution + auto-derived HNSW params), with a two-tier consumer architecture (dynamic config resolution where agentdb can be imported, per-package constants elsewhere) (chosen).
 
-### 1. Config Interface
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "Introduce a single config-driven embedding framework with layered resolution and a two-tier consumer architecture", because changing the embedding model should be a config change rather than a code change, and a cached single-source-of-truth config object with sane layered fallbacks ends the dimension war while keeping the existing `embeddings.json` format valid.
+
+### S - Specification
+
+(See Context and Problem Statement above for the problem, dimension-war table, model comparison, goal, and quality attributes.)
+
+### P - Pseudocode (Design)
+
+#### 1. Config Interface
 
 ```typescript
 // File: packages/agentdb/src/config/embedding-config.ts  (NEW)
@@ -147,7 +159,7 @@ export interface EmbeddingConfig {
 }
 ```
 
-### 2. Model Registry
+#### 2. Model Registry
 
 ```typescript
 export const MODEL_REGISTRY: Record<string, {
@@ -178,7 +190,7 @@ export const MODEL_REGISTRY: Record<string, {
 };
 ```
 
-### 3. `getEmbeddingConfig()` — Resolution Function
+#### 3. `getEmbeddingConfig()` — Resolution Function
 
 ```typescript
 /**
@@ -234,7 +246,7 @@ function getEmbeddingConfig(overrides):
   return config
 ```
 
-### 4. HNSW Parameter Derivation
+#### 4. HNSW Parameter Derivation
 
 ```typescript
 export function deriveHNSWParams(dimension: number): HNSWParams {
@@ -255,7 +267,7 @@ export function deriveHNSWParams(dimension: number): HNSWParams {
 //   3072-dim -> M=46, efConstruction=552, efSearch=276
 ```
 
-### 5. Task Prefix Handling
+#### 5. Task Prefix Handling
 
 Task prefixes are applied at the embedding boundary — inside the `embed()`
 and `embedBatch()` methods — not by callers.
@@ -272,11 +284,9 @@ async embed(text: string, task: 'query' | 'document' = 'document'): Promise<Floa
 Callers specify *intent* (`'query'` vs `'document'`), not the literal prefix
 string. The framework maps intent to model-specific prefix.
 
----
+### A - Architecture
 
-## A - Architecture
-
-### Config Propagation Chain
+#### Config Propagation Chain
 
 ```
                     embeddings.json
@@ -310,7 +320,7 @@ string. The framework maps intent to model-specific prefix.
   getHNSWIndex()
 ```
 
-### Two-Tier Consumer Architecture (as implemented)
+#### Two-Tier Consumer Architecture (as implemented)
 
 ```
 TIER 1: Dynamic config resolution (can import agentdb)
@@ -337,7 +347,7 @@ TIER 2: Per-package constants (cannot import agentdb — circular deps)
        └── @claude-flow/swarm (1 consumer)
 ```
 
-### Server Optimization (also implemented in this ADR)
+#### Server Optimization (also implemented in this ADR)
 
 Tuned controller-registry.ts for available hardware (Ryzen 9 7950X3D / 187GB):
 
@@ -352,13 +362,11 @@ Tuned controller-registry.ts for available hardware (Ryzen 9 7950X3D / 187GB):
 | Batch concurrency | 10 | 24 | 32 threads, leave 8 for other work |
 | HNSW params | Hardcoded | `deriveHNSWParams()` | Auto-derived from dimension |
 
----
+### R - Refinement
 
-## R - Refinement
+#### File-by-File Changes
 
-### File-by-File Changes
-
-#### Core config module (agentic-flow fork)
+##### Core config module (agentic-flow fork)
 
 | File | Change | Status |
 |------|--------|:------:|
@@ -367,7 +375,7 @@ Tuned controller-registry.ts for available hardware (Ryzen 9 7950X3D / 187GB):
 | `agentdb/src/core/AgentDB.ts` | Import + call `getEmbeddingConfig()` (lines 16, 90) | DONE |
 | `agentdb/src/services/enhanced-embeddings.ts` | Remove inline MODEL_DIMENSIONS, delegate to MODEL_REGISTRY | DONE |
 
-#### Primary consumers (ruflo fork — Tier 1)
+##### Primary consumers (ruflo fork — Tier 1)
 
 | File | Change | Status |
 |------|--------|:------:|
@@ -376,7 +384,7 @@ Tuned controller-registry.ts for available hardware (Ryzen 9 7950X3D / 187GB):
 | `cli/src/memory/memory-initializer.ts` | Dynamic import for getHNSWIndex + loadEmbeddingModel | PARTIAL — **10 static `768`** in fallback chains and config objects |
 | `cli/src/init/executor.ts` | `MODEL_DIMS` lookup map replacing hardcoded ternary | DONE |
 
-#### Per-package constants (ruflo fork — Tier 2)
+##### Per-package constants (ruflo fork — Tier 2)
 
 | Package | Constants file | Consumers | Status |
 |---------|---------------|:---------:|:------:|
@@ -394,7 +402,7 @@ Each contains: `export const EMBEDDING_DIM = 768;`
 
 These are static constants — changing `embeddings.json` does NOT propagate here.
 
-#### Previously not migrated — now DONE (2026-03-19)
+##### Previously not migrated — now DONE (2026-03-19)
 
 | File | Was | Now | Status |
 |------|-----|-----|:------:|
@@ -409,7 +417,7 @@ These are static constants — changing `embeddings.json` does NOT propagate her
 | `cli/src/mcp-tools/embeddings-tools.ts:212` | `768` literal | `EMBEDDING_DIM` import | DONE |
 | `memory/src/controller-registry.ts` (8 places) | `\|\| 768` | `\|\| EMBEDDING_DIM` | DONE |
 
-### Files that do NOT need changes (false positives)
+#### Files that do NOT need changes (false positives)
 
 These use 384/768/1024 as buffer sizes (KB/MB), sequence lengths, or display
 values — NOT embedding dimensions:
@@ -424,7 +432,7 @@ values — NOT embedding dimensions:
 - `plugins/examples/ruvector/*.ts` (heap display, sequence lengths)
 - All `/ 1024` division for human-readable memory display
 
-### Data migration concern
+#### Data migration concern
 
 Switching from 384-dim MiniLM to 768-dim nomic means existing stored embeddings
 are incompatible. The recommended approach is **re-embed on upgrade**: detect
@@ -432,11 +440,9 @@ dimension mismatch in vector-db, trigger re-embedding on first access. The
 memory.db files are small (CLI workloads, <1MB typical) and re-embedding is fast
 (5.3ms/entry on this server).
 
----
+### C - Completion
 
-## C - Completion
-
-### Implementation Summary
+#### Implementation Summary
 
 | Phase | Description | Status | Effort |
 |-------|-------------|:------:|--------|
@@ -451,17 +457,7 @@ memory.db files are small (CLI workloads, <1MB typical) and re-embedding is fast
 
 **Total effort**: ~631 lines across 54 unique files in 2 forks.
 
-### Validation (2026-03-19)
-
-- `tsc --noEmit` passes on memory, cli, shared, embeddings (pre-existing `eagerMaxLevel` only)
-- `npm run test:unit` — **541/541 pass** (2.2s)
-- `npm run deploy` — **56/56 acceptance** (v3.5.15-patch.107)
-
-Acceptance tests validate config, not hardcoded values:
-- `sec-embed-gen` — calls `agentdb_embed`, reads expected dim from `getEmbeddingConfig()`, asserts match
-- `sec-embed-cfg` — verifies model is in `MODEL_REGISTRY`, dimension matches registry, `deriveHNSWParams()` works
-
-### Remaining `768` audit
+#### Remaining `768` audit
 
 After wiring, a grep audit found these remaining `768` values:
 
@@ -478,7 +474,7 @@ Remaining `1536` values are all **false positives** (not embedding defaults):
 - `hooks/reasoningbank` — JSDoc comment
 - `plugins/agentic-flow.ts` — separate plugin integration (own config)
 
-### What works today
+#### What works today
 
 - Default dimension is **768 everywhere** — the dimension war is resolved
 - Default model is **nomic-ai/nomic-embed-text-v1.5** — +30pp retrieval accuracy
@@ -489,12 +485,12 @@ Remaining `1536` values are all **false positives** (not embedding defaults):
 - Server is tuned for available hardware (160GB ceiling, 10x rate limits)
 - Task prefix support is plumbed through memory-bridge
 
-### What doesn't work
+#### What doesn't work
 
 - `memory-initializer.ts` fallback chains use static `768` (but only fire when
   config loading fails — safe defaults).
 
-### Completed (2026-03-19)
+#### Completed (2026-03-19)
 
 All remaining items done in a single session:
 1. Wired 9 `embedding-constants.ts` files to read from `getEmbeddingConfig()` via top-level `await import('agentdb')`
@@ -502,7 +498,7 @@ All remaining items done in a single session:
 3. Deployed as v3.5.15-patch.107 — **56/56 acceptance**, 541/541 unit tests
 4. Acceptance tests validate config values (not hardcoded): `sec-embed-gen` + `sec-embed-cfg`
 
-### Env variables
+#### Env variables
 
 | Variable                      | Purpose                     | Example                           |
 |-------------------------------|-----------------------------|------------------------------------|
@@ -512,7 +508,7 @@ All remaining items done in a single session:
 | `AGENTDB_EMBEDDING_API_KEY`   | API key for cloud providers  | `sk-...`                          |
 | `TRANSFORMERS_CACHE`          | Model download cache dir     | `~/.cache/transformers`           |
 
-### Risk mitigation
+#### Risk mitigation
 
 | Risk | Mitigation |
 |------|------------|
@@ -523,27 +519,37 @@ All remaining items done in a single session:
 | Breaking change for existing users | Default model/dimension unchanged (nomic, 768) |
 | Existing 384-dim stored embeddings | Re-embed on upgrade; memory.db files are small, re-embedding is fast |
 
-## Consequences
+### Consequences
 
-### Positive
+#### Positive
 
-- Resolves the dimension war: one dimension (768), one model (nomic), everywhere
-- 30pp retrieval accuracy improvement (56% to 86%)
-- 16x context window (512 to 8192 tokens)
-- Server utilization jumps from ~10% to ~50% on available hardware
-- Matryoshka support enables future adaptive dimensionality
-- Task prefix support improves query/document asymmetric retrieval by 3-5pp
+* Good, because it resolves the dimension war: one dimension (768), one model (nomic), everywhere.
+* Good, because of the 30pp retrieval accuracy improvement (56% to 86%).
+* Good, because of the 16x context window (512 to 8192 tokens).
+* Good, because server utilization jumps from ~10% to ~50% on available hardware.
+* Good, because Matryoshka support enables future adaptive dimensionality.
+* Good, because task prefix support improves query/document asymmetric retrieval by 3-5pp.
 
-### Negative
+#### Negative
 
-- Existing stored 384-dim embeddings become incompatible (must re-embed)
-- nomic model is 131MB quantized vs MiniLM 23MB — larger cache footprint
-- Tier 2 constants use top-level await which requires ESM module loading
+* Bad, because existing stored 384-dim embeddings become incompatible (must re-embed).
+* Bad, because the nomic model is 131MB quantized vs MiniLM 23MB — larger cache footprint.
+* Bad, because Tier 2 constants use top-level await which requires ESM module loading.
 
-## Related
+### Confirmation
 
-- **ADR-0048**: Lazy controller initialization — established the ONNX model cache chain
-- **ADR-0050 D4**: `agentdb_embed` returning zero-dimension embeddings — root cause was the dimension war
-- **ADR-0050 D2**: `agentdb_attention_benchmark` hardcoded dim=64 — same class of bug
-- **ADR-0045**: Embeddings compliance and observability — established EnhancedEmbeddingService
-- **ADR-0044**: Attention suite integration — established attention tools that hardcoded 384
+#### Validation (2026-03-19)
+
+- `tsc --noEmit` passes on memory, cli, shared, embeddings (pre-existing `eagerMaxLevel` only)
+- `npm run test:unit` — **541/541 pass** (2.2s)
+- `npm run deploy` — **56/56 acceptance** (v3.5.15-patch.107)
+
+Acceptance tests validate config, not hardcoded values:
+- `sec-embed-gen` — calls `agentdb_embed`, reads expected dim from `getEmbeddingConfig()`, asserts match
+- `sec-embed-cfg` — verifies model is in `MODEL_REGISTRY`, dimension matches registry, `deriveHNSWParams()` works
+
+## More Information
+
+This decision was recorded by System Architecture using the SPARC + MADR methodology. Original status: "Implemented (v3.5.15-patch.107, 2026-03-19)"; dated 2026-03-18 (implemented 2026-03-19).
+
+The original record cross-referenced these related decisions: ADR-0048 (lazy controller initialization — established the ONNX model cache chain); ADR-0050 D4 (`agentdb_embed` returning zero-dimension embeddings — root cause was the dimension war); ADR-0050 D2 (`agentdb_attention_benchmark` hardcoded dim=64 — same class of bug); ADR-0045 (embeddings compliance and observability — established EnhancedEmbeddingService); and ADR-0044 (attention suite integration — established attention tools that hardcoded 384).

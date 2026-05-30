@@ -1,11 +1,15 @@
-# ADR-0092: RVF native + pure-TS backend coexistence on a shared dbPath
+---
+status: superseded
+date: 2026-04-16
+tags: [rvf, native, storage, coexistence]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: Superseded by ADR-0095 (2026-04-21)
-- **Date**: 2026-04-16
-- **Scope**: `@claude-flow/memory` `RvfBackend` and the native `@ruvector/rvf-node` binding
-- **Related**: ADR-0086 (Layer 1 Storage), ADR-0090 (Acceptance audit — discovered during Tier B1 work), the B7 multi-writer convergence fix (fork commits `03ecec5e0` and `de7ba4876`), ADR-0095 (RVF inter-process convergence — supersedes this ADR), BUG-0005 (closed 2026-04-21), BUG-0008 (ADR-0095 ledger, closed)
+# RVF native + pure-TS backend coexistence on a shared dbPath
 
-## Context
+## Context and Problem Statement
 
 ADR-0090 Tier B1 work (2026-04-15/16) added an acceptance check for
 dimension-mismatch fail-loud behavior. While writing an ad-hoc
@@ -102,10 +106,7 @@ None of these are hypothetical — they're all plausible. But they're
 also not the dominant code path, which is why the silent data loss
 has survived undetected.
 
-## Decision
-
-Defer pending ADR review. The recommended disposition is one of two
-options:
+## Considered Options
 
 ### Option A: Accept as known limitation (recommended for now)
 
@@ -157,11 +158,23 @@ options:
   "no silent fallbacks" when the fallback produces silently-wrong
   results.
 
+## Decision Outcome
+
+Chosen option: "Defer pending ADR review — recommend Option A now (accept as a known limitation with a diagnostic), then Option B as the medium-term fix with a migration path", because Option C is too aggressive (plenty of users have the native binding installed but don't actually run multiple processes against the same dbPath, and they should not be forced to debug a loud failure that doesn't apply to them).
+
 **Recommended**: Option A now, then Option B as the medium-term fix
 with a migration path. Option C is tempting but too aggressive —
 plenty of users have the native binding installed but don't actually
 run multiple processes against the same dbPath, and they should not
 be forced to debug a loud failure that doesn't apply to them.
+
+### Consequences
+
+* Neutral, because this ADR documents a real defect but defers the disposition pending ADR review. The Status Update below records that ADR-0095 + BUG-0005 ultimately absorbed the coexistence semantics as an enforced invariant; this ADR is superseded.
+
+### Confirmation
+
+The three acceptance criteria below (deterministic reproducer, recorded Option A/B/C decision, fork patch + coverage) are the verification bar. The Status Update 2026-04-21 section records that all three were satisfied via ADR-0095 + BUG-0005 + BUG-0008, with three green cascades on 2026-04-21.
 
 ## Acceptance criteria for this ADR
 
@@ -179,20 +192,6 @@ committed. "Implemented" requires:
 Until the decision is made, do not file this as a bug for end users
 — the exposure is narrow enough that a fix landing within a few
 sessions is adequate.
-
-## References
-
-- `v3/@claude-flow/memory/src/rvf-backend.ts:998` — `get metadataPath()`
-  returns `.meta` when native is active, `dbPath` otherwise
-- `v3/@claude-flow/memory/src/rvf-backend.ts:582-618` — `tryNativeInit()`
-  with fall-back-to-pure-TS on failure
-- `v3/@claude-flow/memory/src/rvf-backend.ts:1110-1178` — `mergePeerStateBeforePersist()`
-  reads `.meta` first, falls back to `dbPath`
-- `scripts/diag-rvf-inproc-race.mjs` — B7 regression guard that does
-  not hit this case
-- Ad-hoc ruflo-patch diagnostic session (2026-04-15/16, not committed)
-  — 4/4 → 1/4 convergence regression with dimensions:3, 4 writers on
-  shared `dbPath` under the fresh `.112` install
 
 ---
 
@@ -236,3 +235,14 @@ None specific to ADR-0092. Forward-looking work (further hardening of the cross-
 ### Addendum (2026-05-22): native ↔ pure-TS score-VALUE parity
 
 This ADR (and its successor ADR-0095) cover *format/file* coexistence between the native and pure-TS paths — not score-value parity. ADR-0073's `1 − distance` conversion silently made the two paths diverge in **value** on a reopened (L2) store: the native ANN path returned `2cos − 1` while `pureTsSearch`/`bruteForceSearch` returned true cosine (the RVF `open()` metric is not persisted → defaults to L2; see the ADR-0073 amendment 2026-05-22). The fix makes the native path score via `cosineSimilarity(query, stored)` too, so native and pure-TS now return **identical similarity values**, not merely coexist on disk.
+
+## More Information
+
+Original status: "Superseded by ADR-0095 (2026-04-21)", with a recorded Date of 2026-04-16. Scope: `@claude-flow/memory` `RvfBackend` and the native `@ruvector/rvf-node` binding. This ADR is superseded by ADR-0095 (RVF inter-process convergence), which absorbs the coexistence semantics as an enforced invariant. It is related to ADR-0086 (Layer 1 Storage), ADR-0090 (Acceptance audit — discovered during Tier B1 work), the B7 multi-writer convergence fix (fork commits `03ecec5e0` and `de7ba4876`), BUG-0005 (closed 2026-04-21), and BUG-0008 (ADR-0095 ledger, closed).
+
+References:
+- `v3/@claude-flow/memory/src/rvf-backend.ts:998` — `get metadataPath()` returns `.meta` when native is active, `dbPath` otherwise
+- `v3/@claude-flow/memory/src/rvf-backend.ts:582-618` — `tryNativeInit()` with fall-back-to-pure-TS on failure
+- `v3/@claude-flow/memory/src/rvf-backend.ts:1110-1178` — `mergePeerStateBeforePersist()` reads `.meta` first, falls back to `dbPath`
+- `scripts/diag-rvf-inproc-race.mjs` — B7 regression guard that does not hit this case
+- Ad-hoc ruflo-patch diagnostic session (2026-04-15/16, not committed) — 4/4 → 1/4 convergence regression with dimensions:3, 4 writers on shared `dbPath` under the fresh `.112` install

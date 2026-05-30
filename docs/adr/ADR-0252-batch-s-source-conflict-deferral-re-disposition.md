@@ -1,6 +1,5 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-25
 tags: [upstream-sync, source-conflict, deferral, batch-s]
 supersedes: []
@@ -67,14 +66,14 @@ The remaining 14 (defer) + 3 (pull-pending) are gated on:
 2. **Secondary** — `ruvnet/ruflo` accumulating ≥50 new commits since 2026-05-23 (signals divergence cost is growing; current state: 0 new commits).
 3. **Tertiary** — a fork-side bug surfaces whose fix lives in one of the 9 misc commits — pick that one ad-hoc with provenance recorded in INTEGRATION-LEDGER.md.
 
-## Consequences
+### Consequences
 
-* **Good** — closes an ambiguous open item with current evidence; documents the supersede mapping so future maintainers don't re-litigate the neural-trader question.
-* **Good** — converts a vague "review later" into shaped follow-up work (per-family triage scope is bounded and discoverable).
-* **Good** — removes the Batch S row from [[ADR-0233]] §"Reviews still owed" as an unscoped trigger; the remaining 17 dispositions are now per-family-scoped.
-* **Bad** — per-family disposition is coarser than per-SHA; if a specific commit in the 9 misc bundle later proves load-bearing, the disposition has to be revisited individually.
-* **Bad** — SUPERSEDE for neural-trader assumes upstream won't reverse direction. If upstream later walks back the overclaim itself, the fork's superseding logic still stands (we corrected for our context independent of upstream's stance), but a "synchronized" note in the ledger would help.
-* **Neutral** — this ADR doesn't change any code by itself; it documents intent. The INTEGRATION-LEDGER.md amendment lands as a sibling change.
+* Good, because it closes an ambiguous open item with current evidence; documents the supersede mapping so future maintainers don't re-litigate the neural-trader question.
+* Good, because it converts a vague "review later" into shaped follow-up work (per-family triage scope is bounded and discoverable).
+* Good, because it removes the Batch S row from [[ADR-0233]] §"Reviews still owed" as an unscoped trigger; the remaining 17 dispositions are now per-family-scoped.
+* Bad, because per-family disposition is coarser than per-SHA; if a specific commit in the 9 misc bundle later proves load-bearing, the disposition has to be revisited individually.
+* Bad, because SUPERSEDE for neural-trader assumes upstream won't reverse direction. If upstream later walks back the overclaim itself, the fork's superseding logic still stands (we corrected for our context independent of upstream's stance), but a "synchronized" note in the ledger would help.
+* Neutral, because this ADR doesn't change any code by itself; it documents intent. The INTEGRATION-LEDGER.md amendment lands as a sibling change.
 
 ## Confirmation
 

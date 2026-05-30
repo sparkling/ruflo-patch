@@ -1,11 +1,15 @@
-# ADR-0099: Performance Testing Program — Budgets, Not Gates
+---
+status: proposed
+date: 2026-04-22
+tags: [performance, testing, benchmarks, budgets]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: Proposed 2026-04-22 — hive-designed (queen + devil's advocate); still pending. Last reviewed 2026-05-03: no `npm run test:perf` script, no `tests/benchmarks/wallclock/` directory, no `docs/reports/perf/` baselines/anchors/HISTORY.md, `flash-attention-benchmark.mjs` unchanged (no `--promote`/`--calibrate` flags); ADR-0100 §4 Scenario F explicitly references this ADR as "perf program not yet shipped"; no successor; no regression reports forcing prioritization.
-- **Date**: 2026-04-22
-- **Scope**: New `npm run test:perf` suite, out-of-band from the cascading pipeline (ADR-0038); new `tests/benchmarks/wallclock/*.mjs` + port of existing `tests/benchmarks/flash-attention-benchmark.mjs`; new `docs/reports/perf/` artifact area (gitignored runs, committed anchor baselines); paired unit tests per ADR-0097. NO change to `test:acceptance`.
-- **Related**: ADR-0038 (cascading pipeline), ADR-0069 F3 (existing Flash Attention perf claim), ADR-0081 (M5 Max hardware baseline), ADR-0090 (acceptance throughput concerns), ADR-0094 (acceptance coverage — **explicitly not extended** here), ADR-0097 (paired check-code tests).
+# Performance Testing Program — Budgets, Not Gates
 
-## Context
+## Context and Problem Statement
 
 We have exactly two perf-affecting incidents in project history:
 
@@ -22,7 +26,20 @@ Neither incident shipped a user-visible regression. There is no logged bug where
 
 Hardware constraint dictates most design decisions: development happens on one M5 Max (36 GB, macOS Tahoe — ADR-0081, memory `user_machine`). N=1 box, no CI cluster. Any design that assumes statistical validity across machines is disqualified.
 
-## Decision
+## Considered Options
+
+* **Lightweight probe + budget tracker (3 workloads, `node:perf_hooks`, warn-only, out-of-band)** (chosen).
+* **A. Full regression suite at 6 workloads** — Pros: comprehensive; catches anything, anywhere. Cons: 3× maintenance for 0× signal (YAGNI objection CRITICAL). Half the workloads have no motivating incident. Rejected.
+* **B. CI gate instead of warn-only** — Pros: guarantees regressions can't ship. Cons: N=1 thermal + `feedback-no-fallbacks` + `feedback-never-full-acceptance` collide — a gate would either flake (auto-bypass culture) or use silent retries (banned). Rejected.
+* **C. In-pipeline as `test:acceptance` phase** — Pros: one command runs everything. Cons: contradicts ADR-0090 throughput, contradicts `feedback-never-full-acceptance`, contradicts devil's-advocate CRITICAL thermal argument. Rejected.
+* **D. `mitata`/`tinybench` harness** — Pros: better statistical methods. Cons: dev-dep bloat for 3 workloads; `node:perf_hooks` is sufficient at this scope. Revisit if suite grows past 5 workloads. Deferred.
+* **E. RVF-stored baselines** — Pros: aligns with `project-rvf-primary`. Cons: baseline shifts invisible in `git diff`; PR review fails silently. Rejected for baselines specifically. Runtime perf memory, if added later, may still live in RVF.
+* **F. Last-`-patch.N` as baseline** — Pros: always fresh. Cons: incremental drift (3% per patch × 10 patches = 30% invisible decay). Rejected in favor of dual acute + quarterly anchor baselines.
+* **G. Pure fixed-percent regression threshold (e.g., "fail at 15% delta")** — Pros: simple. Cons: on N=1 M5 Max, run-to-run variance is 10–20%; either flakes or misses real regressions. Rejected in favor of K-of-N + noise-floor.
+
+## Decision Outcome
+
+Chosen option: "Lightweight probe + budget tracker", because the project has no logged perf incidents (so a full 6-workload gate is premature optimization), and an N=1 M5 Max with no CI cluster cannot support statistical gating; the right shape is a 3-workload `node:perf_hooks` probe with K-of-N stability filtering, run out-of-band as warn-only budgets rather than ship gates.
 
 ### 1. Scope — what to test (3 workloads, not 6)
 
@@ -145,54 +162,24 @@ Tests 1–3 assert **measurement math**, never numeric timing values — timing 
 
 **Staleness forcing function.** `npm run publish:fork` refuses to proceed if the most recent `docs/reports/perf/baseline/*.json` mtime is >30 days old OR if `HISTORY.md` has no entry within 30 days. The refusal is bypassable with `--skip-perf-check` (which prints `[WARN] publishing without fresh perf baseline — last promote: <sha> <date>` loudly in the deploy log). This is a nudge, not a gate — it does not block publish, but it forces a visible human decision every 30 days. Without this, `--promote` gating + quarterly rotation + machine invalidation compose into "suite never runs" (second-order review, Flaw 2 — devil and queen converged on this one).
 
-## Alternatives
-
-### A. Full regression suite at 6 workloads
-**Pros**: comprehensive; catches anything, anywhere.
-**Cons**: 3× maintenance for 0× signal (YAGNI objection CRITICAL). Half the workloads have no motivating incident. Rejected.
-
-### B. CI gate instead of warn-only
-**Pros**: guarantees regressions can't ship.
-**Cons**: N=1 thermal + `feedback-no-fallbacks` + `feedback-never-full-acceptance` collide — a gate would either flake (auto-bypass culture) or use silent retries (banned). Rejected.
-
-### C. In-pipeline as `test:acceptance` phase
-**Pros**: one command runs everything.
-**Cons**: contradicts ADR-0090 throughput, contradicts `feedback-never-full-acceptance`, contradicts devil's-advocate CRITICAL thermal argument. Rejected.
-
-### D. `mitata`/`tinybench` harness
-**Pros**: better statistical methods.
-**Cons**: dev-dep bloat for 3 workloads; `node:perf_hooks` is sufficient at this scope. Revisit if suite grows past 5 workloads. Deferred.
-
-### E. RVF-stored baselines
-**Pros**: aligns with `project-rvf-primary`.
-**Cons**: baseline shifts invisible in `git diff`; PR review fails silently. Rejected for baselines specifically. Runtime perf memory, if added later, may still live in RVF.
-
-### F. Last-`-patch.N` as baseline
-**Pros**: always fresh.
-**Cons**: incremental drift (3% per patch × 10 patches = 30% invisible decay). Rejected in favor of dual acute + quarterly anchor baselines.
-
-### G. Pure fixed-percent regression threshold (e.g., "fail at 15% delta")
-**Pros**: simple.
-**Cons**: on N=1 M5 Max, run-to-run variance is 10–20%; either flakes or misses real regressions. Rejected in favor of K-of-N + noise-floor.
-
-## Consequences
+### Consequences
 
 **Positive:**
-- ADR-0069 F3 claim gains a defended regression boundary instead of a one-shot ad-hoc bench.
-- User-visible `ruflo init --full` and MCP cold-spawn get measured for the first time; anchor values become known.
-- Acceptance suite untouched — no throughput hit, no new flake surface in the ship gate.
-- Paired unit tests per ADR-0097 mean the harness itself is trusted before its numbers are.
+* Good, because the ADR-0069 F3 claim gains a defended regression boundary instead of a one-shot ad-hoc bench.
+* Good, because user-visible `ruflo init --full` and MCP cold-spawn get measured for the first time; anchor values become known.
+* Good, because the acceptance suite is untouched — no throughput hit, no new flake surface in the ship gate.
+* Good, because paired unit tests per ADR-0097 mean the harness itself is trusted before its numbers are.
 
 **Negative:**
-- Warn-only semantics mean a real regression CAN ship. Mitigated by publish-pipeline `[WARN]` surface, 30-day staleness forcing function on `publish:fork`, and acceptance-phase `[perf]` staleness line.
-- One more `docs/reports/perf/` area to maintain. Mitigated by runs being gitignored and quarterly anchor rotation being calendar-driven, not event-driven.
-- N=1 hardware remains the single point of trust. Any future CI cluster re-opens this ADR.
-- **Microbench-heavy workload mix** (second-order review, Flaw 5 — ACCEPT): 2 of 3 workloads (1.1, 1.3) are kernel-level microbenches; only 1.2 is a user-path integration measurement. An upstream-composition regression that doesn't hit `init --full` but slows real user workflows will evade this suite. In that scenario, acceptance runtime drift (already logged by `deploy-finalize.sh`) is the first-line detector, and a 4th workload is added per the §Consequences revisit trigger. Debt named rather than hidden behind the "lightweight" framing.
+* Bad, because warn-only semantics mean a real regression CAN ship. Mitigated by publish-pipeline `[WARN]` surface, 30-day staleness forcing function on `publish:fork`, and acceptance-phase `[perf]` staleness line.
+* Bad, because there is one more `docs/reports/perf/` area to maintain. Mitigated by runs being gitignored and quarterly anchor rotation being calendar-driven, not event-driven.
+* Bad, because N=1 hardware remains the single point of trust. Any future CI cluster re-opens this ADR.
+* Bad, because of the **microbench-heavy workload mix** (second-order review, Flaw 5 — ACCEPT): 2 of 3 workloads (1.1, 1.3) are kernel-level microbenches; only 1.2 is a user-path integration measurement. An upstream-composition regression that doesn't hit `init --full` but slows real user workflows will evade this suite. In that scenario, acceptance runtime drift (already logged by `deploy-finalize.sh`) is the first-line detector, and a 4th workload is added per the §Consequences revisit trigger. Debt named rather than hidden behind the "lightweight" framing.
 
 **Neutral / deferred:**
-- RVF at 10k/100k/1M deferred — revisit if an acceptance check discovers 10k-tier regression.
-- Hook overhead deferred — revisit when a user ships or reports a slow hook.
-- Pipeline-step wallclock tracking stays in `deploy-finalize.sh`, not here.
+* Neutral, because RVF at 10k/100k/1M is deferred — revisit if an acceptance check discovers 10k-tier regression.
+* Neutral, because hook overhead is deferred — revisit when a user ships or reports a slow hook.
+* Neutral, because pipeline-step wallclock tracking stays in `deploy-finalize.sh`, not here.
 
 ## Adversarial Review Outcome (2026-04-22)
 
@@ -286,3 +273,9 @@ All three edits were folded into the ADR body directly (not deferred to a follow
 - §Consequences/Negative gains microbench-mix debt disclosure
 
 **The ADR ships with zero follow-up debt from the second-order review.** All four FIX flaws are textually addressed above; the one ACCEPT flaw is named where future readers will see it rather than hidden in the first-order "lightweight" framing. Third-order review was not requested and is not planned.
+
+## More Information
+
+Original status: "Proposed 2026-04-22 — hive-designed (queen + devil's advocate); still pending. Last reviewed 2026-05-03: no `npm run test:perf` script, no `tests/benchmarks/wallclock/` directory, no `docs/reports/perf/` baselines/anchors/HISTORY.md, `flash-attention-benchmark.mjs` unchanged (no `--promote`/`--calibrate` flags); ADR-0100 §4 Scenario F explicitly references this ADR as 'perf program not yet shipped'; no successor; no regression reports forcing prioritization." Dated 2026-04-22. Scope: new `npm run test:perf` suite, out-of-band from the cascading pipeline (ADR-0038); new `tests/benchmarks/wallclock/*.mjs` + port of existing `tests/benchmarks/flash-attention-benchmark.mjs`; new `docs/reports/perf/` artifact area (gitignored runs, committed anchor baselines); paired unit tests per ADR-0097. NO change to `test:acceptance`.
+
+The original record cross-referenced these related decisions: ADR-0038 (cascading pipeline); ADR-0069 F3 (existing Flash Attention perf claim); ADR-0081 (M5 Max hardware baseline); ADR-0090 (acceptance throughput concerns); ADR-0094 (acceptance coverage — explicitly not extended here); and ADR-0097 (paired check-code tests).

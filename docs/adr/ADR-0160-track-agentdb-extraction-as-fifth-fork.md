@@ -1,17 +1,13 @@
 ---
 status: superseded
-completed: true
 date: 2026-05-08
-methodology: [SPARC, MADR]
-decision-makers: [Henrik Pettersen]
-consulted: []
-informed: []
-tags: [agentdb, fork-tracking, codemod, mcp, ruvector-adapter, parallel-extraction]
-related: [0078, 0094, 0147, 0148, 0150, 0154, 0157, 0161]
-superseded-by: 0161
+tags: [agentdb, fork-tracking, codemod, mcp]
+supersedes: []
+depends-on: []
+implements: []
 ---
 
-# ADR-0160: Track upstream agentdb extraction as a fifth fork — parallel-source response with vendored copy retained
+# Track upstream agentdb extraction as a fifth fork — parallel-source response with vendored copy retained
 
 > **Superseded by [ADR-0161](ADR-0161-consolidate-agentdb-onto-fifth-fork.md) 2026-05-08.** ADR-0160's "observation-only" framing was replaced with active migration once the user clarified the consolidation intent. ADR-0161 executed the full lift-and-shift: fork-only files lifted, 59 differing files reconciled via three-way merge, agentdb-onnx relocated, codemod Pass 8 added, consumers cut over, vendored copies decommissioned. See ADR-0161 § Implementation log below for the actual outcome.
 
@@ -202,6 +198,8 @@ This decision is implemented when ALL of the following are observable from CI / 
 - **Good** — would in principle yield authoritative clarity if answered.
 
 ## More Information
+
+Original metadata: Methodology SPARC + MADR; marked `completed: true`. This decision is superseded by ADR-0161 (consolidate-agentdb-onto-fifth-fork) and was recorded as related to ADR-0078, ADR-0094, ADR-0147, ADR-0148, ADR-0150, ADR-0154, and ADR-0157.
 
 ### Out of scope (deferred to follow-up ADRs)
 

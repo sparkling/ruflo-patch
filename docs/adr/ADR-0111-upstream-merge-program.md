@@ -1,12 +1,15 @@
-# ADR-0111: Upstream merge program (post-2026-04-29 swarm investigation)
+---
+status: proposed
+date: 2026-04-29
+tags: [upstream-merge, forks, ruvector, plugins]
+supersedes: []
+depends-on: [ADR-0103, ADR-0113]
+implements: []
+---
 
-- **Status**: **Awaiting ADR-0103 closure** (revised 2026-05-03 after ADR-0113 marked Implemented 2026-05-02). W1 + W1.5/W1.6/W1.7 + W2/W3 + trunk pivot + W4 + W5 all complete. Core merge work delivered (ruvector `2ba2f5cd` + ruflo `f6fcb76c6`, GREEN acceptance gates, bookkeeping). **ADR-0113 closed 2026-05-02** — all 6 fixes landed (Phase A→B→C→D + 6.5; sandbox cherry-pick `6c325ba6f`, marketplace identity `b24e46829`, bin self-id `64491a274` all pushed to public `sparkling/ruflo`). Remaining closure dependencies: (1) **ADR-0103** for orphan-class wire-up (TopologyManager 656 LOC + QueenCoordinator 2030 LOC daemon-resident advisor + ConsensusEngine raft/gossip/byzantine, ~400-450 LOC of glue); (2) task #12 (flock refcount in `crates/rvf/rvf-runtime/src/locking.rs`). ADR-0111 closes when ADR-0103 and task #12 both close.
-- **Date**: 2026-04-29
-- **Scope**: All 4 forks (`ruflo`, `agentic-flow`, `ruv-FANN`, `ruvector`)
-- **Method**: 15-agent parallel research swarm — each agent owned a slice
-  (per-fork, per-theme, cross-cutting). Findings consolidated below.
+# Upstream merge program (post-2026-04-29 swarm investigation)
 
-## Context
+## Context and Problem Statement
 
 Last upstream merge into our forks was 6 weeks ago (2026-03-16 for `ruflo`,
 2026-04-06 for `ruvector`; `agentic-flow` and `ruv-FANN` are upstream-current).
@@ -830,7 +833,17 @@ For future ADR-0106 cross-hive evolution: `6db89867` (`ruvector-delta-consensus`
 | R20 (added 2026-05-01) | Federation + IoT Cognitum + SmartRetrieval upstream tracks landed AFTER ADR draft (2026-04-29) — 13 commits including `1976c57cc`/`8b8127d75`/`057596255`/`0277a5a0e`/`ec563de2a` (federation + iot-cognitum, 2026-04-29/30) and `d66358149` (SmartRetrieval ADR-090 wire-up to memory pipeline). None are in the letter-group catalog A-H. Plus ~52 other uncovered post-draft commits (v3.6.x branding, plugin-grouping docs, ADR-076/077 work) per Expert 5. Total uncovered: ~65 commits. Without a letter-group home, they either get conflated into existing groups or skipped. | Add a NEW letter group "I-recent" (or amend G to absorb federation/IoT/marketplace; amend D to absorb SmartRetrieval) — see [baseline correction 2026-05-01](#implementation-log---2026-05-01--baseline-correction) for the consolidated 4-group recommendation. |
 | R21 (added 2026-05-01) | SmartRetrieval ADR-090 (`d66358149`) directly modifies the memory pipeline — same hot zone as ADR-0085/0086 dedup work and ADR-0104 hive-store lock. R4 (dedup vs RVF-primary) is silent on whether SmartRetrieval composes with RVF-primary or contradicts it. | Concrete acceptance check: "verify SmartRetrieval BM25/vector reranker uses RVF as the read path, not a fresh SQLite shadow store." Adopt during letter-D execution or letter-I-recent if a separate group lands. |
 
-## Decision: recommended merge plan
+## Considered Options
+
+* **Single coordinated, phase-gated merge wave across all 4 forks (chosen)** — ruvector first, then ruflo letter-groups A→H, then agentic-flow + ruv-FANN bookkeeping, with acceptance gates between phases and `--strategy=ort --strategy-option=patience` + `rerere`.
+
+(No alternatives were recorded — the redundancy audit refuted the "most of our work is already fixed upstream" hypothesis, and the merge plan is the execution program that follows from the investigation.)
+
+## Decision Outcome
+
+Chosen option: "Single coordinated, phase-gated merge wave across all 4 forks", because the redundancy audit found only ~2% of our 342 ahead-commits are genuinely upstream-redundant, so the bulk of our architectural divergence must be preserved through a careful, gated, letter-by-letter merge rather than a nuclear rebase.
+
+### Decision: recommended merge plan
 
 Execute as a **single coordinated wave** across the 4 forks, gated at each phase:
 
@@ -869,6 +882,19 @@ ADR-0111's lifecycle is **coupled** to ADR-0103: W5 step 7 promotes ADRs 0105/01
 ADR-0103 has its own implementation waves (likely 3 verticals: TopologyManager / QueenCoordinator / ConsensusEngine). Each closes the corresponding ADR-0105/0106/0107/0109 from `Accepted` to `Implemented`. When all four are `Implemented`, ADR-0103 closes, and ADR-0111 closes via the dependency.
 
 This explicitly avoids the failure mode where ADR-0111 declares itself "Implemented" while having shipped only ADR doc updates without the wire-up code.
+
+### Consequences
+
+User-visible breaking changes and improvements from this wave (full detail in §Backwards-compatibility statement below):
+
+* Good, because the wave adopts upstream's architectural moves we lacked (19-plugin marketplace, PERF-03 lazy-load ~5-8s startup speedup, ConsensusEngine wire-up, QueenCoordinator daemon-resident advisor, TopologyManager + graph-backend.ts, LongMemEval all 4 modes) while preserving our RVF-first / unified-config / controller-registry divergence.
+* Good, because each phase is `git reset --hard <pre-phase-tag>`-reversible and gated on acceptance, so a regression halts the wave before it propagates.
+* Bad, because the ruvector major-version bump (0.x → 2.x) forces re-pinning for direct `@sparkleideas/ruvector-*` consumers, plugin sandbox + namespace gate change community-plugin trust semantics, and Node.js `>=20` is now required.
+* Neutral, because ADR-0111's own closure is coupled to ADR-0103 (orphan-class wire-up) and task #12 (flock refcount) — the program work lands here, but `Implemented` status awaits those dependencies.
+
+### Confirmation
+
+The merge is verified by the per-phase test-coverage gates (§Test-coverage gates per phase): `npm run preflight` after pre-flight; `npm run test:acceptance:ruvector` + `cargo build --workspace` + platform-binary publish after ruvector; `npm run test:unit` after each ruflo letter group + `npm run build` after F + `lib/acceptance-adr0104-checks.sh` after E; `npm run test:unit && npm run test:acceptance` full cascade + live `npx ruflo hive-mind spawn "..."` smoke after step 4; `npm run test:unit` per fork after bookkeeping; and all ADR cross-references resolving after reconciliation. W4 + W5 ran end-to-end against the corrected `e030ee039` baseline with GREEN acceptance gates (ruvector 560/561, ruflo 146/147) — see §Implementation Log entries.
 
 ## Operations
 
@@ -1570,3 +1596,9 @@ Following the public marketing pitch ("install marketplace, install core plugins
 **ADR-0111 status revised:** `Awaiting ADR-0103 closure` → **`Awaiting ADR-0103 + ADR-0113 closure`**. Both ADRs hold mandates that ADR-0111 placed there; ADR-0111 cannot move to `Implemented` until both are closed.
 
 **Plugin-system question (raised during audit):** does the plugin marketplace replace `init`? **No.** The two own different layers — `init` writes runtime infrastructure (configs, `.mcp.json`, hooks), plugins extend Claude Code with agents/commands/skills. Marketing pitch elides the `init` step; documented in ADR-0113 §"Status note: plugin system vs init command".
+
+## More Information
+
+Original status: **Awaiting ADR-0103 closure** (revised 2026-05-03 after ADR-0113 marked Implemented 2026-05-02). W1 + W1.5/W1.6/W1.7 + W2/W3 + trunk pivot + W4 + W5 all complete. Core merge work delivered (ruvector `2ba2f5cd` + ruflo `f6fcb76c6`, GREEN acceptance gates, bookkeeping). **ADR-0113 closed 2026-05-02** — all 6 fixes landed (Phase A→B→C→D + 6.5; sandbox cherry-pick `6c325ba6f`, marketplace identity `b24e46829`, bin self-id `64491a274` all pushed to public `sparkling/ruflo`). Remaining closure dependencies: (1) **ADR-0103** for orphan-class wire-up (TopologyManager 656 LOC + QueenCoordinator 2030 LOC daemon-resident advisor + ConsensusEngine raft/gossip/byzantine, ~400-450 LOC of glue); (2) task #12 (flock refcount in `crates/rvf/rvf-runtime/src/locking.rs`). ADR-0111 closes when ADR-0103 and task #12 both close.
+
+Scope: All 4 forks (`ruflo`, `agentic-flow`, `ruv-FANN`, `ruvector`). Method: 15-agent parallel research swarm — each agent owned a slice (per-fork, per-theme, cross-cutting); findings consolidated above. This ADR depends on ADR-0103 (orphan-class wire-up program) and ADR-0113 (plugin system integration completion, spawned by this ADR's 14-agent plugin-integration audit) for its `Implemented` status.

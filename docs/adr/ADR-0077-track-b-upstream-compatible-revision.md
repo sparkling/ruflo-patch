@@ -1,30 +1,32 @@
-# ADR-0077: Track B Revised -- Upstream-Compatible Architecture Consolidation
+---
+status: accepted
+date: 2026-04-06
+tags: [architecture, consolidation, upstream-compatibility]
+supersedes: [ADR-0076]
+depends-on: [ADR-0073, ADR-0075, ADR-0076]
+implements: []
+---
 
-- **Status**: Implemented (Phases 1-5)
-- **Date**: 2026-04-06
-- **Implemented**: 2026-04-11
-- **Depends on**: ADR-0075 (assessment), ADR-0076 (original plan), ADR-0073 (storage upgrade)
-- **Supersedes**: ADR-0076 Track B (Phases 1-5)
-- **Continued by**: ADR-0078 (bridge elimination from agentdb tools)
+# Track B Revised -- Upstream-Compatible Architecture Consolidation
 
-## Decision
+## Context and Problem Statement
+
+ADR-0076's Track B proposed a deletion-heavy consolidation (delete HybridBackend, split controller-registry.ts, delete AgentDBService, delete memory-bridge.ts and the sql.js paths). The non-negotiable constraint is that we track 4 upstream repos and must continue to merge upstream changes cleanly, and we want the option to contribute patches back upstream. The original deletion plan would cause permanent, irreconcilable divergence on the highest-conflict files. This ADR revises all five Track B phases to achieve the same goals without diverging from upstream's file structure.
+
+## Considered Options
+
+* **Intercept, don't restructure (chosen)** — place thin interception layers in new files we own, leave upstream files untouched (or apply only surgical PR-able bug fixes), and route around dead code rather than deleting it.
+* **Original ADR-0076 Track B deletion plan (rejected/superseded)** — delete 4 upstream files, split controller-registry.ts into 5 files, ~500+ lines changed in upstream files. Rejected because it guarantees merge conflicts on every upstream sync of the most actively-developed files and forecloses contributing patches back.
+
+## Decision Outcome
+
+Chosen option: "Intercept, don't restructure", because we track 4 upstream repos and must continue to merge upstream changes cleanly and contribute patches back. This means: we CANNOT delete files upstream maintains, we CANNOT restructure files upstream actively develops, but we CAN add new files alongside existing ones, fix bugs in existing files via targeted PR-able patches, add additive configuration/validation/guards, and contribute bug fixes upstream as PRs.
 
 Revise all five Track B phases from ADR-0076 to achieve the same goals -- single config
 resolution, single embedding pipeline, cleaner controller lifecycle, single data flow,
 reduced dead code exposure -- WITHOUT diverging from upstream's file structure.
 
-The non-negotiable constraint: we track 4 upstream repos and must continue to merge
-upstream changes cleanly. We also want the option to contribute patches back upstream.
-
-This means:
-- We CANNOT delete files that upstream maintains
-- We CANNOT restructure files that upstream actively develops
-- We CAN add new files alongside existing ones
-- We CAN fix bugs in existing files (targeted patches, not rewrites)
-- We CAN add configuration, validation, and guards that are additive
-- We CAN contribute bug fixes upstream as PRs
-
-## Strategy: Intercept, Don't Restructure
+### Strategy: Intercept, Don't Restructure
 
 Instead of deleting or splitting upstream files, we place **thin interception layers** in
 new files that upstream does not own. The upstream files remain untouched (or receive only
@@ -44,20 +46,20 @@ embedding-constants.ts   -->  (4 copies fixed to read from singleton -- PR-able)
 
 ---
 
-## Revised Phase 1: Config Unification (1 week)
+### Revised Phase 1: Config Unification (1 week)
 
-### Goal
+#### Goal
 One `resolveConfig()` function, called once, producing a frozen `SystemConfig`.
 
-### Original ADR-0076 approach
+#### Original ADR-0076 approach
 Modify 8 existing files to replace 5 independent resolution chains.
 
-### Upstream compatibility assessment
+#### Upstream compatibility assessment
 **Compatible as-is.** The config resolution code is internal wiring, not public API.
 The new files are purely additive. The existing files receive only import changes
 (swapping inline resolution for `getConfig()` calls). These are clean, small patches.
 
-### Revised approach
+#### Revised approach
 
 **New files (we own, upstream does not have):**
 - `@claude-flow/shared/src/core/config/resolve.ts` -- canonical `resolveConfig()` with
@@ -88,20 +90,20 @@ duplicates logic that the config loader already handles.
 
 ---
 
-## Revised Phase 2: Storage Simplification (3 days)
+### Revised Phase 2: Storage Simplification (3 days)
 
-### Goal
+#### Goal
 One `IStorage` interface, dead backends bypassed safely.
 
-### Original ADR-0076 approach
+#### Original ADR-0076 approach
 Delete HybridBackend (790 lines) and AgentDBBackend. Rewrite database-provider.ts.
 Rated HIGH upstream risk.
 
-### Upstream compatibility assessment
+#### Upstream compatibility assessment
 **NOT compatible.** Deleting hybrid-backend.ts and agentdb-backend.ts causes merge
 conflicts on every upstream sync. ruflo upstream is very active (160+ branches).
 
-### Revised approach: Leave Dead Code, Add Interface
+#### Revised approach: Leave Dead Code, Add Interface
 
 **New files (we own):**
 - `@claude-flow/memory/src/istorage.ts` -- the trimmed 10-method `IStorage` interface
@@ -132,22 +134,22 @@ benefits from a narrower, documented contract. This is strictly additive.
 
 ---
 
-## Revised Phase 3: Embedding Pipeline (1 week)
+### Revised Phase 3: Embedding Pipeline (1 week)
 
-### Goal
+#### Goal
 One `EmbeddingPipeline` instance, dimension validated at startup.
 
-### Original ADR-0076 approach
+#### Original ADR-0076 approach
 Delete RvfEmbeddingService. Delete generateEmbedding()/loadEmbeddingModel() from
 memory-initializer.ts. Rated MEDIUM upstream risk because memory-initializer.ts is
 in active upstream.
 
-### Upstream compatibility assessment
+#### Upstream compatibility assessment
 **NOT compatible for deletions.** We cannot remove functions from memory-initializer.ts
 (2,929 lines, active upstream). We cannot delete rvf-embedding-service.ts (upstream
 file).
 
-### Revised approach: Wrap, Don't Delete
+#### Revised approach: Wrap, Don't Delete
 
 **New files (we own):**
 - `@claude-flow/embeddings/src/pipeline.ts` -- `EmbeddingPipeline` class:
@@ -199,16 +201,16 @@ upstream contribution. It is a 3-file, ~30-line fix that any maintainer would ac
 
 ---
 
-## Revised Phase 4: Controller Lifecycle Cleanup (2 weeks)
+### Revised Phase 4: Controller Lifecycle Cleanup (2 weeks)
 
-### Goal
+#### Goal
 No duplicate controller instances. AgentDBService delegates to ControllerRegistry.
 
-### Original ADR-0076 approach
+#### Original ADR-0076 approach
 Split controller-registry.ts into 5 files. Delete AgentDBService. Create shim.
 Rated HIGH upstream risk for ruflo fork, LOW for agentic-flow fork.
 
-### Upstream compatibility assessment
+#### Upstream compatibility assessment
 **NOT compatible for ruflo.** controller-registry.ts (2,007 lines) is the highest
 merge-conflict file in the ruflo fork. Splitting it into 5 files guarantees conflicts
 on every sync.
@@ -219,7 +221,7 @@ on every sync.
 and replace" is still risky -- if upstream resumes development, we have a permanent
 divergence.
 
-### Revised approach: Intercept at Boundaries
+#### Revised approach: Intercept at Boundaries
 
 **New files (we own):**
 - `@claude-flow/memory/src/controller-intercept.ts` -- module-level singleton guard:
@@ -291,22 +293,22 @@ not structural changes
 
 ---
 
-## Revised Phase 5: Data Flow Unification (2 weeks)
+### Revised Phase 5: Data Flow Unification (2 weeks)
 
-### Goal
+#### Goal
 Single path from MCP tool -> ControllerRegistry -> IStorage. No bridge. No fallbacks.
 
-### Original ADR-0076 approach
+#### Original ADR-0076 approach
 Delete memory-bridge.ts (3,603 lines). Delete sql.js fallback paths from
 memory-initializer.ts (~1,800 lines). Rewrite memory-tools.ts and agentdb-tools.ts.
 Rated VERY HIGH upstream risk.
 
-### Upstream compatibility assessment
+#### Upstream compatibility assessment
 **NOT compatible.** memory-bridge.ts (3,603 lines) and memory-initializer.ts (2,929
 lines) are actively maintained in the ruflo upstream. Deleting either one guarantees
 permanent, irreconcilable divergence.
 
-### Revised approach: Route Around, Don't Delete
+#### Revised approach: Route Around, Don't Delete
 
 **New files (we own):**
 - `@claude-flow/cli/src/memory/memory-router.ts` -- single entry point for all memory
@@ -375,53 +377,9 @@ paths themselves, and our dead code problem resolves organically.
 **Files created:** 2 (memory-router.ts, migration-legacy.ts)
 **Upstream merge conflict risk:** None for bridge/initializer. Low for tools files.
 
----
+### Consequences
 
-## Dependency DAG (Revised)
-
-```
-Track A (ships first, no dependencies between items)
-  A1 cosineSim fix
-  A2 circuitBreaker fix
-  A3 dimension validation
-  A4 dual-instance guard
-
-Track B (revised)
-  Phase 1: Config (new files)  ---------> Phase 3: Embedding Pipeline (new files)
-                                                      |
-  Phase 2: IStorage interface (new files) ----------> Phase 5: Memory Router (new files)
-                                                      |
-  Phase 4: Controller Intercept (new files) -------> Phase 5: Memory Router (new files)
-```
-
-Unchanged from original: Phase 5 requires Phases 2, 3, and 4. Phases 1-4 are
-independent of each other.
-
----
-
-## Comparison: Original vs. Revised
-
-| Metric | Original Track B | Revised Track B |
-|--------|-----------------|-----------------|
-| Files deleted from upstream | 4 (hybrid, agentdb-backend, rvf-embedding, memory-bridge) | 0 |
-| Files split in upstream | 1 (controller-registry -> 5) | 0 |
-| New files (we own) | 8 | 11 |
-| Lines changed in upstream files | ~500+ | ~80 |
-| Merge conflict risk | HIGH (Phases 2,4,5) | NONE to LOW |
-| Dead code removed | ~9,555 lines | ~0 (bypassed instead) |
-| Dead code in tree | ~0 | ~6,400 (bridge + sql.js paths + hybrid-backend) |
-| Correctness bugs fixed | All 5 | All 5 |
-| Config unification | Yes | Yes |
-| Embedding unification | Yes | Yes |
-| Controller dedup | Yes | Yes |
-| Single data flow | Yes | Yes |
-| Upstream PR candidates | 0 | 6+ |
-
----
-
-## Trade-Off Analysis
-
-### What we sacrifice
+What we sacrifice (Bad):
 
 1. **Dead code remains in the tree.** ~6,400 lines of unreachable code (memory-bridge.ts,
    sql.js fallback, hybrid-backend.ts) continue to exist. This has no runtime cost. It
@@ -440,7 +398,7 @@ independent of each other.
    correct -- all instances are shared, caches are coherent, and the public API is
    unchanged.
 
-### What we gain
+What we gain (Good):
 
 1. **Zero merge conflict risk.** Every upstream sync is a clean fast-forward on the files
    that matter. We never have to resolve 3-way merges on controller-registry.ts,
@@ -464,7 +422,47 @@ independent of each other.
    controllers, single data flow, dead code bypassed. The runtime behavior is identical
    to the original plan. Only the file tree differs.
 
----
+### Confirmation
+
+Test coverage: 44 new tests (unit + integration + wiring) in `tests/unit/memory-router-adr0077.test.mjs`; all 1437 unit tests pass with 0 regressions. The comparison table below quantifies the merge-conflict and correctness outcomes of the revised plan versus the original.
+
+## Comparison: Original vs. Revised
+
+| Metric | Original Track B | Revised Track B |
+|--------|-----------------|-----------------|
+| Files deleted from upstream | 4 (hybrid, agentdb-backend, rvf-embedding, memory-bridge) | 0 |
+| Files split in upstream | 1 (controller-registry -> 5) | 0 |
+| New files (we own) | 8 | 11 |
+| Lines changed in upstream files | ~500+ | ~80 |
+| Merge conflict risk | HIGH (Phases 2,4,5) | NONE to LOW |
+| Dead code removed | ~9,555 lines | ~0 (bypassed instead) |
+| Dead code in tree | ~0 | ~6,400 (bridge + sql.js paths + hybrid-backend) |
+| Correctness bugs fixed | All 5 | All 5 |
+| Config unification | Yes | Yes |
+| Embedding unification | Yes | Yes |
+| Controller dedup | Yes | Yes |
+| Single data flow | Yes | Yes |
+| Upstream PR candidates | 0 | 6+ |
+
+## Dependency DAG (Revised)
+
+```
+Track A (ships first, no dependencies between items)
+  A1 cosineSim fix
+  A2 circuitBreaker fix
+  A3 dimension validation
+  A4 dual-instance guard
+
+Track B (revised)
+  Phase 1: Config (new files)  ---------> Phase 3: Embedding Pipeline (new files)
+                                                      |
+  Phase 2: IStorage interface (new files) ----------> Phase 5: Memory Router (new files)
+                                                      |
+  Phase 4: Controller Intercept (new files) -------> Phase 5: Memory Router (new files)
+```
+
+Unchanged from original: Phase 5 requires Phases 2, 3, and 4. Phases 1-4 are
+independent of each other.
 
 ## Upstream PR Candidates (Prioritized)
 
@@ -481,8 +479,6 @@ If upstream accepts PRs 1-3, our Phase 1 and Phase 3 patches shrink to near zero
 If upstream accepts PRs 5-6, our Phase 2 and Phase 4 become pure consumers of
 upstream utilities.
 
----
-
 ## Implementation Timeline
 
 | Phase | Duration | Blocked by | New files | Patches to upstream files |
@@ -496,8 +492,6 @@ upstream utilities.
 
 This is comparable to the original 4-6 week estimate with dramatically lower ongoing
 maintenance cost.
-
----
 
 ## Recommendation
 
@@ -516,8 +510,6 @@ maintenance cost.
 
 5. **Phase 5 last**, after 2-4 are stable. This is the payoff phase where the single
    data flow path comes together.
-
----
 
 ## Implementation Notes (2026-04-11)
 
@@ -558,10 +550,6 @@ and initializer's ControllerRegistry instances.
 - `memory-initializer.ts` -- untouched except Phase 3's 4-line pipeline redirect;
   **11 bridge try-blocks removed by ADR-0085**, now pure SQLite CRUD
 
-### Test coverage
-- 44 new tests (unit + integration + wiring) in `tests/unit/memory-router-adr0077.test.mjs`
-- All 1437 unit tests pass, 0 regressions
-
 ## ADR-0085 Supersession Note (2026-04-13)
 
 ADR-0077's design deliberately left memory-bridge.ts and memory-initializer.ts untouched
@@ -573,3 +561,7 @@ eliminated all external callers, finding:
 
 ADR-0077's Phases 1-5 remain valid as implemented. ADR-0085 extends Phase 5 by
 completing the dead code removal that ADR-0077 deferred.
+
+## More Information
+
+Original status: "Implemented (Phases 1-5)." Recorded 2026-04-06; implemented 2026-04-11. This ADR depends on ADR-0075 (assessment), ADR-0076 (original plan), and ADR-0073 (storage upgrade); it supersedes ADR-0076's Track B (Phases 1-5) and is continued by ADR-0078 (bridge elimination from agentdb tools). ADR-0085 later completed the dead-code removal that this ADR deferred.

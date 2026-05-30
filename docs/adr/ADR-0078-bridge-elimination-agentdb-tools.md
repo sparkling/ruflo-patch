@@ -1,12 +1,15 @@
-# ADR-0078: Bridge Elimination from AgentDB Tools
+---
+status: accepted
+date: 2026-04-11
+tags: [agentdb, bridge, controllers, memory]
+supersedes: []
+depends-on: [ADR-0077, ADR-0076]
+implements: []
+---
 
-- **Status**: Implemented (Phases 1-3)
-- **Implemented**: 2026-04-11
-- **Date**: 2026-04-11
-- **Depends on**: ADR-0077 (Phase 5 data flow), ADR-0076 Phase 4 (controller-intercept)
-- **Continues**: ADR-0077 Track B
+# Bridge Elimination from AgentDB Tools
 
-## Context
+## Context and Problem Statement
 
 ADR-0077 Phase 5 established `memory-router.ts` as the single entry point for memory
 operations. `memory-tools.ts` (6 handlers) routes entirely through the router with zero
@@ -19,9 +22,15 @@ functions into 3 tiers by migration complexity.
 Phases 1 and 2 were implemented immediately. Phase 3 was completed by
 ADR-0083 Wave 1 (2026-04-12).
 
-## Decision
+## Considered Options
 
-Eliminate bridge dependency from `agentdb-tools.ts` in 3 phases.
+* **Eliminate bridge dependency from `agentdb-tools.ts` in 3 phases (chosen).**
+
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "Eliminate bridge dependency from `agentdb-tools.ts` in 3 phases", because the bridge functions categorize into 3 tiers by migration complexity, allowing a staged migration that preserves correctness and rollback safety.
 
 ---
 
@@ -285,6 +294,14 @@ internal bridge dependencies (4 of 16) require substituting `routeMemoryOp()` fo
 `bridgeStoreEntry`/`bridgeSearchEntries` — these substitutions must be validated
 with integration tests before merging.
 
+### Consequences
+
+* Neutral, because the runtime detail and trade-offs of the migration are captured in the per-phase sections above; the original record did not enumerate a separate consequences list.
+
+### Confirmation
+
+Each migrated handler is covered by a unit test (mocked `getController()`), a behavioral equivalence test against the public MCP interface, and an acceptance test against a live Verdaccio-published package, as detailed in the Test requirements section above.
+
 ---
 
 ## Comparison: Current State and After Phase 3
@@ -324,3 +341,7 @@ moved to router as `initControllerRegistry()`), and the 11 remaining try-bridge
 paths in memory-initializer.ts. The `bridgeRecordFeedback` and `bridgeSessionStart/End`
 patterns identified in Upstream PR Candidates above are now implemented as
 `routeFeedbackOp` and `routeSessionOp` in memory-router.ts.
+
+## More Information
+
+Original status: "Implemented (Phases 1-3)", implemented 2026-04-11. This ADR depends on ADR-0077 (Phase 5 data flow) and ADR-0076 Phase 4 (controller-intercept), and continues ADR-0077 Track B.

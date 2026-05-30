@@ -1,10 +1,9 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-24
 tags: [no-fallbacks, fail-loud, embedding, wasm, rbac, plugins, audit-followup, ct-a]
 supersedes: []
-depends-on: [0095, 0201, 0233]
+depends-on: [ADR-0095, ADR-0201, ADR-0233]
 implements: []
 ---
 
@@ -88,7 +87,7 @@ Checked ADRs 0202–0232 + 0233 for the same surface/mechanism:
 
 Conclusion: no sibling-ADR overlap. Closest neighbours ([[ADR-0209]], [[ADR-0210]]) operate on different code classes. This ADR carves the work along the loader-cascade seam.
 
-## Considered options
+## Considered Options
 
 * **Option A — Per-site fail-loud throw, no escape hatch.** Throw at every loader boundary; no `RUFLO_ALLOW_*` opt-in. Mirrors the 2026-05-23 [[ADR-0095]] amendment's posture verbatim.
 * **Option B — Per-site fail-loud throw with explicit dev opt-in.** Add an environment-variable opt-in (e.g. `RUFLO_ALLOW_HASH_EMBEDDING=1`) for local development. User has already rejected this shape for RVF in the 2026-05-23 amendment ("dont do this: `RUFLO_ALLOW_PURE_TS_FALLBACK`. Just fail loud").
@@ -96,7 +95,7 @@ Conclusion: no sibling-ADR overlap. Closest neighbours ([[ADR-0209]], [[ADR-0210
 * **Option D — Per-site disposition: throw / delete-fabrication / fix-description.** Differentiate by site: throw at semantically-wrong fallbacks (embeddings, RBAC); fix the description at dishonest-advertising fallbacks (plugins IPFS); restore upstream warn at fork-regressed sites (vector-db).
 * **Option E — Status quo, rely on contributor discipline.** Document that operators must monitor stderr for `[embedding-pipeline]` warnings; no code change. Same shape as [[ADR-0232]] Option D and rejected on the same grounds — operator-burden mitigation only.
 
-## Decision outcome
+## Decision Outcome
 
 **Chosen: Option A — per-site fail-loud throw, no escape hatch.** Mirrors the 2026-05-23 [[ADR-0095]] amendment posture; user has rejected the `RUFLO_ALLOW_*` shape on the closest precedent. Per-site disposition follows:
 
@@ -137,7 +136,7 @@ Each fix carries:
 | 4 | `forks/ruflo/v3/@claude-flow/cli/src/commands/claims.ts` | 265-271 | F-04-002 | CRITICAL | fail-closed: return `success:false, exitCode:1` on policy-load error |
 | 5 | `forks/ruflo/v3/@claude-flow/cli/src/commands/plugins.ts` | 220, 230, 311-313 | F-01-008 | HIGH | rewrite description to honest npm wording; guard `--source ipfs` with throw |
 
-## Consequences
+### Consequences
 
 * Good, because closes the [[feedback-no-fallbacks]] regression surface at 5 of the audit's 26 immediate-flag CRITICAL/HIGH sites; [[ADR-0095]] amendment's principle finally applies uniformly to its sibling loaders.
 * Good, because each fix surfaces a deployment fact (missing native binding, missing policy file, unimplemented IPFS) as a real error rather than as silently-degraded behaviour the operator only notices when search recall is mysteriously poor.
@@ -149,6 +148,8 @@ Each fix carries:
 * Neutral, because removing the silent fallback does not by itself wire `embeddings_status` to surface the live provider (F-08-008 carry-forward); the operator's recovery story remains "read the throw, install the binding".
 
 ## More information
+
+This decision was completed.
 
 * [[ADR-0095]] amendment 2026-05-23 — surgical fail-loud applied to `rvf-backend.ts`; this ADR extends the same posture to the 5 sibling loaders.
 * [[ADR-0201]] — pre-flight checklist source.

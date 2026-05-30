@@ -1,11 +1,9 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-20
-deferred-date: 2026-05-23
 tags: [federation, quic, crdt, vector-clock, sync, multi-writer, changelog, reconciliation, auth, phase5, swarm-reviewed]
-supersedes: [0205, 0206]
-depends-on: [0199, 0200, 0201]
+supersedes: [ADR-0205, ADR-0206]
+depends-on: [ADR-0199, ADR-0200, ADR-0201]
 implements: []
 ---
 
@@ -578,6 +576,8 @@ verified orphan-free. State: quarantine code-work is 0% done in the fork (clean
 slate, not stale).
 
 ## More Information
+
+This decision was completed; the multi-writer build was deferred on 2026-05-23.
 
 * **Canonical design (aspirational, unbuilt upstream):**
   `ruvnet/agentdb/docs/quic/QUIC-ARCHITECTURE.md` — §3.4 conflict matrix,

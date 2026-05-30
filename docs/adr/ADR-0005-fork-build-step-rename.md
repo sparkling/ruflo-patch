@@ -1,10 +1,15 @@
-# ADR-0005: Fork + Build-Step Rename for Package Independence
+---
+status: accepted
+date: 2026-03-05
+tags: [fork, codemod, pipeline, npm]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-## Status
+# Fork + Build-Step Rename for Package Independence
 
-Implemented
-
-## Context
+## Context and Problem Statement
 
 ### Specification (SPARC-S)
 
@@ -44,7 +49,19 @@ ON build trigger:
   IF tests fail: gh issue create
 ```
 
-## Decision
+## Considered Options
+
+* **Fork upstream repos as clean mirrors; apply scope rename as a build-time codemod, never committed (chosen).**
+* **Verdaccio (private registry)** — Rejected. Zero code rewrites, but publishes under original package names to a local registry. Cannot publish to public npm under someone else's scope (`@claude-flow`). Suitable as a bridge for immediate local use, but does not solve public distribution.
+* **Committed scope rename in fork** — Rejected. Modifies ~4,136 files in the fork's source tree. Every `git merge upstream/main` conflicts on any file that both we (for the rename) and upstream (for new features) touched. With 933+ unpublished commits and active development, this means hundreds to thousands of merge conflicts per sync. The fork eventually becomes unmergeable.
+* **Expanded patches (inject into npx cache)** — Rejected. Architect consensus: "When you need to backport 933 commits across 21 sub-packages and 1,074 JS files, you are not patching -- you are maintaining a shadow fork. The patch abstraction obscures what is really happening." npx cache invalidation destroys everything. Fundamentally the wrong abstraction for this scale of divergence.
+* **npm link** — Rejected. `npx` is incompatible with symlinked packages. `npm install` silently removes symlinks. Not distributable to others without them repeating the entire setup process. Symlink fragility in production workflows is unacceptable.
+* **esbuild fat bundle** — Rejected. Dynamic imports in `memory-bridge.js` break bundling. Native addons (`better-sqlite3`, ruvector napi-rs) cannot be bundled. Only handles ~30 of 48 packages.
+* **Git subtree mega-repo** — Rejected. Subtree merges create messy history. Must harmonize 3 different workspace systems (pnpm, npm workspaces, Cargo). Not npx compatible without additional steps.
+
+## Decision Outcome
+
+Chosen option: "Fork upstream repos as clean mirrors; apply scope rename as a build-time codemod, never committed to the fork", because the fork stays permanently syncable (no committed modifications) while public distribution is achieved via a build-time transform and standard npm publish.
 
 ### Architecture (SPARC-A)
 
@@ -57,38 +74,20 @@ The codemod is the key asset. It transforms ~4,136 files per build:
 
 The pipeline is: `git pull` (0 conflicts) -> copy to temp -> codemod -> patches -> build -> publish. The fork stays permanently syncable because no modifications are ever committed to it.
 
-### Considered Alternatives
+### Consequences
 
-1. **Verdaccio (private registry)** — Rejected. Zero code rewrites, but publishes under original package names to a local registry. Cannot publish to public npm under someone else's scope (`@claude-flow`). Suitable as a bridge for immediate local use, but does not solve public distribution.
-
-2. **Committed scope rename in fork** — Rejected. Modifies ~4,136 files in the fork's source tree. Every `git merge upstream/main` conflicts on any file that both we (for the rename) and upstream (for new features) touched. With 933+ unpublished commits and active development, this means hundreds to thousands of merge conflicts per sync. The fork eventually becomes unmergeable.
-
-3. **Expanded patches (inject into npx cache)** — Rejected. Architect consensus: "When you need to backport 933 commits across 21 sub-packages and 1,074 JS files, you are not patching -- you are maintaining a shadow fork. The patch abstraction obscures what is really happening." npx cache invalidation destroys everything. Fundamentally the wrong abstraction for this scale of divergence.
-
-4. **npm link** — Rejected. `npx` is incompatible with symlinked packages. `npm install` silently removes symlinks. Not distributable to others without them repeating the entire setup process. Symlink fragility in production workflows is unacceptable.
-
-5. **esbuild fat bundle** — Rejected. Dynamic imports in `memory-bridge.js` break bundling. Native addons (`better-sqlite3`, ruvector napi-rs) cannot be bundled. Only handles ~30 of 48 packages.
-
-6. **Git subtree mega-repo** — Rejected. Subtree merges create messy history. Must harmonize 3 different workspace systems (pnpm, npm workspaces, Cargo). Not npx compatible without additional steps.
-
-## Consequences
-
-### Refinement (SPARC-R)
-
-**Positive:**
-
-- Zero merge conflicts on upstream sync -- the fork is a clean mirror with no modifications
-- Public distribution via standard npm toolchain -- anyone can `npm install ruflo`
-- Enhancement patches (FB-001, FB-002) are baked into published packages -- no runtime patching
-- Build pipeline is Node.js-only (no Rust toolchain) because ruvector packages are used as-is from public npm
-- Automated builds via systemd timer (every 6 hours) with prerelease gating
-
-**Negative:**
-
-- ~4,136 files transformed per build adds build time (mitigated by running on 32-core server)
-- The codemod itself is a critical piece of infrastructure that must be maintained as upstream evolves
-- If upstream adds new package names or changes import patterns, the codemod must be updated
-- Build failures from upstream breaking changes require manual investigation
+* Good, because zero merge conflicts on upstream sync -- the fork is a clean mirror with no modifications.
+* Good, because public distribution via standard npm toolchain -- anyone can `npm install ruflo`.
+* Good, because enhancement patches (FB-001, FB-002) are baked into published packages -- no runtime patching.
+* Good, because the build pipeline is Node.js-only (no Rust toolchain) because ruvector packages are used as-is from public npm.
+* Good, because automated builds via systemd timer (every 6 hours) with prerelease gating.
+* Bad, because ~4,136 files transformed per build adds build time (mitigated by running on 32-core server).
+* Bad, because the codemod itself is a critical piece of infrastructure that must be maintained as upstream evolves.
+* Bad, because if upstream adds new package names or changes import patterns, the codemod must be updated.
+* Bad, because build failures from upstream breaking changes require manual investigation.
+* Neutral, because all repos are MIT-licensed -- forking and republishing is explicitly permitted.
+* Neutral, because precedent exists: `@sparkleideas/claude-flow-patch` already published on npm as a third-party fork.
+* Neutral, because original LICENSE and copyright notices preserved in every republished package.
 
 **Trade-offs and edge cases:**
 
@@ -97,13 +96,9 @@ The pipeline is: `git pull` (0 conflicts) -> copy to temp -> codemod -> patches 
 - The 2 RED semver conflicts (`@ruvector/ruvllm ^0.2.3` vs `2.5.1`, `agentdb` dual-track alpha) exist in upstream source and are not introduced or resolved by our approach
 - If upstream eventually publishes current packages, our fork becomes unnecessary -- this is the desired outcome
 
-**Neutral:**
+### Confirmation
 
-- All repos are MIT-licensed -- forking and republishing is explicitly permitted
-- Precedent exists: `@sparkleideas/claude-flow-patch` already published on npm as a third-party fork
-- Original LICENSE and copyright notices preserved in every republished package
-
-### Completion (SPARC-C)
+Completion (SPARC-C):
 
 - [x] Upstream repos forked as clean mirrors on GitHub
 - [x] npm scope `@sparkleideas` registered

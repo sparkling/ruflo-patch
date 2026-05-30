@@ -1,19 +1,13 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-23
-methodology: [MADR, architectural-decision, substrate-pivot]
-decision-makers: [Henrik Pettersen]
 tags: [memory, substrate, rvf, sqlite, hnsw, fts5, adr-125, archivist, reconvergence, upstream-alignment]
-depends-on: [0177, 0180, 0181, 0228]
 supersedes: []
-partial-supersedes-disposition: [0228 — Batch S source-conflict deferral of ADR-125 picks]
-related: [0085, 0086, 0094, 0095, 0112, 0161, 0170, 0174, 0175, 0179]
-references-upstream: [ruvnet/ruflo:ADR-125 Phases 1-7, ruvnet/agentdb:ADR-006, ruvnet/agentdb:ADR-009]
-audience: ai-executor
+depends-on: [ADR-0177, ADR-0180, ADR-0181, ADR-0228]
+implements: []
 ---
 
-# ADR-0230: Re-converge memory substrate layer with upstream ADR-125 (preserve Archivist above MCP)
+# Re-converge memory substrate layer with upstream ADR-125 (preserve Archivist above MCP)
 
 > **Pivot**: ADR-0228 Batch S deferred all 5 upstream ADR-125 substrate phases as "source-conflict" because fork's substrate diverged from upstream's `HybridBackend` direction. Re-reading upstream's commit bodies shows upstream is now fixing several bugs that motivated the fork-side divergence. This ADR re-disposes those picks: take Phases 1 + 3 + 5 + 6 + 7 verbatim (with brand codemod), adapt Phase 2 (HybridBackend wire) to fork's `agentdb`-as-separate-package reality, adapt Phase 4 (MemoryConsolidator) to coexist with the fork's Archivist (ADR-0180). The Archivist layer ABOVE MCP dispatch stays fork-original; the substrate layer BELOW MCP re-converges with upstream.
 
@@ -229,6 +223,8 @@ Each phase runs as a separate background agent batch; sequential by exit gate. P
 4. Phase 4's adapter disables upstream's 6h `setInterval` timer. The Archivist's `runMaintenance` cadence policy is currently undefined — this ADR defers the policy to ADR-0181 Phase 5 (`cli delegation`) which is where maintenance triggers naturally live.
 
 ## More information
+
+This decision was completed. Methodology: MADR, architectural-decision, substrate-pivot. Decision-maker: Henrik Pettersen. Audience: ai-executor. It partially supersedes the disposition recorded in ADR-0228 (Batch S source-conflict deferral of the ADR-125 picks). It also relates to ADR-0085, ADR-0086, ADR-0094, ADR-0095, ADR-0112, ADR-0161, ADR-0170, ADR-0174, ADR-0175, and ADR-0179, and references the upstream records `ruvnet/ruflo:ADR-125 Phases 1-7`, `ruvnet/agentdb:ADR-006`, and `ruvnet/agentdb:ADR-009`.
 
 * **Upstream ADR-125**: at upstream commit `4e9a33ce` for Phase 1; subsequent phases follow chronologically through `7dd4b525`.
 * **Fork ADR-0180**: the Archivist architectural decision (substrate-orthogonal layer above MCP).

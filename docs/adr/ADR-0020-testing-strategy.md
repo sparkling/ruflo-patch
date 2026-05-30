@@ -1,12 +1,15 @@
-# ADR-0020: Testing Strategy
+---
+status: superseded
+date: 2026-03-05
+tags: [testing, pipeline, ci, verdaccio]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-## Status
+# Testing Strategy
 
-Superseded by [ADR-0037](ADR-0037-test-reorganization.md)
-
-## Context
-
-### Specification (SPARC-S)
+## Context and Problem Statement
 
 The ruflo build pipeline spans 13 scripts, 3 config files, and 7 patch directories. The review report (O5) identified that no ADR specifies which tests to run, how to validate the pipeline end-to-end, or how to handle flaky upstream tests. Without a testing strategy, confidence in the pipeline depends on manual spot-checks, and regressions go undetected until a broken package is published.
 
@@ -17,8 +20,6 @@ The testing challenge has three distinct layers:
 3. **Acceptance tests** -- Can a user actually `npx ruflo init` and get a working environment?
 
 Each layer requires different infrastructure. Unit tests need nothing external. Integration tests need upstream source code. Acceptance tests need published packages (or a local registry simulating npm).
-
-### Pseudocode (SPARC-P)
 
 ```
 TEST LAYERS:
@@ -54,13 +55,21 @@ LAYER 3 — Acceptance tests (scripts/test-acceptance.sh):
   -> Requires published packages, ~2 min
 ```
 
-## Decision
+## Considered Options
 
-### Architecture (SPARC-A)
+* **Adopt a 3-layer testing strategy (chosen)** — independently runnable unit, integration, and acceptance layers, each building on the previous layer's confidence.
+* **Only unit tests, skip integration** -- Rejected. Unit tests verify individual components but cannot catch the class of bugs that emerge from component interaction: codemod output that doesn't compile, publish order that misses a new package, patches that conflict with codemod transforms. The 933-commit divergence from upstream makes integration testing essential -- we cannot predict what the codemod will encounter.
+* **Run upstream's full test suite as a gate** -- Rejected as a hard gate. Upstream tests were not designed for a renamed scope and may contain hardcoded paths, network calls, or flaky timing. Treating upstream test failures as build-blocking would cause frequent false-positive build failures. Instead, upstream tests run in advisory mode with a known-failures baseline.
+* **GitHub Actions for testing** -- Rejected for the same reasons as ADR-0009: costs money, our server is more powerful, and the pipeline is a single linear sequence. Integration tests run locally on the build server.
+* **Docker-based integration tests** -- Rejected as premature. Docker adds a layer of indirection (building images, managing volumes, networking Verdaccio) without proportional benefit. The test script uses temp directories and process management directly. If the test environment needs isolation in the future (multiple maintainers, different Node versions), Docker can be added.
+* **Snapshot testing (golden files)** -- Considered for the codemod. Would snapshot the codemod output of a known input and compare byte-for-byte on subsequent runs. Rejected because upstream changes frequently (933 commits ahead), making snapshots stale quickly. The grep-based verification (zero `@claude-flow/` references remaining) is more resilient to upstream changes.
+* **End-to-end tests against real npm** -- Rejected as a regular practice. Publishing test versions to real npm pollutes the version history and risks confusing users. Verdaccio provides an identical npm API locally. Real npm is only tested during the actual first publish (Stage B) and subsequent promotions.
+
+## Decision Outcome
+
+Chosen option: "Adopt a 3-layer testing strategy", because each layer is independently runnable and builds on the previous layer's confidence, providing defense in depth without coupling fast feedback to heavyweight infrastructure.
 
 > **Note (2026-03-16):** L0-L4 test level naming removed per user feedback. Use plain names: preflight, unit, acceptance.
-
-Adopt a 3-layer testing strategy. Each layer is independently runnable and builds on the previous layer's confidence.
 
 **Layer 1: Unit Tests**
 
@@ -164,20 +173,6 @@ The systemd timer cannot be unit-tested, but its behavior can be validated:
 | Secret rotation works | Rotate npm token, verify next build publishes | Annual or on-demand |
 
 These are documented as a manual checklist, not automated tests. Automating systemd timer behavior would require a VM or container, which is disproportionate to the value.
-
-### Considered Alternatives
-
-1. **Only unit tests, skip integration** -- Rejected. Unit tests verify individual components but cannot catch the class of bugs that emerge from component interaction: codemod output that doesn't compile, publish order that misses a new package, patches that conflict with codemod transforms. The 933-commit divergence from upstream makes integration testing essential -- we cannot predict what the codemod will encounter.
-
-2. **Run upstream's full test suite as a gate** -- Rejected as a hard gate. Upstream tests were not designed for a renamed scope and may contain hardcoded paths, network calls, or flaky timing. Treating upstream test failures as build-blocking would cause frequent false-positive build failures. Instead, upstream tests run in advisory mode with a known-failures baseline.
-
-3. **GitHub Actions for testing** -- Rejected for the same reasons as ADR-0009: costs money, our server is more powerful, and the pipeline is a single linear sequence. Integration tests run locally on the build server.
-
-4. **Docker-based integration tests** -- Rejected as premature. Docker adds a layer of indirection (building images, managing volumes, networking Verdaccio) without proportional benefit. The test script uses temp directories and process management directly. If the test environment needs isolation in the future (multiple maintainers, different Node versions), Docker can be added.
-
-5. **Snapshot testing (golden files)** -- Considered for the codemod. Would snapshot the codemod output of a known input and compare byte-for-byte on subsequent runs. Rejected because upstream changes frequently (933 commits ahead), making snapshots stale quickly. The grep-based verification (zero `@claude-flow/` references remaining) is more resilient to upstream changes.
-
-6. **End-to-end tests against real npm** -- Rejected as a regular practice. Publishing test versions to real npm pollutes the version history and risks confusing users. Verdaccio provides an identical npm API locally. Real npm is only tested during the actual first publish (Stage B) and subsequent promotions.
 
 ### Reproducibility
 
@@ -341,43 +336,24 @@ exit $FAIL
 
 This script is idempotent and non-destructive — it reads state but changes nothing. Run it after setup, after reboots, or as a periodic health check.
 
-### Cross-References
+### Consequences
 
-- ADR-0009: systemd timer (the CI mechanism being tested)
-- ADR-0013: Codemod (Layer 1 tests in `04-codemod.test.mjs`, Layer 2 Phase 3)
-- ADR-0014: Topological publish (Layer 1 tests in `06-publish-order.test.mjs`, Layer 2 Phase 7)
-- ADR-0015: First-publish bootstrap (Layer 1 tests in `05-pipeline-logic.test.mjs`)
-- ADR-0016: Dynamic import audit (`scripts/audit-dynamic-imports.sh` runs as part of Layer 2 Phase 3 verification)
-- ADR-0017: Semver patches (Layer 2 Phase 4)
+* Good, because three layers provide defense in depth: fast unit tests catch logic bugs, integration tests catch interaction bugs, acceptance tests catch user-facing bugs.
+* Good, because Verdaccio enables full end-to-end testing without any risk to public npm.
+* Good, because the known-failures baseline prevents upstream test flakiness from blocking builds.
+* Good, because each layer is independently runnable -- a developer can run `npm test` in seconds without needing upstream clones or Verdaccio.
+* Good, because the integration test script doubles as a validation tool for the first real publish -- run it once against Verdaccio, then against npm with the same confidence.
+* Good, because unit tests run as a gate in the build pipeline, catching regressions before they reach npm.
+* Bad, because integration tests require ~10 minutes and upstream clones (~2GB disk). Not suitable for rapid iteration during development.
+* Bad, because Verdaccio must be installed separately (`npm i -g verdaccio`). One more prerequisite for the build server.
+* Bad, because the known-failures baseline must be maintained as upstream evolves -- new test failures need triage (is it our fault or upstream's?).
+* Bad, because acceptance tests depend on `ruflo init` behavior, which is upstream code we don't control. If upstream changes the init flow, these tests break.
+* Neutral, because if Verdaccio fails to start (port conflict, missing binary), the integration test script exits with a clear error and does not proceed to publish.
+* Neutral, because if upstream adds a new `@claude-flow/*` package that isn't in our codemod mapping, the integration test's grep check (zero `@claude-flow/` references) will catch it as a failure.
+* Neutral, because if upstream removes a package we list in `config/publish-levels.json`, the publish phase will fail to find the package directory; the integration test catches this before a real build does.
+* Neutral, because if the build server has insufficient disk space for temp directories (~4GB per integration test run), the test fails at the copy phase with a clear error.
 
-## Consequences
-
-### Refinement (SPARC-R)
-
-**Positive:**
-
-- Three layers provide defense in depth: fast unit tests catch logic bugs, integration tests catch interaction bugs, acceptance tests catch user-facing bugs
-- Verdaccio enables full end-to-end testing without any risk to public npm
-- Known-failures baseline prevents upstream test flakiness from blocking builds
-- Each layer is independently runnable -- a developer can run `npm test` in seconds without needing upstream clones or Verdaccio
-- The integration test script doubles as a validation tool for the first real publish -- run it once against Verdaccio, then against npm with the same confidence
-- Unit tests run as a gate in the build pipeline, catching regressions before they reach npm
-
-**Negative:**
-
-- Integration tests require ~10 minutes and upstream clones (~2GB disk). Not suitable for rapid iteration during development
-- Verdaccio must be installed separately (`npm i -g verdaccio`). One more prerequisite for the build server
-- The known-failures baseline must be maintained as upstream evolves -- new test failures need triage (is it our fault or upstream's?)
-- Acceptance tests depend on `ruflo init` behavior, which is upstream code we don't control. If upstream changes the init flow, these tests break
-
-**Edge cases:**
-
-- If Verdaccio fails to start (port conflict, missing binary), the integration test script exits with a clear error and does not proceed to publish
-- If upstream adds a new `@claude-flow/*` package that isn't in our codemod mapping, the integration test's grep check (zero `@claude-flow/` references) will catch it as a failure
-- If upstream removes a package we list in `config/publish-levels.json`, the publish phase will fail to find the package directory. The integration test catches this before a real build does
-- If the build server has insufficient disk space for temp directories (~4GB per integration test run), the test fails at the copy phase with a clear error
-
-### Completion (SPARC-C)
+### Confirmation
 
 Acceptance criteria:
 
@@ -404,3 +380,15 @@ Reproducibility criteria:
 - [x] `scripts/validate-ci.sh` exists and performs non-destructive CI health checks
 - [x] Unit tests produce TAP output in addition to console output
 - [ ] Two runs against the same snapshot + same tool versions produce identical pass/fail results
+
+## More Information
+
+- Superseded by [ADR-0037](ADR-0037-test-reorganization.md) (test-reorganization). Original status: "Superseded by ADR-0037".
+- Cross-references (the original recorded these as related decisions):
+  - ADR-0009: systemd timer (the CI mechanism being tested).
+  - ADR-0013: Codemod (Layer 1 tests in `04-codemod.test.mjs`, Layer 2 Phase 3).
+  - ADR-0014: Topological publish (Layer 1 tests in `06-publish-order.test.mjs`, Layer 2 Phase 7).
+  - ADR-0015: First-publish bootstrap (Layer 1 tests in `05-pipeline-logic.test.mjs`).
+  - ADR-0016: Dynamic import audit (`scripts/audit-dynamic-imports.sh` runs as part of Layer 2 Phase 3 verification).
+  - ADR-0017: Semver patches (Layer 2 Phase 4).
+- The original record used SPARC section headings (Specification / Pseudocode / Architecture / Refinement / Completion); these were remapped to the canonical MADR sections during the ADR-0271 migration, preserving all content.

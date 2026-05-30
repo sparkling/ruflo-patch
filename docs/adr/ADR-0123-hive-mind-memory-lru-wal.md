@@ -1,13 +1,15 @@
-# ADR-0123: Hive-mind collective memory — RVF-backed storage with LRU cache and SQLite WAL
+---
+status: accepted
+date: 2026-05-02
+tags: [hive-mind, memory, rvf, durability]
+supersedes: []
+depends-on: [ADR-0116, ADR-0118, ADR-0122]
+implements: []
+---
 
-- **Status**: **Implemented (2026-05-03)** per ADR-0118 §Status (T5 complete; fork 8d423a346 + ruflo-patch b61811f). Cites: `forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hive-mind-tools.ts:180` (`loadHiveState` — RVF read + LRU front), `:201` (`saveHiveState` — RVF write-through), `:181-189` (silent `catch {}` removed); `forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts` (`appendToWal:1917`, tmp-fsync-rename:2513, dir-fsync:2538 — durability primitive inherited); `forks/ruflo/v3/@claude-flow/memory/src/sqlite-backend.ts:121` (defensive `PRAGMA journal_mode = WAL` assertion target); `tests/unit/adr0123-lru-cache.test.mjs`, `tests/unit/adr0123-rvf-backend.test.mjs`, `tests/unit/adr0123-sigkill-durability.test.mjs`; `lib/acceptance-adr0123-hive-memory-checks.sh` (concurrent-write 100% durability, SIGKILL crash-durability, no-silent-catch — wired in `scripts/test-acceptance.sh`).
-- **Date**: 2026-05-02
-- **Deciders**: Henrik Pettersen
-- **Depends on**: ADR-0116 (hive-mind marketplace plugin), ADR-0118 (hive-mind runtime gaps tracker, §T5), ADR-0122 (T4 typed memory shape — LRU caches the typed entries, not legacy flat dict)
-- **Related**: ADR-0086 Debt 7 (better-sqlite3 / sql.js placement history), ADR-0114 (hive-mind 3-layer architecture)
-- **Scope**: Fork-side change to `forks/ruflo` collective-memory backend. Per `feedback-no-upstream-donate-backs.md`, this stays on `sparkling/main`.
+# Hive-mind collective memory — RVF-backed storage with LRU cache and SQLite WAL
 
-## Context
+## Context and Problem Statement
 
 ADR-0118 §T5 identifies the collective-memory backend as a partial-coverage row in the hive-mind runtime matrix. Current persistence is a single JSON file with no read cache, no RVF integration, and a silent error-swallowing read path:
 
@@ -41,27 +43,6 @@ ADR-0122 (T4) introduces the typed memory shape `{ value, type, ttlMs, expiresAt
 - **(b) JSON-file with fsync barriers** — keep JSON storage but add explicit `fsync` after every write before the existing rename, relying on the host filesystem to durably commit.
 - **(c) SQLite-first with RVF as a cache layer in front** — promote SQLite to primary store, treat RVF as a hot-path cache.
 
-## Pros and Cons of the Options
-
-### (a) RVF + LRU, inheriting RVF's WAL
-
-- Pros: honours `project-rvf-primary`; the durability primitive is real (RVF appends every store to a `.wal` sidecar, then compacts under a JS lock, then writes the main `.rvf` via tmp + fsync + rename per ADR-0095 d11); LRU bounds read latency without blocking writes; corrupt-state errors propagate naturally once the silent `catch {}` is removed; T4 typed shape lives at the cache boundary; no new SQLite co-import (Debt 7 invariant intact).
-- Cons:
-  - Cross-process cache coherency is punted: daemon and CLI hold independent process-local LRUs. Documented as "RVF is source of truth; stale caches resolve on next `loadHiveState`" — not enforced. If a real coherency bug surfaces under load, a future ADR adds explicit invalidation messaging.
-  - LRU `maxEntries` is operator-tunable (`RUFLO_HIVE_CACHE_MAX`, default 1024). A queen with 10K+ hot entries thrashes the default; eviction-rate metric makes this observable.
-  - SQLite fallback path (`sqlite-backend.ts`) is not exercised by hive memory in the happy path; its WAL behaviour matters only if RVF init fails and the hybrid backend selector falls back. Verified that `sqlite-backend.ts` already issues `PRAGMA journal_mode = WAL` at line 121, so the fallback inherits real WAL via better-sqlite3 — no additional pragma work needed.
-  - sql.js compatibility is **not in scope**: no path in `v3/@claude-flow/memory/src/` imports sql.js. If a future variant of RVF or the hybrid selector adds a sql.js path, durability cannot be assumed under SIGKILL there (sql.js operates against an in-memory virtual filesystem; `db.export()` is the only persistence primitive — see §Risks #6 (sql.js out-of-scope)).
-
-### (b) JSON-file with fsync barriers
-
-- Pros: smallest diff; no new dependency surface; transparent to existing readers; preserves ADR-0104 §5 atomic rename + ADR-0098-style cross-process lock that already protect against torn JSON.
-- Cons: violates `project-rvf-primary` (JSON-first); single full-state rewrite per mutation does not scale with T4's per-entry typed shape (every `set` rewrites the whole `sharedMemory` map); no read cache; fsync alone is not a write-ahead log — a crash between two related entry writes still produces "either old state or new state, not both" only because the rename is atomic, not because there is incremental durability of partial mutations; preserves the silent `catch {}` unless we also restructure error handling. Net effect: incrementally safer than today but architecturally pinned to JSON, blocking T6 (session lifecycle) and T4's per-entry RVF row mapping.
-
-### (c) SQLite-first with RVF as cache
-
-- Pros: WAL is native via better-sqlite3; mature concurrent-write story; `sqlite-backend.ts` already exists and is wired.
-- Cons: directly violates `project-rvf-primary` (SQLite-first); inverts the primary/fallback ordering the project memory codified; reintroduces the better-sqlite3-vs-sql.js placement question that ADR-0086 Debt 7 already settled three times (any future "make SQLite work in browser/wasm contexts" pressure would push toward the sql.js co-import this rule forbids); reframes RVF as a cache, which is exactly the architectural inversion the rule was written to prevent.
-
 ## Decision Outcome
 
 Chosen option: **(a) RVF + process-local LRU, inheriting RVF's existing WAL stack**. Trace to drivers:
@@ -76,35 +57,6 @@ Chosen option: **(a) RVF + process-local LRU, inheriting RVF's existing WAL stac
 
 Options (b) and (c) each fail the `project-rvf-primary` gate; (b) additionally gives no incremental durability beyond what ADR-0104's atomic rename already provides.
 
-## Consequences
-
-### Positive
-
-- `project-rvf-primary` honoured: RVF is the source of truth; JSON file is migrated and demoted to `state.json.legacy` (preserved, not deleted, per `feedback-data-loss-zero-tolerance`).
-- Corrupt-state errors surface loudly per `feedback-no-fallbacks`; the silent `catch {}` is removed.
-- Concurrent durability inherits RVF's existing JS WAL + fsync + atomic rename. The 100% bar in `feedback-data-loss-zero-tolerance` is delivered by an existing, exercised primitive — not invented here.
-- Cache layer is small, observable (hit/miss counters, eviction-rate metric), and tunable (`RUFLO_HIVE_CACHE_MAX`).
-- T5 caches the T4 typed shape directly — no rewrite on T4 landing.
-
-### Negative
-
-- Cross-process cache coherency is punted to the backend: if the daemon and a CLI process both hold caches, RVF remains the source of truth but stale caches are possible until next `loadHiveState`. Documented, not enforced.
-- Cache eviction policy needs tuning. Default `maxEntries = 1024` is a guess; an operator with a large hive may need to bump `RUFLO_HIVE_CACHE_MAX`. Eviction-rate metric makes the under-sizing case observable.
-- The SQLite fallback path is invoked only on RVF init failure; its durability behaviour is verified at acceptance time (asserting `journal_mode=wal` on the better-sqlite3 connection) but is not on the happy path. If RVF init fails routinely, that is a separate bug to investigate, not a hidden durability degradation here.
-- This ADR does **not** address sql.js durability — no memory-package code path uses sql.js (excepting the read-only one-way migration tool at `rvf-migration.ts:128`), and sql.js does not provide a real WAL (its only persistence primitive is `db.export()` of the full virtual-filesystem blob). If a future change introduces a sql.js memory path, that change must justify its own durability story; this ADR's 100% claim is scoped to RVF-primary + better-sqlite3-fallback only. See §Risks #6.
-- Power-loss durability (fsync) not addressed here either; deferred to ADR-0130 (RVF WAL fsync durability). RVF's `.wal` sidecar uses `appendFile` (`rvf-backend.ts:488-491`), which does not fsync the WAL append before the JS lock is released. SIGKILL-with-intact-page-cache is covered by this ADR; true power-loss durability requires an RVF-side change owned by ADR-0130.
-
-## Validation
-
-- **Acceptance — `check_adr0123_concurrent_write_durability`** in `lib/acceptance-adr0123-hive-memory-checks.sh`: spawn N concurrent writers each calling `hive-mind_memory set` with distinct keys; after all complete, every key is readable. **100% — any data loss fails the check**, per `feedback-data-loss-zero-tolerance`. Wired into `scripts/test-acceptance.sh` post-init parallel wave.
-- **Acceptance — `check_adr0123_sigkill_crash_durability`** (same file; canonical durability gate, also covered at the unit/integration layer in `tests/unit/adr0123-sigkill-durability.test.mjs`): kill the writer mid-batch via `SIGKILL`; on restart, every committed entry survives and no half-written entry exists. This is the **SIGKILL-without-power-loss** case — page cache remains intact, which is what RVF's existing `appendToWal` + tmp-fsync-rename stack guarantees. Runs sequentially after the parallel wave joins (kills processes — must not race other parallel checks). **True power-loss durability (fsync drops) is OUT OF SCOPE for T5 — see ADR-0130 (RVF WAL fsync durability).**
-- **Acceptance — `check_adr0123_loadstate_no_silent_catch`** (same file): pre-place a `state.rvf` containing a deliberately corrupt entry; `hive-mind_memory get` MUST throw, not return default state. Asserts `feedback-no-fallbacks` removal of the silent `catch {}`.
-- **Integration — `tests/unit/adr0123-rvf-backend.test.mjs`**: RVF round-trip; legacy JSON migration to `state.json.legacy` (non-destructive); SQLite-fallback path asserts `journal_mode=wal` on the better-sqlite3 connection (defensive — already the default since better-sqlite3 v8.x).
-- **Unit — `tests/unit/adr0123-lru-cache.test.mjs`**: LRU eviction order, cache hit/miss counters, typed-entry (`MemoryEntry` shape from ADR-0122) round-trip through cache.
-- **ADR-0086 Debt 7 invariant** (existing acceptance, runs as precondition): no dist file co-imports better-sqlite3 + sql.js. Verified again post-implementation.
-
-## Decision
-
 **Replace JSON-file persistence in `loadHiveState`/`saveHiveState` with RVF-backed storage fronted by a process-local LRU cache. Inherit RVF's existing JS WAL + fsync + atomic rename for durability. Verify (defensively) that the SQLite fallback path's `PRAGMA journal_mode = WAL` is engaged.** The cache key space is the typed-shape entry map from ADR-0122; cache values are the typed records (`MemoryEntry`), not flat strings.
 
 After this ADR lands:
@@ -115,6 +67,58 @@ After this ADR lands:
 - Concurrent-write durability is **100%**, not 99.9% — per `feedback-data-loss-zero-tolerance.md`. A 99.x rate-of-loss is treated as not fixed.
 
 The LRU layer is process-local (one cache per CLI invocation; daemon has its own). Cross-process coherency is the storage backend's responsibility, not the cache's — when the daemon and an interactive CLI both hold caches, RVF is the source of truth and either reader re-reads on next `loadHiveState`. This keeps the cache layer simple; cross-process invalidation is out of scope for T5.
+
+### Consequences
+
+* Good, because `project-rvf-primary` is honoured: RVF is the source of truth; JSON file is migrated and demoted to `state.json.legacy` (preserved, not deleted, per `feedback-data-loss-zero-tolerance`).
+* Good, because corrupt-state errors surface loudly per `feedback-no-fallbacks`; the silent `catch {}` is removed.
+* Good, because concurrent durability inherits RVF's existing JS WAL + fsync + atomic rename. The 100% bar in `feedback-data-loss-zero-tolerance` is delivered by an existing, exercised primitive — not invented here.
+* Good, because the cache layer is small, observable (hit/miss counters, eviction-rate metric), and tunable (`RUFLO_HIVE_CACHE_MAX`).
+* Good, because T5 caches the T4 typed shape directly — no rewrite on T4 landing.
+* Bad, because cross-process cache coherency is punted to the backend: if the daemon and a CLI process both hold caches, RVF remains the source of truth but stale caches are possible until next `loadHiveState`. Documented, not enforced.
+* Bad, because cache eviction policy needs tuning. Default `maxEntries = 1024` is a guess; an operator with a large hive may need to bump `RUFLO_HIVE_CACHE_MAX`. Eviction-rate metric makes the under-sizing case observable.
+* Bad, because the SQLite fallback path is invoked only on RVF init failure; its durability behaviour is verified at acceptance time (asserting `journal_mode=wal` on the better-sqlite3 connection) but is not on the happy path. If RVF init fails routinely, that is a separate bug to investigate, not a hidden durability degradation here.
+* Bad, because this ADR does **not** address sql.js durability — no memory-package code path uses sql.js (excepting the read-only one-way migration tool at `rvf-migration.ts:128`), and sql.js does not provide a real WAL (its only persistence primitive is `db.export()` of the full virtual-filesystem blob). If a future change introduces a sql.js memory path, that change must justify its own durability story; this ADR's 100% claim is scoped to RVF-primary + better-sqlite3-fallback only. See §Risks #6.
+* Bad, because power-loss durability (fsync) is not addressed here either; deferred to ADR-0130 (RVF WAL fsync durability). RVF's `.wal` sidecar uses `appendFile` (`rvf-backend.ts:488-491`), which does not fsync the WAL append before the JS lock is released. SIGKILL-with-intact-page-cache is covered by this ADR; true power-loss durability requires an RVF-side change owned by ADR-0130.
+
+### Confirmation
+
+- **Acceptance — `check_adr0123_concurrent_write_durability`** in `lib/acceptance-adr0123-hive-memory-checks.sh`: spawn N concurrent writers each calling `hive-mind_memory set` with distinct keys; after all complete, every key is readable. **100% — any data loss fails the check**, per `feedback-data-loss-zero-tolerance`. Wired into `scripts/test-acceptance.sh` post-init parallel wave.
+- **Acceptance — `check_adr0123_sigkill_crash_durability`** (same file; canonical durability gate, also covered at the unit/integration layer in `tests/unit/adr0123-sigkill-durability.test.mjs`): kill the writer mid-batch via `SIGKILL`; on restart, every committed entry survives and no half-written entry exists. This is the **SIGKILL-without-power-loss** case — page cache remains intact, which is what RVF's existing `appendToWal` + tmp-fsync-rename stack guarantees. Runs sequentially after the parallel wave joins (kills processes — must not race other parallel checks). **True power-loss durability (fsync drops) is OUT OF SCOPE for T5 — see ADR-0130 (RVF WAL fsync durability).**
+- **Acceptance — `check_adr0123_loadstate_no_silent_catch`** (same file): pre-place a `state.rvf` containing a deliberately corrupt entry; `hive-mind_memory get` MUST throw, not return default state. Asserts `feedback-no-fallbacks` removal of the silent `catch {}`.
+- **Integration — `tests/unit/adr0123-rvf-backend.test.mjs`**: RVF round-trip; legacy JSON migration to `state.json.legacy` (non-destructive); SQLite-fallback path asserts `journal_mode=wal` on the better-sqlite3 connection (defensive — already the default since better-sqlite3 v8.x).
+- **Unit — `tests/unit/adr0123-lru-cache.test.mjs`**: LRU eviction order, cache hit/miss counters, typed-entry (`MemoryEntry` shape from ADR-0122) round-trip through cache.
+- **ADR-0086 Debt 7 invariant** (existing acceptance, runs as precondition): no dist file co-imports better-sqlite3 + sql.js. Verified again post-implementation.
+
+## Pros and Cons of the Options
+
+### (a) RVF + LRU, inheriting RVF's WAL
+
+- Good, because it honours `project-rvf-primary`; the durability primitive is real (RVF appends every store to a `.wal` sidecar, then compacts under a JS lock, then writes the main `.rvf` via tmp + fsync + rename per ADR-0095 d11); LRU bounds read latency without blocking writes; corrupt-state errors propagate naturally once the silent `catch {}` is removed; T4 typed shape lives at the cache boundary; no new SQLite co-import (Debt 7 invariant intact).
+- Bad, because:
+  - Cross-process cache coherency is punted: daemon and CLI hold independent process-local LRUs. Documented as "RVF is source of truth; stale caches resolve on next `loadHiveState`" — not enforced. If a real coherency bug surfaces under load, a future ADR adds explicit invalidation messaging.
+  - LRU `maxEntries` is operator-tunable (`RUFLO_HIVE_CACHE_MAX`, default 1024). A queen with 10K+ hot entries thrashes the default; eviction-rate metric makes this observable.
+  - SQLite fallback path (`sqlite-backend.ts`) is not exercised by hive memory in the happy path; its WAL behaviour matters only if RVF init fails and the hybrid backend selector falls back. Verified that `sqlite-backend.ts` already issues `PRAGMA journal_mode = WAL` at line 121, so the fallback inherits real WAL via better-sqlite3 — no additional pragma work needed.
+  - sql.js compatibility is **not in scope**: no path in `v3/@claude-flow/memory/src/` imports sql.js. If a future variant of RVF or the hybrid selector adds a sql.js path, durability cannot be assumed under SIGKILL there (sql.js operates against an in-memory virtual filesystem; `db.export()` is the only persistence primitive — see §Risks #6 (sql.js out-of-scope)).
+
+### (b) JSON-file with fsync barriers
+
+- Good, because of the smallest diff; no new dependency surface; transparent to existing readers; preserves ADR-0104 §5 atomic rename + ADR-0098-style cross-process lock that already protect against torn JSON.
+- Bad, because it violates `project-rvf-primary` (JSON-first); single full-state rewrite per mutation does not scale with T4's per-entry typed shape (every `set` rewrites the whole `sharedMemory` map); no read cache; fsync alone is not a write-ahead log — a crash between two related entry writes still produces "either old state or new state, not both" only because the rename is atomic, not because there is incremental durability of partial mutations; preserves the silent `catch {}` unless we also restructure error handling. Net effect: incrementally safer than today but architecturally pinned to JSON, blocking T6 (session lifecycle) and T4's per-entry RVF row mapping.
+
+### (c) SQLite-first with RVF as cache
+
+- Good, because WAL is native via better-sqlite3; mature concurrent-write story; `sqlite-backend.ts` already exists and is wired.
+- Bad, because it directly violates `project-rvf-primary` (SQLite-first); inverts the primary/fallback ordering the project memory codified; reintroduces the better-sqlite3-vs-sql.js placement question that ADR-0086 Debt 7 already settled three times (any future "make SQLite work in browser/wasm contexts" pressure would push toward the sql.js co-import this rule forbids); reframes RVF as a cache, which is exactly the architectural inversion the rule was written to prevent.
+
+## Validation
+
+- **Acceptance — `check_adr0123_concurrent_write_durability`** in `lib/acceptance-adr0123-hive-memory-checks.sh`: spawn N concurrent writers each calling `hive-mind_memory set` with distinct keys; after all complete, every key is readable. **100% — any data loss fails the check**, per `feedback-data-loss-zero-tolerance`. Wired into `scripts/test-acceptance.sh` post-init parallel wave.
+- **Acceptance — `check_adr0123_sigkill_crash_durability`** (same file; canonical durability gate, also covered at the unit/integration layer in `tests/unit/adr0123-sigkill-durability.test.mjs`): kill the writer mid-batch via `SIGKILL`; on restart, every committed entry survives and no half-written entry exists. This is the **SIGKILL-without-power-loss** case — page cache remains intact, which is what RVF's existing `appendToWal` + tmp-fsync-rename stack guarantees. Runs sequentially after the parallel wave joins (kills processes — must not race other parallel checks). **True power-loss durability (fsync drops) is OUT OF SCOPE for T5 — see ADR-0130 (RVF WAL fsync durability).**
+- **Acceptance — `check_adr0123_loadstate_no_silent_catch`** (same file): pre-place a `state.rvf` containing a deliberately corrupt entry; `hive-mind_memory get` MUST throw, not return default state. Asserts `feedback-no-fallbacks` removal of the silent `catch {}`.
+- **Integration — `tests/unit/adr0123-rvf-backend.test.mjs`**: RVF round-trip; legacy JSON migration to `state.json.legacy` (non-destructive); SQLite-fallback path asserts `journal_mode=wal` on the better-sqlite3 connection (defensive — already the default since better-sqlite3 v8.x).
+- **Unit — `tests/unit/adr0123-lru-cache.test.mjs`**: LRU eviction order, cache hit/miss counters, typed-entry (`MemoryEntry` shape from ADR-0122) round-trip through cache.
+- **ADR-0086 Debt 7 invariant** (existing acceptance, runs as precondition): no dist file co-imports better-sqlite3 + sql.js. Verified again post-implementation.
 
 ## Implementation plan
 
@@ -312,8 +316,15 @@ saveHiveState(state):
 6. **sql.js durability is out of scope, not solved.** sql.js operates against an in-memory virtual filesystem; setting `PRAGMA journal_mode = WAL` on it is a no-op for crash recovery (no `.wal` file exists in any persistent location, and the only persistence primitive is `db.export()` of the entire blob). This ADR avoids the problem by not introducing a sql.js memory path and asserting (via the Debt 7 invariant test) that none exists. If a future change introduces one, that change must justify a separate durability story or accept that it cannot meet `feedback-data-loss-zero-tolerance` for hive memory.
 7. **RVF appendFile-based WAL does not fsync** (`rvf-backend.ts:488-491`) — survives process-kill on intact page cache, NOT power loss. The acceptance gate for this ADR is SIGKILL-without-power-loss, which RVF's existing stack guarantees. Mitigation: ADR-0130 (RVF WAL fsync durability) escalates and owns the fsync-the-WAL-append change required for true power-loss durability. Not in T5 scope.
 
-## References
+## More Information
 
+Original status: **Implemented (2026-05-03)** per ADR-0118 §Status (T5 complete; fork 8d423a346 + ruflo-patch b61811f). Cites: `forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hive-mind-tools.ts:180` (`loadHiveState` — RVF read + LRU front), `:201` (`saveHiveState` — RVF write-through), `:181-189` (silent `catch {}` removed); `forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts` (`appendToWal:1917`, tmp-fsync-rename:2513, dir-fsync:2538 — durability primitive inherited); `forks/ruflo/v3/@claude-flow/memory/src/sqlite-backend.ts:121` (defensive `PRAGMA journal_mode = WAL` assertion target); `tests/unit/adr0123-lru-cache.test.mjs`, `tests/unit/adr0123-rvf-backend.test.mjs`, `tests/unit/adr0123-sigkill-durability.test.mjs`; `lib/acceptance-adr0123-hive-memory-checks.sh` (concurrent-write 100% durability, SIGKILL crash-durability, no-silent-catch — wired in `scripts/test-acceptance.sh`).
+
+This ADR depends on ADR-0116 (hive-mind marketplace plugin), ADR-0118 (hive-mind runtime gaps tracker, §T5), and ADR-0122 (T4 typed memory shape — LRU caches the typed entries, not legacy flat dict). It is related to ADR-0086 Debt 7 (better-sqlite3 / sql.js placement history) and ADR-0114 (hive-mind 3-layer architecture).
+
+Scope: Fork-side change to `forks/ruflo` collective-memory backend. Per `feedback-no-upstream-donate-backs.md`, this stays on `sparkling/main`.
+
+References:
 - ADR-0095 d11 — RVF tmp-fsync-rename durability (mechanism inherited here, not invented)
 - ADR-0098 — swarm-state O_EXCL lock pattern (model for the existing `withHiveStoreLock` at `hive-mind-tools.ts:212+`)
 - ADR-0104 §5 — atomic write (tmp + rename) in current `saveHiveState` (preserved for legacy-file rename only)
@@ -331,7 +342,7 @@ saveHiveState(state):
 - Source: `forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts` (verified 2616 lines; `RvfBackend` line 76; `appendToWal` line 1917; tmp-fsync-rename line 2513; dir-fsync line 2538; `RvfCorruptError` line 2573; `RvfNotInitializedError` line 2606)
 - Source: `forks/ruflo/v3/@claude-flow/memory/src/sqlite-backend.ts:121` (`PRAGMA journal_mode = WAL`, default — pre-existing)
 
-## Review notes
+### Review notes
 
 Open questions raised during review. None block the chosen option, but each should be confirmed before implementation merges.
 

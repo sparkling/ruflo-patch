@@ -1,12 +1,15 @@
-# ADR-0107: Queen type behavioral differentiation
+---
+status: superseded
+date: 2026-04-29
+tags: [hive-mind, queen, prompt, cli]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: **Superseded by ADR-0125 (2026-05-03)**. T7 complete in ADR-0118 §Status: per-type prompt prose + CLI validation + README correction shipped. State-persistence (persist queenType across sessions) deferred as ADR-0125 §Reconciliation follow-up.
-- **Date**: 2026-04-29 (promoted 2026-05-01)
-- **Roadmap**: ADR-0103 item 3
-- **Scope**: hive-mind queen types (`strategic` / `tactical` / `adaptive`) —
-  whether each value selects a distinct leadership pattern at runtime.
+# Queen type behavioral differentiation
 
-## Context
+## Context and Problem Statement
 
 README §Hive Mind Capabilities (line 214) claims:
 
@@ -104,7 +107,7 @@ necessarily prompt-shaped, not algorithm-shaped.
 - ❌ README claim: "Strategic (planning), Tactical (execution), Adaptive
   (optimization)" implies distinct leadership patterns. Today there are none.
 
-## Decision options
+## Considered Options
 
 ### Option A — Wire `QueenCoordinator` and add per-type strategy
 
@@ -171,7 +174,58 @@ This matches the ADR-0105 / ADR-0106 recommendation pattern: ship the
 honest, narrow improvement; preserve the orphaned class as future
 infrastructure; update the README to match the trust model and runtime.
 
-## Test plan
+## Decision Outcome
+
+Chosen option: "Option D (hybrid) — per-type prompt prose + CLI validation + state persistence + README correction, plus wiring QueenCoordinator as a daemon-resident advisor", because the trust model means any differentiation is necessarily prompt-shaped (one Queen process), so per-type prose blocks make the README claim honest with assertable static-content tests and no silent fallback, while wiring QueenCoordinator as a daemon-side advisor (per the import-ALL-features rule) adds capability-scored assignment, stall detection, and recovery without regressing ADR-0104's prompt-driven orchestrator.
+
+Ship **Option D (hybrid)**: per-type prompt prose + CLI validation + state
+persistence + README correction.
+
+Rationale:
+- The README claim becomes honest: the three queen types produce three
+  visibly different prompts that steer Claude toward three leadership
+  styles. Acceptance tests can assert this in static prompt content.
+- No silent fallback: `--queen-type banana` fails loudly per
+  `feedback-no-fallbacks.md`.
+- The orphaned `QueenCoordinator` class is annotated rather than deleted,
+  preserving optionality if a future daemon-resident coordinator
+  materializes (ADR-0106 §A1).
+- Effort matches the deflationary recommendation pattern of ADR-0105 /
+  ADR-0106: don't over-build a multi-process coordinator for a
+  single-Queen-process trust model.
+
+**Cross-reference to ADR-0105 (Topology) — load-bearing for this ADR**: ADR-0105's recommendation (consume both `TopologyManager` and `graph-backend.ts` per ADR-0111 §"Orphaned `swarm/src/` classes — per-class disposition") gives this ADR two primitives to draw on for the per-type prompt prose:
+- **TopologyManager** (in-process state, wired per ADR-0105 Option C): authoritative topology field surfaced via `mcp__ruflo__hive-mind_status`. Strategic queen prompt can reference "current topology" deterministically; tactical queen can use `electLeader` semantics; adaptive queen can call `rebalance` when load shifts.
+- **`graph-backend.ts`** (NAPI cross-hive durable graph, adopted via ADR-087 on next upstream merge): adaptive queen's "re-weight worker assignment based on observed success patterns" reads collaboration history via `getNeighbors(nodeId, hops)` and `recordCollaboration` calls.
+
+These are **complementary, not substitutes** — strategic/tactical queens lean on TopologyManager (live state); adaptive queen leans on graph-backend (historical patterns). Don't pick one; the per-type prose blocks should reference the right primitive per role.
+
+**`QueenCoordinator` (orphaned 2030-LOC class) — wire as daemon-resident advisor** (corrected per memory `feedback-no-value-judgements-on-features.md` — "import ALL features"). Earlier draft said "don't wire — conflicts with ADR-0104"; that was a value judgement to skip. Composition resolves the conflict:
+
+- **Orchestrator** (ADR-0104, unchanged): Queen runs as `claude --claude` subprocess, spawns workers via Task tool, writes to `mcp__ruflo__hive-mind_memory`.
+- **Advisor** (new wiring): QueenCoordinator runs in the long-lived ruflo daemon. Queen prompt calls `mcp__ruflo__queen_*` MCP tools that delegate to QueenCoordinator's deterministic logic — `queen_score_capabilities({task, agentIds})`, `queen_detect_stalls()`, `queen_recommend_replacement({stalledAgentId})`, `queen_select_topology_strategy({topology})`.
+- Both ship; the prompt-driven Queen *consults* the TS class for deterministic decisions while staying in `claude` for orchestration.
+- Annotation: `// QueenCoordinator runs as daemon-side advisor; ADR-0104's prompt-driven Queen is the orchestrator and calls into this class via MCP tools`.
+
+This adds capability-scored task assignment, stall detection, automatic recovery, per-topology coordination strategies, and performance-pattern training — all the QueenCoordinator capabilities — without regressing ADR-0104. ~150-200 LOC of MCP-tool surface + the existing 2030-LOC class wired through. See ADR-0111 §"Orphaned `swarm/src/` classes — per-class wire-up plan" for the canonical plan.
+
+A follow-up ADR (post-ADR-0109 worker failure handling) can decide whether
+the adaptive queen's "re-weight worker assignment based on observed
+success patterns" hooks back into ReasoningBank — that needs ADR-0108's
+worker role taxonomy first.
+
+### Consequences
+
+* Good, because the README claim becomes honest: three queen types produce three visibly different prompts steering Claude toward three leadership styles, assertable in static prompt-content acceptance tests.
+* Good, because there is no silent fallback: `--queen-type banana` fails loudly per `feedback-no-fallbacks.md`.
+* Good, because wiring QueenCoordinator as a daemon-side advisor adds capability-scored assignment, stall detection, recovery, and per-topology strategy without regressing ADR-0104's orchestrator.
+* Good, because `queenType` becomes authoritative state surfaced via `mcp__ruflo__hive-mind_status`, not just a prompt-header echo.
+* Bad, because prompt-shaped behavior is judged by the LLM (R1) — smoke tests of "strategic decomposes more than tactical" may be flaky, so acceptance must assert prompt content not Queen behavior.
+* Neutral, because state-persistence of `queenType` across sessions was deferred to ADR-0125's reconciliation follow-up.
+
+### Confirmation
+
+#### Test plan
 
 For whichever option ships:
 
@@ -275,40 +329,6 @@ If Option C (doc-only): just steps 4 and 5.
 - Queen-vs-queen handoff in federated scenarios — separate future ADR
   (referenced from ADR-0106 §D).
 
-## Recommendation
+## More Information
 
-Ship **Option D (hybrid)**: per-type prompt prose + CLI validation + state
-persistence + README correction.
-
-Rationale:
-- The README claim becomes honest: the three queen types produce three
-  visibly different prompts that steer Claude toward three leadership
-  styles. Acceptance tests can assert this in static prompt content.
-- No silent fallback: `--queen-type banana` fails loudly per
-  `feedback-no-fallbacks.md`.
-- The orphaned `QueenCoordinator` class is annotated rather than deleted,
-  preserving optionality if a future daemon-resident coordinator
-  materializes (ADR-0106 §A1).
-- Effort matches the deflationary recommendation pattern of ADR-0105 /
-  ADR-0106: don't over-build a multi-process coordinator for a
-  single-Queen-process trust model.
-
-**Cross-reference to ADR-0105 (Topology) — load-bearing for this ADR**: ADR-0105's recommendation (consume both `TopologyManager` and `graph-backend.ts` per ADR-0111 §"Orphaned `swarm/src/` classes — per-class disposition") gives this ADR two primitives to draw on for the per-type prompt prose:
-- **TopologyManager** (in-process state, wired per ADR-0105 Option C): authoritative topology field surfaced via `mcp__ruflo__hive-mind_status`. Strategic queen prompt can reference "current topology" deterministically; tactical queen can use `electLeader` semantics; adaptive queen can call `rebalance` when load shifts.
-- **`graph-backend.ts`** (NAPI cross-hive durable graph, adopted via ADR-087 on next upstream merge): adaptive queen's "re-weight worker assignment based on observed success patterns" reads collaboration history via `getNeighbors(nodeId, hops)` and `recordCollaboration` calls.
-
-These are **complementary, not substitutes** — strategic/tactical queens lean on TopologyManager (live state); adaptive queen leans on graph-backend (historical patterns). Don't pick one; the per-type prose blocks should reference the right primitive per role.
-
-**`QueenCoordinator` (orphaned 2030-LOC class) — wire as daemon-resident advisor** (corrected per memory `feedback-no-value-judgements-on-features.md` — "import ALL features"). Earlier draft said "don't wire — conflicts with ADR-0104"; that was a value judgement to skip. Composition resolves the conflict:
-
-- **Orchestrator** (ADR-0104, unchanged): Queen runs as `claude --claude` subprocess, spawns workers via Task tool, writes to `mcp__ruflo__hive-mind_memory`.
-- **Advisor** (new wiring): QueenCoordinator runs in the long-lived ruflo daemon. Queen prompt calls `mcp__ruflo__queen_*` MCP tools that delegate to QueenCoordinator's deterministic logic — `queen_score_capabilities({task, agentIds})`, `queen_detect_stalls()`, `queen_recommend_replacement({stalledAgentId})`, `queen_select_topology_strategy({topology})`.
-- Both ship; the prompt-driven Queen *consults* the TS class for deterministic decisions while staying in `claude` for orchestration.
-- Annotation: `// QueenCoordinator runs as daemon-side advisor; ADR-0104's prompt-driven Queen is the orchestrator and calls into this class via MCP tools`.
-
-This adds capability-scored task assignment, stall detection, automatic recovery, per-topology coordination strategies, and performance-pattern training — all the QueenCoordinator capabilities — without regressing ADR-0104. ~150-200 LOC of MCP-tool surface + the existing 2030-LOC class wired through. See ADR-0111 §"Orphaned `swarm/src/` classes — per-class wire-up plan" for the canonical plan.
-
-A follow-up ADR (post-ADR-0109 worker failure handling) can decide whether
-the adaptive queen's "re-weight worker assignment based on observed
-success patterns" hooks back into ReasoningBank — that needs ADR-0108's
-worker role taxonomy first.
+Status: superseded by ADR-0125 (2026-05-03). T7 complete in ADR-0118 §Status: per-type prompt prose + CLI validation + README correction shipped. State-persistence (persist queenType across sessions) deferred as ADR-0125 §Reconciliation follow-up. Dated 2026-04-29 (promoted 2026-05-01). Roadmap: ADR-0103 item 3. Scope: hive-mind queen types (`strategic` / `tactical` / `adaptive`) — whether each value selects a distinct leadership pattern at runtime. This ADR is superseded by ADR-0125.

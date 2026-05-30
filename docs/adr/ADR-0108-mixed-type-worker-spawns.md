@@ -1,13 +1,15 @@
-# ADR-0108: Mixed-type worker spawns
+---
+status: accepted
+date: 2026-04-29
+tags: [hive-mind, workers, cli, spawn]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: Accepted; **carry-forward as ADR-0118 T13, Implemented (2026-05-03)**. `validateWorkerType` wired at `hive-mind-tools.ts:1336` + `commands/hive-mind.ts:1317`; `--worker-types` flag + MCP `agentTypes` schema + round-robin distribution all live.
-- **Date**: 2026-04-29 (promoted 2026-05-01)
-- **Roadmap**: ADR-0103 item 4
-- **Scope**: hive-mind worker-type heterogeneity (`researcher` / `coder` /
-  `analyst` / `tester` / `architect` / `reviewer` / `optimizer` /
-  `documenter` — eight types, mixed in a single `spawn` call).
+# Mixed-type worker spawns
 
-## Context
+## Context and Problem Statement
 
 README claims, surveyed:
 
@@ -105,7 +107,7 @@ is also generic — no role-specific instruction is parameterized.
 - ⚠️ Workaround: multiple `spawn` calls accumulate; a single
   invocation cannot.
 
-## Decision options
+## Considered Options
 
 ### Option A — Add `--worker-types` flag (V2 parity, comma-separated)
 
@@ -156,7 +158,37 @@ Keeps `spawn` simple; powerful surface opt-in. Loops the spec, calls
 `hive-mind_spawn` per type, chains into `--claude`. Heavier than V2's
 flag for what is functionally batched spawn.
 
-## Test plan
+## Decision Outcome
+
+Chosen option: "Option A (V2-parity `--worker-types` flag + per-type prompt prose) paired with Option C's enum-validation fix", because V2 had this exact feature and the V2→V3 port lost it without an explicit decision; the 8-type enum already exists in the swarm package, the README already promises the surface, reusable per-type prose exists in V2 source for direct port, and a strict-superset flag with a mutex against `--type` preserves the single-spawn workflow.
+
+Ship **Option A** (V2-parity `--worker-types` flag + per-type prompt
+prose), paired with Option C's enum-validation fix on the MCP tool.
+
+Rationale: V2 had this exact feature; the V2→V3 port lost it without
+an explicit decision. The 8-type enum already exists in the swarm
+package, the README already promises the surface, and reusable
+per-type prose exists in V2 source for direct port. Scope is
+well-bounded — one new flag, one schema extension, one helper, one
+prompt enrichment — with mutex against `--type` preserving the
+single-spawn workflow.
+
+Defer Option D (`compose` subcommand). If mixed-spec spawning grows
+beyond comma-separated lists (weight specs, profiles, templates),
+revisit then. V2-parity is the correct ceiling for now.
+
+### Consequences
+
+* Good, because a single `spawn` call can now instantiate a mixed hive (the README's "8 worker types" claim becomes true at the CLI), restoring the V2 feature lost in the V3 port.
+* Good, because Option A is a strict superset of upstream's `--type` surface — every existing valid invocation continues to work (single-type fan-out is the degenerate one-element round-robin case).
+* Good, because enum validation closes the silent-acceptance bug (`--type fizzbuzz` now fails loud per `feedback-no-fallbacks.md`).
+* Good, because per-type prompt prose makes each worker role-specialized rather than generic.
+* Bad, because of the one behavioral change: unknown-type values that previously succeeded silently now exit 1 (an honest closing of a bug class, not a compat break).
+* Neutral, because Option D (`compose` subcommand) is deferred until mixed-spec spawning genuinely outgrows comma-separated lists.
+
+### Confirmation
+
+#### Test plan
 
 **Regression** (automated, runs in `test:acceptance`):
 
@@ -190,6 +222,28 @@ role-specific subtask assignment.
 paired per ADR-0097): flag parsing, round-robin distribution, enum
 validation, mutex with `--type`, `getWorkerTypeInstructions()`
 returns non-empty distinct prose for each of the 8 types.
+
+#### Backward compatibility (per memory `feedback-no-value-judgements-on-features.md` — wire ALL features)
+
+Option A is a **strict superset** of upstream's current `--type` surface. Every existing usage stays valid:
+
+| Form | Upstream supports | Post-ADR-0108 |
+|---|---|---|
+| `spawn --type researcher -n 5` (single type, fan-out) | ✅ | ✅ — preserved as the degenerate single-element case of `--worker-types`. Internal handling: when only `--type` is given (and `--worker-types` absent), the round-robin loop sees a 1-element array, producing N identical workers. Identical observable behavior to today. |
+| `spawn --type researcher` (single type, single worker) | ✅ | ✅ — preserved (same path). |
+| `spawn --worker-types researcher,coder,tester -n 6` (NEW comma-separated, mixed) | ❌ | ✅ — new V2-parity surface. Round-robin: 2× researcher, 2× coder, 2× tester. |
+| Worker prompt is `"You are a ${type} in the hive."` (free-form, no per-type prose) | ✅ | ✅ — preserved as the **fallback** when a `--worker-types` value has no per-type prose definition in `getWorkerTypeInstructions()`. Adding a worker-type via `--worker-types` that the helper doesn't know prints a warning + uses the free-form fallback. Per `feedback-no-fallbacks.md`, the warning is loud (not silent), but the spawn still proceeds — falling back to upstream's existing behavior preserves the upstream-supported worker shape. |
+| 8-type enum validation (`--type fizzbuzz` rejected) | ❌ (silently accepts) | ✅ — added per Option C. **This is a behavioral change**: `--type fizzbuzz` now exits 1 with `[ERROR] Invalid worker type 'fizzbuzz'. Allowed: researcher, coder, analyst, tester, architect, reviewer, optimizer, documenter` (per `feedback-no-fallbacks.md`). Upstream's silent acceptance was a bug class, not a feature; closing it is honoring `feedback-no-fallbacks.md`, not breaking compat. |
+| `--type` and `--worker-types` together | n/a | ❌ — mutex. Spec must use one or the other; using both exits 1 with `[ERROR] --type and --worker-types are mutually exclusive; use --worker-types for mixed spawns`. |
+
+**Net**: every upstream-valid invocation continues to work post-ADR-0108. The only existing invocations that change behavior are unknown-type values (which were silent bugs); per `feedback-no-fallbacks.md` they should fail loud, and upstream's ADR-092 explicitly endorses domain-specific validators for this pattern. Backward-compat is preserved for all valid forms.
+
+**Acceptance check** (regression): the existing acceptance harness asserts `spawn --type researcher -n 3` produces 3 worker records all with `agentType: 'researcher'`. After ADR-0108 this assertion stays — the round-robin path with a 1-element type array yields the same result.
+
+**MCP tool surface** (`hive-mind_spawn`):
+- Existing `agentType: <string>` parameter — preserved (single-type case).
+- New `agentTypes: <array<enum>>` parameter — added (mixed-type case).
+- Schema accepts either form; mutex enforced. Existing MCP-tool consumers using `agentType` see no change.
 
 ## Implementation plan
 
@@ -245,41 +299,6 @@ If Option A (recommended):
   cost outweighs the consistency gain.
 - README rewrite of capabilities table — covered by ADR-0101.
 
-## Recommendation
+## More Information
 
-Ship **Option A** (V2-parity `--worker-types` flag + per-type prompt
-prose), paired with Option C's enum-validation fix on the MCP tool.
-
-Rationale: V2 had this exact feature; the V2→V3 port lost it without
-an explicit decision. The 8-type enum already exists in the swarm
-package, the README already promises the surface, and reusable
-per-type prose exists in V2 source for direct port. Scope is
-well-bounded — one new flag, one schema extension, one helper, one
-prompt enrichment — with mutex against `--type` preserving the
-single-spawn workflow.
-
-Defer Option D (`compose` subcommand). If mixed-spec spawning grows
-beyond comma-separated lists (weight specs, profiles, templates),
-revisit then. V2-parity is the correct ceiling for now.
-
-### Backward compatibility (per memory `feedback-no-value-judgements-on-features.md` — wire ALL features)
-
-Option A is a **strict superset** of upstream's current `--type` surface. Every existing usage stays valid:
-
-| Form | Upstream supports | Post-ADR-0108 |
-|---|---|---|
-| `spawn --type researcher -n 5` (single type, fan-out) | ✅ | ✅ — preserved as the degenerate single-element case of `--worker-types`. Internal handling: when only `--type` is given (and `--worker-types` absent), the round-robin loop sees a 1-element array, producing N identical workers. Identical observable behavior to today. |
-| `spawn --type researcher` (single type, single worker) | ✅ | ✅ — preserved (same path). |
-| `spawn --worker-types researcher,coder,tester -n 6` (NEW comma-separated, mixed) | ❌ | ✅ — new V2-parity surface. Round-robin: 2× researcher, 2× coder, 2× tester. |
-| Worker prompt is `"You are a ${type} in the hive."` (free-form, no per-type prose) | ✅ | ✅ — preserved as the **fallback** when a `--worker-types` value has no per-type prose definition in `getWorkerTypeInstructions()`. Adding a worker-type via `--worker-types` that the helper doesn't know prints a warning + uses the free-form fallback. Per `feedback-no-fallbacks.md`, the warning is loud (not silent), but the spawn still proceeds — falling back to upstream's existing behavior preserves the upstream-supported worker shape. |
-| 8-type enum validation (`--type fizzbuzz` rejected) | ❌ (silently accepts) | ✅ — added per Option C. **This is a behavioral change**: `--type fizzbuzz` now exits 1 with `[ERROR] Invalid worker type 'fizzbuzz'. Allowed: researcher, coder, analyst, tester, architect, reviewer, optimizer, documenter` (per `feedback-no-fallbacks.md`). Upstream's silent acceptance was a bug class, not a feature; closing it is honoring `feedback-no-fallbacks.md`, not breaking compat. |
-| `--type` and `--worker-types` together | n/a | ❌ — mutex. Spec must use one or the other; using both exits 1 with `[ERROR] --type and --worker-types are mutually exclusive; use --worker-types for mixed spawns`. |
-
-**Net**: every upstream-valid invocation continues to work post-ADR-0108. The only existing invocations that change behavior are unknown-type values (which were silent bugs); per `feedback-no-fallbacks.md` they should fail loud, and upstream's ADR-092 explicitly endorses domain-specific validators for this pattern. Backward-compat is preserved for all valid forms.
-
-**Acceptance check** (regression): the existing acceptance harness asserts `spawn --type researcher -n 3` produces 3 worker records all with `agentType: 'researcher'`. After ADR-0108 this assertion stays — the round-robin path with a 1-element type array yields the same result.
-
-**MCP tool surface** (`hive-mind_spawn`):
-- Existing `agentType: <string>` parameter — preserved (single-type case).
-- New `agentTypes: <array<enum>>` parameter — added (mixed-type case).
-- Schema accepts either form; mutex enforced. Existing MCP-tool consumers using `agentType` see no change.
+Status: Accepted; carry-forward as ADR-0118 T13, Implemented (2026-05-03). `validateWorkerType` wired at `hive-mind-tools.ts:1336` + `commands/hive-mind.ts:1317`; `--worker-types` flag + MCP `agentTypes` schema + round-robin distribution all live. Dated 2026-04-29 (promoted 2026-05-01). Roadmap: ADR-0103 item 4. Scope: hive-mind worker-type heterogeneity (`researcher` / `coder` / `analyst` / `tester` / `architect` / `reviewer` / `optimizer` / `documenter` — eight types, mixed in a single `spawn` call).

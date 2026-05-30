@@ -1,22 +1,15 @@
-# ADR-0040: Pipeline Build Optimizations
+---
+status: accepted
+date: 2026-03-16
+tags: [pipeline, build, caching, performance]
+supersedes: []
+depends-on: [ADR-0038, ADR-0039]
+implements: []
+---
 
-## Status
+# Pipeline Build Optimizations
 
-Accepted (extends ADR-0038, ADR-0039)
-
-## Date
-
-2026-03-16
-
-## Deciders
-
-sparkling team
-
-## Methodology
-
-SPARC + MADR
-
-## Context
+## Context and Problem Statement
 
 The ruflo-patch pipeline already has 13 caching patterns (build manifest, WASM hash
 cache, package checksums, selective builds, parallel group compilation, etc.). However,
@@ -35,14 +28,24 @@ adding any new files:
 4. **Two separate `find` traversals** scan the build directory post-build. Combining
    them saves a small but measurable 200-300ms.
 
-### Decision Drivers
+## Decision Drivers
 
 1. Save 15-25s per pipeline run (currently ~2-3 min total)
 2. Zero new files — inline modifications only
 3. Build on existing caching patterns (WASM hash cache, build manifest)
 4. No risk of stale builds — all caches self-invalidate on change
 
-## Decision: Specification (SPARC-S)
+## Considered Options
+
+* **Four inline build optimizations across three existing scripts: TSC incremental, codemod per-file hash skip, toolchain TTL + deps hash, and a combined find traversal (chosen)**.
+
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "Four inline build optimizations across three existing scripts", because they save 15-25s per run with zero new files, build on the existing caching patterns, and all caches self-invalidate on change so there is no stale-build risk.
+
+### Specification (SPARC-S)
 
 Four optimizations targeting 3 existing files:
 
@@ -53,9 +56,9 @@ Four optimizations targeting 3 existing files:
 | 3 | Extend TSC toolchain TTL to 7 days + deps hash | build-packages.sh | 5-10s/week |
 | 4 | Combine post-build `find` calls | build-packages.sh | 200-300ms |
 
-## Pseudocode (SPARC-P)
+### Pseudocode (SPARC-P)
 
-### TSC Incremental
+#### TSC Incremental
 
 ```
 build_one_pkg():
@@ -67,7 +70,7 @@ copy_source rsync:
   --filter='P .tsbuildinfo'  # preserve across rsync --delete
 ```
 
-### Codemod Hash Cache
+#### Codemod Hash Cache
 
 ```
 transform(tempDir):
@@ -88,7 +91,7 @@ end of transform():
   save cache with _selfHash
 ```
 
-### Toolchain TTL + Deps Hash
+#### Toolchain TTL + Deps Hash
 
 ```
 deps_string = "typescript@5 zod@3 @types/express @types/cors @types/fs-extra"
@@ -102,7 +105,7 @@ else:
   write deps_hash to ${tsc_dir}/.deps-hash
 ```
 
-### Combined Find
+#### Combined Find
 
 ```
 # Before: two find traversals
@@ -114,9 +117,9 @@ find TEMP_DIR \( -name dist -type d \) -o \( -name package.json ... \) -print0 |
   while read: categorize as dist or package.json
 ```
 
-## Architecture (SPARC-A)
+### Architecture (SPARC-A)
 
-### Modified files
+#### Modified files
 
 | File | Changes |
 |------|---------|
@@ -124,39 +127,53 @@ find TEMP_DIR \( -name dist -type d \) -o \( -name package.json ... \) -print0 |
 | `scripts/copy-source.sh` | Preserve `.tsbuildinfo` in rsync filters |
 | `scripts/codemod.mjs` | Per-file hash cache with self-invalidation |
 
-### No new files
+#### No new files
 
 All changes are inline modifications to existing scripts. Cache artifacts are written
 to the existing `/tmp/ruflo-build/` and `/tmp/ruflo-tsc-toolchain/` directories.
 
-## Refinement (SPARC-R)
+### Refinement (SPARC-R)
 
-### Risk: Stale `.tsbuildinfo`
+#### Risk: Stale `.tsbuildinfo`
 
 If `.tsbuildinfo` becomes stale (e.g., file rename, tsconfig change), TSC silently
 falls back to a full rebuild. This is TSC's built-in behavior — no breakage possible.
 The `.tsbuildinfo` file is excluded from publish via `"files"` in package.json.
 
-### Risk: Codemod cache invalidation
+#### Risk: Codemod cache invalidation
 
 The cache stores a self-hash of `codemod.mjs` itself. Any change to the codemod logic
 invalidates the entire cache automatically. The cache is also pruned to only files
 scanned in the current run, preventing unbounded growth.
 
-### Risk: Toolchain TTL too long
+#### Risk: Toolchain TTL too long
 
 Deps are pinned with `--save-exact`, so version drift is impossible. A content hash
 of the dep string provides a secondary check — if deps change in the script, the
 toolchain reinstalls regardless of TTL. 7 days is safe for exact-pinned deps.
 
-### Risk: tsconfig.build.json deletion
+#### Risk: tsconfig.build.json deletion
 
 The previous cleanup removed `tsconfig.build.json` after each build. Since
 `.tsbuildinfo` stores the tsconfig path, deleting it forces a full rebuild on the
 next run, defeating incremental compilation. The fix: stop deleting the generated
 tsconfig, which is harmless to leave in place.
 
-## Completion (SPARC-C)
+### Consequences
+
+#### Completion (SPARC-C)
+
+* Good, because 10-20s saved per run from TSC incremental compilation
+* Good, because 2-3s saved per run from codemod file caching
+* Good, because 5-10s saved weekly from extended toolchain TTL
+* Good, because zero new files — all inline changes to 3 existing scripts
+* Good, because all caches self-invalidate on change (no stale build risk)
+* Good, because patterns consistent with existing WASM hash cache (build-wasm.sh:52-73)
+* Bad, because `.tsbuildinfo` files persist in `/tmp/ruflo-build` (~100KB total)
+* Bad, because `.codemod-file-cache.json` adds one more cache file to track
+* Bad, because slightly more complex cleanup if build dir is manually wiped (but `rm -rf` still works)
+
+### Confirmation
 
 1. `npm run test:unit` passes
 2. `npm run build` succeeds (first run — baseline)
@@ -166,19 +183,8 @@ tsconfig, which is harmless to leave in place.
 6. `npm run build` again — second run measurably faster
 7. No timing regression in pipeline
 
-## Consequences
+## More Information
 
-### Positive
+This ADR extends ADR-0038 and ADR-0039.
 
-- 10-20s saved per run from TSC incremental compilation
-- 2-3s saved per run from codemod file caching
-- 5-10s saved weekly from extended toolchain TTL
-- Zero new files — all inline changes to 3 existing scripts
-- All caches self-invalidate on change (no stale build risk)
-- Patterns consistent with existing WASM hash cache (build-wasm.sh:52-73)
-
-### Negative
-
-- `.tsbuildinfo` files persist in `/tmp/ruflo-build` (~100KB total)
-- `.codemod-file-cache.json` adds one more cache file to track
-- Slightly more complex cleanup if build dir is manually wiped (but `rm -rf` still works)
+This record used the SPARC + MADR methodology, with section headings (Specification / Pseudocode / Architecture / Refinement / Completion) remapped to the canonical MADR sections during the ADR-0271 migration, preserving all content. The deciders were the sparkling team. The H1 was recorded as "ADR-0040: ..." matching its sibling-suffix filename. Original status: "Accepted (extends ADR-0038, ADR-0039)".

@@ -1,11 +1,15 @@
-# ADR-0103: README claims investigation roadmap (post-ADR-0104)
+---
+status: superseded
+date: 2026-04-29
+tags: [readme, hive-mind, roadmap, investigation]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: **Superseded by ADR-0118 (2026-05-03)** for active work tracking; **paperwork-closed** as of 2026-05-03 with all 13 Tns (T1-T13) complete per ADR-0118 §Status table. The ratification program defined here (ADR-0105 / 0106 / 0107 / 0108 / 0109 / 0110 implementation verticals) is now operationalised through ADR-0118's task tracker (T1-T13) backed by per-task ADRs (ADR-0119 through ADR-0128, ADR-0130, ADR-0131, plus ADR-0108 retained as T13's design ADR). 100% coverage: ADR-0107 fully superseded by ADR-0125; ADR-0105/0106/0108/0110 partial-superseded with their residuals carried forward; ADR-0109's worker-failure prompt-protocol residual closed by T12/ADR-0131. **Carry-forward residuals** (the only items still open against this ADR): (a) ADR-0109 R8 sub-queen failure escalation — deferred to ADR-0132 follow-up; (b) ADR-0110 README delta on fork — audit pending. **Historical content preserved below** — V2→V3 regression diagnosis, README claim drift analysis, trust-model honesty thesis, and ratification ordering rationale remain useful for program-origin context. — Original status: Accepted (promoted 2026-05-01 per ADR-0111 W5 §Decision plan step 7). Implementation phase begins post-W5: 3 verticals (TopologyManager 656 LOC + QueenCoordinator 2030 LOC daemon-resident advisor + ConsensusEngine raft/gossip/byzantine wire-up). Cross-cutting recommendation: ADR-0105/0107/0109 consume upstream's `graph-backend.ts` (ADR-087) primitives (`recordSwarmTeam(agentIds, topology)`, `getNeighbors(nodeId, hops)`) rather than greenfielding equivalents. Each vertical closes one of ADR-0105/0106/0107/0109 from `Accepted` → `Implemented`. ADR-0111 closes via this dependency when all four are `Implemented`.
-- **Date**: 2026-04-29 (promoted 2026-05-01)
-- **Scope**: meta-ADR. Tracks per-claim investigations spawned from
-  ADR-0104's §Out-of-scope list. Does not itself decide implementations.
+# README claims investigation roadmap (post-ADR-0104)
 
-## Context
+## Context and Problem Statement
 
 ADR-0104 made the hive-mind plumbing real (Queen launches, workers
 coordinate via shared memory under a lock, end-to-end smoke verified
@@ -21,6 +25,8 @@ This roadmap allocates one ADR per claim and structures each
 investigation as: upstream research → current state (with the
 "runtime code exists but unused" verdict per item) → test plan →
 implementation plan.
+
+This is a meta-ADR. It tracks per-claim investigations spawned from ADR-0104's §Out-of-scope list. It does not itself decide implementations.
 
 ## The six items
 
@@ -113,3 +119,9 @@ If implementations are to proceed, dependency-respecting order:
 5. **ADR-0110 (Memory backend)** — README copy fix; orthogonal to all of the above.
 
 All six are **`Status: Investigating`** with recommendations. Each remains independently ratifiable; nothing in this roadmap is blocked on the others.
+
+## More Information
+
+This is a meta-ADR (roadmap) tracking per-claim investigations spawned from ADR-0104's §Out-of-scope list; it does not itself decide implementations. Dated 2026-04-29 (promoted 2026-05-01).
+
+Original status: "Superseded by ADR-0118 (2026-05-03) for active work tracking; paperwork-closed as of 2026-05-03 with all 13 Tns (T1-T13) complete per ADR-0118 §Status table." The ratification program defined here (ADR-0105 / 0106 / 0107 / 0108 / 0109 / 0110 implementation verticals) is now operationalised through ADR-0118's task tracker (T1-T13) backed by per-task ADRs (ADR-0119 through ADR-0128, ADR-0130, ADR-0131, plus ADR-0108 retained as T13's design ADR). For 100% coverage: ADR-0107 was fully superseded by ADR-0125; ADR-0105/0106/0108/0110 were partial-superseded with their residuals carried forward; ADR-0109's worker-failure prompt-protocol residual was closed by T12/ADR-0131. The only carry-forward residuals still open against this ADR are: (a) ADR-0109 R8 sub-queen failure escalation — deferred to ADR-0132 follow-up; (b) ADR-0110 README delta on fork — audit pending. The historical content above (V2→V3 regression diagnosis, README claim drift analysis, trust-model honesty thesis, and ratification ordering rationale) is preserved for program-origin context. The original pre-supersession status was "Accepted (promoted 2026-05-01 per ADR-0111 W5 §Decision plan step 7)", with the implementation phase beginning post-W5 across three verticals (TopologyManager 656 LOC + QueenCoordinator 2030 LOC daemon-resident advisor + ConsensusEngine raft/gossip/byzantine wire-up), and a cross-cutting recommendation that ADR-0105/0107/0109 consume upstream's `graph-backend.ts` (ADR-087) primitives (`recordSwarmTeam(agentIds, topology)`, `getNeighbors(nodeId, hops)`) rather than greenfielding equivalents. This ADR is superseded by ADR-0118 for active work tracking.

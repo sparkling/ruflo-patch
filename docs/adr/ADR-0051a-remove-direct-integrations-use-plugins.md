@@ -1,22 +1,15 @@
-# ADR-0051: Consolidate Direct Integrations into Plugin System
+---
+status: superseded
+date: 2026-03-17
+tags: [plugins, microkernel, architecture, refactor]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-## Status
+# Consolidate Direct Integrations into Plugin System
 
-Superseded by ADR-0089 (controller-intercept pattern) + ADR-0086 (L1 storage abstraction) — 2026-04-21. See Status Update 2026-04-21 below. Original architecture analysis preserved as reference for future upstream contribution.
-
-## Date
-
-2026-03-17
-
-## Deciders
-
-sparkling team, hive-mind queen-architect (binding ruling)
-
-## Methodology
-
-SPARC + MADR, with 6-agent swarm analysis and 5-specialist hive-mind deliberation
-
-## Context
+## Context and Problem Statement
 
 The upstream ruflo codebase contains direct, hardcoded integrations in core packages (`@claude-flow/cli`, `@claude-flow/shared`, `@claude-flow/plugins/src/integrations`, `@claude-flow/neural`, `@claude-flow/providers`) that violate the microkernel architecture established by ADR-004 and the unified plugin system specified by ADR-015.
 
@@ -87,11 +80,25 @@ Mechanisms require ~260 lines of interface + fallback implementations. Policies 
 | Test files (need selective editing) | 12 | 8,990 |
 | **Grand total** | **~85** | **~68,439** |
 
-## Decision: Specification (SPARC-S)
+## Considered Options
+
+This ADR records a binding hive-mind ruling; the competing positions weighed were the five specialist debaters' stances:
+
+* **Plugin Purist** — everything outside ADR-004's 5 items is a plugin. (FOR)
+* **Core Defender** — model routing is like an OS scheduler and should stay in core. (AGAINST on Q1, Q2, Q4)
+* **Pragmatist** — the principle is right; migrate in 9 gated rungs. (FOR, conditional)
+* **User Advocate** — users want lean installs, clear errors, progressive disclosure. (FOR)
+* **Microkernel Theorist** — ADR-004 already decided this; subsequent ADRs violated it. (FOR)
+
+## Decision Outcome
+
+Chosen option: "Enforce ADR-004's microkernel boundary by extracting all policy modules to plugins via a 9-rung deploy-gated migration ladder, keeping only mechanisms with minimal fallback implementations in core", because the mechanism-vs-policy test (5-1 consensus) shows the direct integrations hardwired policy into the kernel, and a gated ladder with complete in-core fallbacks resolves the Core Defender's degradation concern.
+
+### Specification (SPARC-S)
 
 Enforce ADR-004's microkernel boundary. Extract all policy modules to plugins. Core retains only mechanisms with minimal fallback implementations.
 
-### The true microkernel boundary
+#### The true microkernel boundary
 
 ```
 CORE (always present, always functional without any plugins):
@@ -127,7 +134,7 @@ PLUGINS (defaultEnabled: false — opt-in):
 
 **Boundary test**: delete every defaultEnabled plugin. The CLI starts, spawns agents, executes tasks, stores memories, serves MCP tools, routes tasks (round-robin), and classifies diffs (pass-through). It just does all of these things less intelligently. Intelligence is policy. Policy lives in plugins.
 
-### Requirements
+#### Requirements
 
 1. **R1**: Core contains ~260 lines of fallback mechanism implementations (`IIntelligenceRouter` + `FallbackRouter`, `IAnalysisEngine` + `FallbackClassifier`, `IMemoryBridge` + no-op bridge)
 2. **R2**: Every extracted feature becomes a `defaultEnabled: true` or `defaultEnabled: false` plugin
@@ -138,16 +145,16 @@ PLUGINS (defaultEnabled: false — opt-in):
 7. **R7**: Each rung gated by `npm run deploy` 55/55 before proceeding
 8. **R8**: If Rung 1 proves dynamic command loading unreliable, Rungs 5-7 defer
 
-### Out of scope
+#### Out of scope
 
 - The 7 core MCP tool sets (agent, task, session, memory, swarm, hooks, config) — these are mechanisms
 - `IMemoryBackend`, AgentDB adapter, HNSW index — core memory mechanisms
 - CLI framework, MCP server, plugin registry — core infrastructure
 - Changing plugin APIs or MCP tool schemas
 
-## Decision: Pseudocode (SPARC-P)
+### Pseudocode (SPARC-P)
 
-### Plugin infrastructure (already implemented upstream)
+#### Plugin infrastructure (already implemented upstream)
 
 ```
 // ALREADY EXISTS in plugin-interface.ts:
@@ -171,7 +178,7 @@ class PluginBuilder {
 }
 ```
 
-### New core abstractions (~260 lines total)
+#### New core abstractions (~260 lines total)
 
 ```
 // IIntelligenceRouter — mechanism interface (~30 lines)
@@ -201,7 +208,7 @@ class NoOpMemoryBridge implements IMemoryBridge {
 }
 ```
 
-### Dynamic plugin loading (~100 lines)
+#### Dynamic plugin loading (~100 lines)
 
 ```
 // plugin-command-loader.ts — lazy initialization
@@ -220,9 +227,9 @@ function getRouter(): IIntelligenceRouter:
   return FallbackRouter.instance
 ```
 
-## Decision: Architecture (SPARC-A)
+### Architecture (SPARC-A)
 
-### Current state → Target state
+#### Current state → Target state
 
 ```
 CURRENT (hardcoded):                          TARGET (plugin-based):
@@ -250,7 +257,7 @@ CURRENT (hardcoded):                          TARGET (plugin-based):
 @claude-flow/neural/sona     ← CORE CODE      → sona plugin (defaultEnabled: false)
 ```
 
-### New plugin packages (6 total)
+#### New plugin packages (6 total)
 
 | Plugin | Source | Lines | defaultEnabled |
 |--------|--------|------:|:-:|
@@ -261,9 +268,9 @@ CURRENT (hardcoded):                          TARGET (plugin-based):
 | `hive-mind` | CLI command + MCP tools (already exists as built-in) | 2,065 | true |
 | `ruvector-upstream` | PostgreSQL bridge + provider + SONA + migrations | 25,680 | false |
 
-## Decision: Refinement (SPARC-R)
+### Refinement (SPARC-R)
 
-### 9-rung migration ladder (each gated by `npm run deploy` 55/55)
+#### 9-rung migration ladder (each gated by `npm run deploy` 55/55)
 
 Implementation hive (4-agent swarm, 2026-03-17) confirmed rung order must change: plugin loading infrastructure must be built FIRST, before any extraction. Current CLI has zero code paths calling `registry.getMCPTools()` or `registry.getCLICommands()`.
 
@@ -374,11 +381,11 @@ Then:
 - `npm run deploy` 55/55
 - Full MCP tool validation per ADR-0050
 
-### Effort estimate
+#### Effort estimate
 
 10-14 working days (Pragmatist estimate, adopted by queen). Each rung is a self-contained branch merged via PR. Rollback = `git revert` of that rung's commit set.
 
-### Totals
+#### Totals
 
 | Metric | Value |
 |--------|------:|
@@ -389,9 +396,9 @@ Then:
 | Phases | 9 (with deploy gates) |
 | Feature flags | 4 (Rungs 4-7) |
 
-## Decision: Completion (SPARC-C)
+### Completion (SPARC-C)
 
-### Checklist
+#### Checklist
 
 - [ ] Rung 1: Implement `plugin-command-loader.ts` (~300 lines)
 - [ ] Rung 1: Wire into `bin/cli.js` and `src/index.ts`
@@ -427,7 +434,7 @@ Then:
 - [ ] Rung 9: FINAL DEPLOY GATE — 55/55
 - [ ] Write superseding ADRs for 045, 048/049, 017 routing, 056
 
-### Success criteria
+#### Success criteria
 
 - ~44,620 lines extracted from core (55 source files)
 - 6 new plugin packages created
@@ -437,29 +444,29 @@ Then:
 - Startup time < 200ms with all defaultEnabled plugins
 - `npm run deploy` passes 55/55
 
-## Consequences
+### Consequences
 
-### Positive
+#### Positive
 
-- **ADR-004 microkernel boundary enforced** — 6-item core, everything else is a plugin
-- **~44,620 lines moved behind plugin interfaces** — clean contract boundaries prevent coupling bugs
-- **ADR-0050 defect class eliminated** — constructor mismatches and missing exports cannot cross plugin boundaries
-- **Progressive disclosure for users** — lean installs, advanced features opt-in
-- **Each plugin independently testable, disableable, and version-bumpable**
+* Good, because the **ADR-004 microkernel boundary is enforced** — 6-item core, everything else is a plugin.
+* Good, because **~44,620 lines are moved behind plugin interfaces** — clean contract boundaries prevent coupling bugs.
+* Good, because the **ADR-0050 defect class is eliminated** — constructor mismatches and missing exports cannot cross plugin boundaries.
+* Good, because of **progressive disclosure for users** — lean installs, advanced features opt-in.
+* Good, because **each plugin is independently testable, disableable, and version-bumpable**.
 
-### Negative
+#### Negative
 
-- **Largest single refactor in project history** — ~85 files, 10-14 working days
-- **4 feature flags during transition** — temporary complexity
-- **~260 lines of new fallback code** — must be maintained alongside plugin implementations
-- **4 superseding ADRs required** (045, 048/049, 017 routing, 056)
+* Bad, because it is the **largest single refactor in project history** — ~85 files, 10-14 working days.
+* Bad, because of **4 feature flags during transition** — temporary complexity.
+* Bad, because of **~260 lines of new fallback code** — must be maintained alongside plugin implementations.
+* Bad, because **4 superseding ADRs are required** (045, 048/049, 017 routing, 056).
 
-### Risks
+#### Risks
 
-- Dynamic command loading is unproven in production (mitigated: Rung 1 builds and proves the infrastructure before any extraction begins)
-- Plugin startup latency may exceed 200ms target (mitigated: lazy initialization per D4)
-- RuVector routing extraction (Rung 7) has 25+ consumers (mitigated: interface-first migration, done last)
-- Feature flags create temporary dual-path complexity (mitigated: remove after 3 clean deploys)
+* Neutral, because dynamic command loading is unproven in production (mitigated: Rung 1 builds and proves the infrastructure before any extraction begins).
+* Neutral, because plugin startup latency may exceed 200ms target (mitigated: lazy initialization per D4).
+* Neutral, because RuVector routing extraction (Rung 7) has 25+ consumers (mitigated: interface-first migration, done last).
+* Neutral, because feature flags create temporary dual-path complexity (mitigated: remove after 3 clean deploys).
 
 ## Precedents Established
 
@@ -467,21 +474,15 @@ Then:
 
 2. **The mechanism-vs-policy test is the tiebreaker.** Mechanisms (what the system must do) live in core. Policies (how it chooses to do it) live in plugins. A policy that must always be active for good UX is a `defaultEnabled: true` plugin, not a core module.
 
-## Related
-
-- **ADR-004**: Plugin-Based Architecture — the foundational microkernel spec this ADR enforces
-- **ADR-015**: Unified Plugin System — the SDK that enables extraction
-- **ADR-017**: RuVector Integration — "optional by default" (superseded by Rung 7)
-- **ADR-045**: Guidance System — superseded by Rung 5 (guidance becomes plugin)
-- **ADR-048/049**: Memory bridges — superseded by Rung 6 (memory-intelligence plugin)
-- **ADR-056**: agentic-flow — superseded by Rung 4 (agentic-flow plugin)
-- **ADR-0049**: Fail-loud mode — exposed dual-path issues
-- **ADR-0050**: Live validation defects — coupling bugs this ADR prevents
-- **Deliberation record**: `docs/adr/ADR-0051-queen-ruling.md` — full hive-mind debate with 5 position papers, verdicts on Q1-Q5, and dissent record
-
 ## Status Update 2026-04-21
 
 - **Old status**: Deferred (restructuring 44K LOC of upstream not justified for 8-line patch delta).
 - **New status**: Superseded by ADR-0089 + ADR-0086.
 - **What changed**: ADR-0089's controller-intercept pattern delivers the mechanism-vs-policy separation this ADR demanded — runtime unity via `getOrCreate()` pooling — without moving or deleting any upstream source. ADR-0086's L1 storage abstraction gives the `IMemoryBackend`-style mechanism interface for storage. ADR-0080 consolidated storage backends as a mechanism-level fix, not an extraction. ADR-0094's 100% acceptance coverage now polices the boundary at the behavior layer, which was the underlying goal of the 9-rung ladder.
 - **Rationale**: The 9-rung ~44K-LOC extraction is now strictly dominated by intercept. Intercept achieves the same architectural outcome (plugin-like boundaries, swappable policies, lean core surface) while preserving upstream mergeability — exactly the "upstream merge tax exceeds aesthetic gain" lesson codified in CLAUDE.md after `controller-registry.ts` (2063 LOC) and `agentdb-service.ts` (1831 LOC) were left in place. The plugin-extraction path remains valid only as an upstream contribution, not as a fork action.
+
+## More Information
+
+This decision was recorded by the sparkling team together with the hive-mind queen-architect (binding ruling), using the SPARC + MADR methodology with 6-agent swarm analysis and 5-specialist hive-mind deliberation. Original status: "Superseded by ADR-0089 (controller-intercept pattern) + ADR-0086 (L1 storage abstraction) — 2026-04-21. See Status Update 2026-04-21 above. Original architecture analysis preserved as reference for future upstream contribution." This ADR is superseded by ADR-0089 (controller-intercept pattern permanent) and ADR-0086 (L1 storage abstraction).
+
+The original record cross-referenced these related decisions: upstream ADR-004 (Plugin-Based Architecture — the foundational microkernel spec this ADR enforces); upstream ADR-015 (Unified Plugin System — the SDK that enables extraction); upstream ADR-017 (RuVector Integration — "optional by default", superseded by Rung 7); upstream ADR-045 (Guidance System — superseded by Rung 5, guidance becomes plugin); upstream ADR-048/049 (Memory bridges — superseded by Rung 6, memory-intelligence plugin); upstream ADR-056 (agentic-flow — superseded by Rung 4, agentic-flow plugin); ADR-0049 (Fail-loud mode — exposed dual-path issues); and ADR-0050 (Live validation defects — coupling bugs this ADR prevents). The full hive-mind deliberation record, with 5 position papers, verdicts on Q1-Q5, and the dissent record, lives at `docs/adr/ADR-0051-queen-ruling.md`.

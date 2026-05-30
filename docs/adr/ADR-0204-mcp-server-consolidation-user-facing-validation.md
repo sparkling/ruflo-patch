@@ -1,12 +1,9 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-19
-accepted-on: 2026-05-20
-implemented-on: 2026-05-21
-tags: [mcp, server, schema-validation, consolidation, transport, stdio, archivist-init, audit-followup, swarm-reviewed]
+tags: [mcp, server, schema-validation, consolidation]
 supersedes: []
-depends-on: [0201, 0202]
+depends-on: [ADR-0201, ADR-0202]
 implements: []
 ---
 
@@ -254,6 +251,8 @@ upstream + devil's advocate), applying [[feedback-remediation-adr-preflight]].
 * Bad, because callers sending sloppy payloads will start failing schema validation (this is the correctness improvement, but observably a behaviour change — mitigation: changelog + agent-doc audit).
 
 ## More Information
+
+Lifecycle dates from the original record: proposed 2026-05-19, accepted 2026-05-20, implemented 2026-05-21. This ADR was swarm-reviewed.
 
 ### Audit findings consolidated under this ADR
 

@@ -1,8 +1,7 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-25
-tags: [upstream-sync, rvagent-wasm, graph-intelligence, council-disposition, ADR-129, ADR-130]
+tags: [upstream-sync, rvagent-wasm, graph-intelligence, council-disposition]
 supersedes: []
 depends-on: [ADR-0177, ADR-0181, ADR-0202, ADR-0227, ADR-0246, ADR-0253]
 implements: []
@@ -180,26 +179,18 @@ The devil's advocate will use these. All sourced from the research findings.
 
 12. **`wasm-agents/store.json` carve-out** — is this already an implicit ADR-0253-shaped carve-out (fork-only persistence substrate, parallel to the archivist), or does picking ADR-129 Phases 1-3 require a new carve-out ADR documenting it? Surface for the devil's advocate.
 
-## Consequences
+### Consequences
 
-### Positive
-
-* **Phase 4 of ADR-129 lands strictly value-positive** — plugin bridge is the smallest, lowest-risk piece, picks up upstream's design verbatim, no fork-side rework. R-A: *"Phase 4 is unblocked low-risk pilot."*
-* **ADR-130's structural conflicts are documented** — future audits read this ADR and ADR-0253 together to understand why the fork doesn't have a `graph_edges` table. Re-litigation cost drops.
-* **The four ADR-129 design questions are now shaped follow-up work** — each has a named decision, a named file, and a named gate. Not vague "review later" debt.
-* **Re-implementation criteria for ADR-130 are explicit** — if a future fork-side graph intelligence ADR is authored, it has a 7-item checklist to satisfy, with each item traceable to a fork ADR (0177, 0181, 0202, 0227, 0246, 0253).
-
-### Negative
-
-* **Phases 1-3 of ADR-129 remain deferred** — the fork's WASM runtime keeps its echo-stub bypass for keyless environments; multi-turn agent loops continue to single-shot through `callAnthropicMessages`. This is a real feature gap relative to upstream, accepted in exchange for not landing four under-specified design decisions in one commit.
-* **ADR-130's "graph that forgets" property is unreachable from the fork** until/unless a re-implementation ADR lands. This is intentional — the property's runtime shape conflicts with the fork's archivist seam — but it is a known capability gap.
-* **Per-family disposition coarseness** — this ADR's decision applies to "ADR-129 Phases 1-3 as a group" rather than per-phase. If future evidence makes one of the three phases land-able without the others, that requires a follow-up ADR.
-
-### Neutral
-
-* **No code change in this ADR.** This is a documentation-and-disposition ADR; Phase 4 of ADR-129 lands in a separate commit under its own implementation ADR or a Batch-shaped roll-up.
-* **No INTEGRATION-LEDGER entry yet.** When Phase 4 of ADR-129 actually lands, the ledger row is added then. Per `[[feedback-update-integration-ledger]]`, the ledger tracks code-landing events, not disposition decisions.
-* **No upstream divergence introduced today.** Both upstream ADRs are dispositioned but neither is picked in code by this ADR.
+* Good, because **Phase 4 of ADR-129 lands strictly value-positive** — plugin bridge is the smallest, lowest-risk piece, picks up upstream's design verbatim, no fork-side rework. R-A: *"Phase 4 is unblocked low-risk pilot."*
+* Good, because **ADR-130's structural conflicts are documented** — future audits read this ADR and ADR-0253 together to understand why the fork doesn't have a `graph_edges` table. Re-litigation cost drops.
+* Good, because **The four ADR-129 design questions are now shaped follow-up work** — each has a named decision, a named file, and a named gate. Not vague "review later" debt.
+* Good, because **Re-implementation criteria for ADR-130 are explicit** — if a future fork-side graph intelligence ADR is authored, it has a 7-item checklist to satisfy, with each item traceable to a fork ADR (0177, 0181, 0202, 0227, 0246, 0253).
+* Bad, because **Phases 1-3 of ADR-129 remain deferred** — the fork's WASM runtime keeps its echo-stub bypass for keyless environments; multi-turn agent loops continue to single-shot through `callAnthropicMessages`. This is a real feature gap relative to upstream, accepted in exchange for not landing four under-specified design decisions in one commit.
+* Bad, because **ADR-130's "graph that forgets" property is unreachable from the fork** until/unless a re-implementation ADR lands. This is intentional — the property's runtime shape conflicts with the fork's archivist seam — but it is a known capability gap.
+* Bad, because **Per-family disposition coarseness** — this ADR's decision applies to "ADR-129 Phases 1-3 as a group" rather than per-phase. If future evidence makes one of the three phases land-able without the others, that requires a follow-up ADR.
+* Neutral, because **No code change in this ADR.** This is a documentation-and-disposition ADR; Phase 4 of ADR-129 lands in a separate commit under its own implementation ADR or a Batch-shaped roll-up.
+* Neutral, because **No INTEGRATION-LEDGER entry yet.** When Phase 4 of ADR-129 actually lands, the ledger row is added then. Per `[[feedback-update-integration-ledger]]`, the ledger tracks code-landing events, not disposition decisions.
+* Neutral, because **No upstream divergence introduced today.** Both upstream ADRs are dispositioned but neither is picked in code by this ADR.
 
 ## Confirmation
 

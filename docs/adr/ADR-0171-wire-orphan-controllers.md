@@ -1,10 +1,7 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-11
-accepted: 2026-05-28
-implemented: 2026-05-28
-tags: [agentdb, controllers, orphan-wiring, quic, graph-algorithms, streaming-embeddings]
+tags: [agentdb, controllers, orphan-wiring, quic]
 supersedes: []
 depends-on: [ADR-0177]
 implements: []
@@ -27,14 +24,9 @@ implements: []
 
 # Wire orphan controllers — MincutService, SparsificationService, StreamingEmbeddingService, QUIC connection layer
 
-## Status
-
-**Proposed (2026-05-11).** Activates the QUIC connection layer per the
-`// TODO: ADR required before activation — ADR-0161 lift, no production
-wiring` markers at `QUICConnection.ts` and `QUICConnectionPool.ts`. Wires
-in five additional orphan controllers identified by the 2026-05-11 audit.
-
 ## Context and Problem Statement
+
+> **Original status**: Proposed (2026-05-11), later Accepted + Implemented 2026-05-28. The original record activated the QUIC connection layer per the `// TODO: ADR required before activation — ADR-0161 lift, no production wiring` markers at `QUICConnection.ts` and `QUICConnectionPool.ts`, and wired in five additional orphan controllers identified by the 2026-05-11 audit (see the Amendments for the 2026-05-28 swarm-review reconciliation that revised the inventory).
 
 A 2026-05-11 audit of `forks/agentdb/src/controllers/*.ts` against actual
 import sites (across both `forks/agentdb/src/` and `forks/ruflo/v3/`) found

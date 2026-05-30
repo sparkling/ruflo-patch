@@ -1,10 +1,15 @@
-# ADR-0010: Prerelease publish gate
+---
+status: accepted
+date: 2026-03-05
+tags: [publish, npm, pipeline, release]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-## Status
+# Prerelease publish gate
 
-Implemented
-
-## Context
+## Context and Problem Statement
 
 ### Specification (SPARC-S)
 
@@ -28,7 +33,20 @@ IF satisfied:
   npm dist-tag add ruflo@{VERSION} latest   # 2 seconds
 ```
 
-## Decision
+## Considered Options
+
+* **Auto-publish every successful build to the `prerelease` dist-tag; create a GitHub prerelease for email notification; promotion to `@latest` is a manual one-command step (chosen).**
+* **Fully automated publish to @latest** — Rejected. Too risky. A broken upstream HEAD, a patch conflict, or a subtle test gap could ship broken code to every user. One bad publish erodes trust. The 2-second manual promotion step is a negligible cost for the safety it provides.
+* **Manual everything (notification only, trigger build manually)** — Rejected. Defeats the automation goal. If you have to SSH in and run a script, you won't do it often enough to stay current.
+* **Automated with canary + 24h auto-promote** — Rejected. Complex to implement properly. Soak tests need to be comprehensive enough to catch real issues in 24 hours, which is hard for a CLI tool. Premature optimization of a process that takes 2 seconds manually.
+* **Scheduled batch (weekly)** — Rejected. Up to 7 days stale. No review of individual changes — a week of upstream commits get batched into one untested lump. Misses the point of frequent polling.
+* **GitHub draft release as gate** — Rejected. GitHub does NOT send email notifications for draft releases. You would never see the notification unless you actively checked the releases page — exactly the "active monitoring" pattern we want to avoid.
+
+The above list of rejected alternatives is exhaustive.
+
+## Decision Outcome
+
+Chosen option: "Auto-publish every successful build to the `prerelease` dist-tag with a GitHub prerelease for notification, and a manual one-command promotion to `@latest`", because it retains human review before `@latest` users are affected at negligible friction (one 2-second command), with passive email notification for both success and failure.
 
 ### Architecture (SPARC-A)
 
@@ -50,41 +68,17 @@ If tests fail:
 
 Users can opt into prereleases explicitly: `npx ruflo@prerelease`.
 
-### Considered Alternatives
+### Consequences
 
-1. **Fully automated publish to @latest** — Rejected. Too risky. A broken upstream HEAD, a patch conflict, or a subtle test gap could ship broken code to every user. One bad publish erodes trust. The 2-second manual promotion step is a negligible cost for the safety it provides.
-2. **Manual everything (notification only, trigger build manually)** — Rejected. Defeats the automation goal. If you have to SSH in and run a script, you won't do it often enough to stay current.
-3. **Automated with canary + 24h auto-promote** — Rejected. Complex to implement properly. Soak tests need to be comprehensive enough to catch real issues in 24 hours, which is hard for a CLI tool. Premature optimization of a process that takes 2 seconds manually.
-4. **Scheduled batch (weekly)** — Rejected. Up to 7 days stale. No review of individual changes — a week of upstream commits get batched into one untested lump. Misses the point of frequent polling.
-5. **GitHub draft release as gate** — Rejected. GitHub does NOT send email notifications for draft releases. You would never see the notification unless you actively checked the releases page — exactly the "active monitoring" pattern we want to avoid.
-
-### Cross-References
-
-- See ADR-0015 for first-publish bootstrap (the first publish uses `--tag latest`, not prerelease)
-- See ADR-0019 for rollback procedure when a promoted version is broken
-
-### Considered Alternatives
-
-The above list of rejected alternatives is exhaustive.
-
-## Consequences
-
-### Refinement (SPARC-R)
-
-**Positive:**
-
-- Users on `@latest` only receive versions explicitly approved by a human
-- The approval step is minimal friction: one npm command, 2 seconds
-- You can test prereleases yourself before promoting: `npx ruflo@prerelease`
-- GitHub prerelease emails are enabled by default for repo watchers — no notification setup required
-- If you're away for days or weeks, builds accumulate as prereleases harmlessly. Nothing breaks for existing users on `@latest`
-- Failed builds create GitHub Issues, which also trigger email — same passive notification channel for both success and failure
-
-**Negative:**
-
-- Slight delay between build completion and availability on `@latest` — however long it takes you to check email and run one command
-- Prereleases accumulate if you don't review them. This is cosmetic (clutters the releases page) but not harmful
-- Users who pin to `@prerelease` dist-tag get unreviewed versions — this is opt-in and self-documenting
+* Good, because users on `@latest` only receive versions explicitly approved by a human.
+* Good, because the approval step is minimal friction: one npm command, 2 seconds.
+* Good, because you can test prereleases yourself before promoting: `npx ruflo@prerelease`.
+* Good, because GitHub prerelease emails are enabled by default for repo watchers — no notification setup required.
+* Good, because if you're away for days or weeks, builds accumulate as prereleases harmlessly. Nothing breaks for existing users on `@latest`.
+* Good, because failed builds create GitHub Issues, which also trigger email — same passive notification channel for both success and failure.
+* Bad, because there is a slight delay between build completion and availability on `@latest` — however long it takes you to check email and run one command.
+* Bad, because prereleases accumulate if you don't review them. This is cosmetic (clutters the releases page) but not harmful.
+* Bad, because users who pin to `@prerelease` dist-tag get unreviewed versions — this is opt-in and self-documenting.
 
 **Edge cases:**
 
@@ -92,7 +86,22 @@ The above list of rejected alternatives is exhaustive.
 - If a prerelease is bad, you simply don't promote it. No remediation needed — `@latest` users never saw it
 - If npm publish fails (network, auth), the build script should retry once and then fall back to creating a GitHub Issue
 
-### Amendment: Auto-Promote After Acceptance Tests (2026-03-07)
+### Confirmation
+
+Completion (SPARC-C) — acceptance criteria:
+
+- [x] `npm publish --tag prerelease` publishes successfully without affecting `@latest`
+- [x] `npm dist-tag ls @sparkleideas/cli` shows both `latest` and `prerelease` tags
+- [x] `gh release create --prerelease` creates a visible (non-draft) prerelease on GitHub
+- [x] GitHub sends email notification for the prerelease
+- [x] `npm dist-tag add @sparkleideas/cli@X.Y.Z latest` promotes correctly
+- [x] `npx @sparkleideas/cli@prerelease` installs the prerelease version
+- [x] `npx @sparkleideas/cli@latest` is unaffected by prerelease publishes
+- [x] Failed builds create GitHub Issues with diagnostic information
+- [x] Auto-promote to `@latest` after acceptance tests pass in sync-and-build.sh
+- [x] First-publish bootstrap correctly sets `@latest` for prerelease versions (ADR-0015 bug fix)
+
+## Amendment: Auto-Promote After Acceptance Tests (2026-03-07)
 
 > **Note (2026-03-16):** `sync-and-build.sh` was split into `ruflo-sync.sh` and `ruflo-publish.sh` per ADR-0038/0039. The systemd unit now calls these directly.
 
@@ -116,17 +125,6 @@ return (first-publish) with `'prerelease'` when the version string contained `-`
 This prevented first-publish from setting `@latest`, violating ADR-0015. Fixed to
 respect the `null` tag from `getPublishTag()` unconditionally.
 
-### Completion (SPARC-C)
+## More Information
 
-Acceptance criteria:
-
-- [x] `npm publish --tag prerelease` publishes successfully without affecting `@latest`
-- [x] `npm dist-tag ls @sparkleideas/cli` shows both `latest` and `prerelease` tags
-- [x] `gh release create --prerelease` creates a visible (non-draft) prerelease on GitHub
-- [x] GitHub sends email notification for the prerelease
-- [x] `npm dist-tag add @sparkleideas/cli@X.Y.Z latest` promotes correctly
-- [x] `npx @sparkleideas/cli@prerelease` installs the prerelease version
-- [x] `npx @sparkleideas/cli@latest` is unaffected by prerelease publishes
-- [x] Failed builds create GitHub Issues with diagnostic information
-- [x] Auto-promote to `@latest` after acceptance tests pass in sync-and-build.sh
-- [x] First-publish bootstrap correctly sets `@latest` for prerelease versions (ADR-0015 bug fix)
+The original record cross-referenced related decisions: see ADR-0015 for first-publish bootstrap (the first publish uses `--tag latest`, not prerelease), and ADR-0019 for the rollback procedure when a promoted version is broken.

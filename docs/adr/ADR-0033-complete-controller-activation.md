@@ -1,68 +1,15 @@
-# ADR-0033: Complete AgentDB v3 Controller Activation (ADR-053 Phases 2-6)
+---
+status: accepted
+date: 2026-03-15
+tags: [agentdb, controllers, memory, learning]
+supersedes: []
+depends-on: [ADR-0027, ADR-0030, ADR-0031, ADR-0032]
+implements: []
+---
 
-## Status
+# Complete AgentDB v3 Controller Activation (ADR-053 Phases 2-6)
 
-Implemented (27/28 controllers wired — only FederatedSession blocked)
-
-### Implementation Log (2026-03-15)
-
-**Commits (11 total across 2 forks):**
-- `719d85d` (agentic-flow) — P2-C: Export SolverBandit from agentdb barrel files
-- `f46a104b0` (ruflo) — P2-B/C + P5-C: Bridge + registry patches
-- `54d66c71e` (ruflo) — P2-C/P3-D/P4-C/P5-E: Hooks controller activation
-- `68e57a37a` (ruflo) — P3-B/C: Reflexion retrieve/store + causal query MCP tools
-- `0a3ac771a` (ruflo) — P4-B + P5-A/D: ExplainableRecall Merkle + GuardedVector + GraphTransformer
-- `6ac5be144` (ruflo) — P4-A + P5-F: SkillLibrary routing + SonaTrajectory integration
-- `0f034f89f` (ruflo) — P4-D: AgentMemoryScope 3-scope isolation
-- `594d8cd3a` (ruflo) — P6-B: COW branching via RvfBackend.derive()
-- `72032f44c` (ruflo) — causalRecall + batchOperations bridge + MCP tools
-- `322b3e2f8` (ruflo) — contextSynthesizer + mmrDiversityRanker wiring + MMR bugfix
-- `35d851fdb` (ruflo) — graphAdapter + gnnService + rvfOptimizer inline wrappers
-
-**Issues:** #81-#91 (sparkling/ruflo-patch)
-
-**All 27 controllers wired (of 28 total):**
-- P2-B: LearningBridge dedicated bridge function
-- P2-C: SolverBandit export + registry + bridge + hooks routing + feedback
-- P3-A: MemoryGraph callers (pre-existing)
-- P3-B: ReflexionMemory retrieve/store MCP tools
-- P3-C: CausalMemoryGraph causal_query with cold-start guard
-- P3-D: NightlyLearner consolidation on session end
-- P4-A: SkillLibrary search in routing + skill creation on novel patterns
-- P4-B: ExplainableRecall Merkle proof chain via AttestationLog
-- P4-C: LearningSystem.recommendAlgorithm in routing
-- P4-D: AgentMemoryScope 3-scope isolation (agent/session/global)
-- P5-A: GuardedVectorBackend overlay on store/search paths
-- P5-B: MutationGuard enforcement (pre-existing)
-- P5-C: AttestationLog stats in health check
-- P5-D: GraphTransformerService proof_gated re-ranking
-- P5-E: SemanticRouter as primary router (falls back to TASK_PATTERNS)
-- P5-F: SonaTrajectoryService recording + stats
-- P6-B: COW branching (derive/branchGet/branchStore/branchMerge + MCP tool)
-- causalRecall: causal-aware search with cold-start guard + MCP tool
-- batchOperations: optimize/prune/stats bridge + MCP tool
-- contextSynthesizer: opt-in synthesis in memory_search + existing MCP tool
-- mmrDiversityRanker: fixed error handling in memory_search pipeline
-- graphAdapter: bridge function for graph database operations
-- gnnService: inline wrapper around GNN wrapper functions
-- rvfOptimizer: inline wrapper around backend.optimize()
-
-**Blocked (1 of 28):**
-- P4-E: FederatedSession — upstream API undefined
-
-## Date
-
-2026-03-15
-
-## Deciders
-
-sparkling team
-
-## Methodology
-
-SPARC (Specification, Pseudocode, Architecture, Refinement, Completion) + MADR
-
-## Context
+## Context and Problem Statement
 
 Upstream ADR-053 planned 6 phases to activate 28 AgentDB v3 controllers. Only Phase 1 (ControllerRegistry infrastructure) was completed. The remaining phases (2-6) were deferred as upstream pivoted to RVF storage (ADR-057/058) and bug triage (ADR-059/060).
 
@@ -115,11 +62,21 @@ SolverBandit was reported as "entirely missing" but investigation found it **exi
 1. **agentic-flow fork**: Export `SolverBandit` from `packages/agentdb/src/index.ts`
 2. **ruflo fork**: Add to ControllerRegistry, create bridge function, wire to hooks_route
 
-## Decision: Specification (SPARC-S)
+## Considered Options
+
+* **Implement ADR-053 Phases 2-6 as fork patches (chosen)** — each phase targets TypeScript source in `~/src/forks/{ruflo,agentic-flow}` and adds callers, since the bridge functions already exist for most controllers.
+
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "Implement ADR-053 Phases 2-6 as fork patches", because the bridge functions already exist for most controllers and the gap is purely missing callers — so adding callers in fork source closes the self-learning loop and activates ~$200K of dormant upstream engineering at modest cost.
+
+### Specification (SPARC-S)
 
 Implement ADR-053 Phases 2-6 as fork patches. Each phase targets TypeScript source in `~/src/forks/{ruflo,agentic-flow}` and adds **callers** — the bridge functions already exist for most controllers.
 
-### Patch Rules (ADR-0027 Fork Model)
+#### Patch Rules (ADR-0027 Fork Model)
 
 All patches follow the established fork model:
 
@@ -136,7 +93,7 @@ All patches follow the established fork model:
 11. **Never** reuse a defect ID, never modify project CLAUDE.md
 12. **Propagate** — when changing shared types, grep all consumers and fix them too
 
-### Phase 2: Core Intelligence (P1 — Self-Learning Loop)
+#### Phase 2: Core Intelligence (P1 — Self-Learning Loop)
 
 | ID | Controller | What's Missing | Fork File | Effort |
 |----|-----------|---------------|-----------|--------|
@@ -146,7 +103,7 @@ All patches follow the established fork model:
 | P2-D | HybridSearch (BM25) | **Done** — implicit in bridgeSearchEntries (70/30 RRF) | — | 0h |
 | P2-E | recordFeedback | **Done** — triple-redundancy callers | — | 0h |
 
-### Phase 3: Advanced Memory (P2 — Graph & Episodic)
+#### Phase 3: Advanced Memory (P2 — Graph & Episodic)
 
 | ID | Controller | What's Missing | Fork File | Effort |
 |----|-----------|---------------|-----------|--------|
@@ -155,7 +112,7 @@ All patches follow the established fork model:
 | P3-C | CausalMemoryGraph | Edge recording wired but no experiment tracking | `hooks-tools.ts` | 2h |
 | P3-D | NightlyLearner | Not wired to daemon consolidate worker | `hooks-tools.ts` | 2h |
 
-### Phase 4: Specialization (P3 — Skill & Scope)
+#### Phase 4: Specialization (P3 — Skill & Scope)
 
 | ID | Controller | What's Missing | Fork File | Effort |
 |----|-----------|---------------|-----------|--------|
@@ -166,7 +123,7 @@ All patches follow the established fork model:
 | P4-E | FederatedSession | **Blocked** — API not defined upstream | — | blocked |
 | P4-F | TieredCacheManager | **Done** — fully wired | — | 0h |
 
-### Phase 5: Proof-Gated Intelligence (P3 — Cryptographic Integrity)
+#### Phase 5: Proof-Gated Intelligence (P3 — Cryptographic Integrity)
 
 | ID | Controller | What's Missing | Fork File | Effort |
 |----|-----------|---------------|-----------|--------|
@@ -177,16 +134,16 @@ All patches follow the established fork model:
 | P5-E | SemanticRouter | Not used in hooks_route (still uses static TASK_PATTERNS) | `hooks-tools.ts` | 4h |
 | P5-F | SonaTrajectoryService | Not integrated into intelligence.js | `hooks-tools.ts` | 4h |
 
-### Phase 6: MCP Surface (P3 — Agent-Facing)
+#### Phase 6: MCP Surface (P3 — Agent-Facing)
 
 | ID | Controller | What's Missing | Fork File | Effort |
 |----|-----------|---------------|-----------|--------|
 | P6-A | agentdb_* MCP tools (15) | **Done** — 15 tools implemented in agentdb-tools.ts | — | 0h |
 | P6-B | COW branching tool | RvfBackend.derive() not implemented | `rvf-backend.ts` | 5h |
 
-## Decision: Pseudocode (SPARC-P)
+### Pseudocode (SPARC-P)
 
-### P2-C: SolverBandit (Thompson Sampling) — Two-Fork Patch
+#### P2-C: SolverBandit (Thompson Sampling) — Two-Fork Patch
 
 **Fork 1: agentic-flow** (`~/src/forks/agentic-flow`)
 ```
@@ -253,7 +210,7 @@ handler hooks_post-task(params):
 3. `npm run preflight && npm run deploy:dry-run` in ruflo-patch
 4. `npm run deploy` to publish
 
-### P3-A: MemoryGraph Callers
+#### P3-A: MemoryGraph Callers
 
 ```
 // memory-tools.ts — wire into memory_store
@@ -274,7 +231,7 @@ handler memory_search(input):
       r.similarity += importance * 0.1
 ```
 
-### P5-B: MutationGuard Enforcement
+#### P5-B: MutationGuard Enforcement
 
 ```
 // memory-bridge.ts — enforce on all store/update/delete
@@ -288,9 +245,9 @@ function bridgeStoreEntry(options):
   logAttestation(registry, 'store', id, { key, namespace })
 ```
 
-## Decision: Architecture (SPARC-A)
+### Architecture (SPARC-A)
 
-### Patch Mapping
+#### Patch Mapping
 
 Patches target two forks. Each patch creates a GitHub Issue (tracking) and either a PR or direct-to-main commit.
 
@@ -310,7 +267,7 @@ Patches target two forks. Each patch creates a GitHub Issue (tracking) and eithe
 |-------|---------------|---------|
 | **Phase 2** | `packages/agentdb/src/index.ts`, `packages/agentdb/src/backends/rvf/index.ts` | 1 (SolverBandit export) |
 
-### Per-Patch Workflow (ADR-0027)
+#### Per-Patch Workflow (ADR-0027)
 
 ```
 1. Edit fork TS source
@@ -323,7 +280,7 @@ Patches target two forks. Each patch creates a GitHub Issue (tracking) and eithe
 8. npm run deploy (publish)
 ```
 
-### Dependencies
+#### Dependencies
 
 ```
 Phase 2 (Core Intelligence)
@@ -353,7 +310,7 @@ Phase 6 (MCP Surface) — after Phase 5
 └─ P6-B COW branching ──→ needs RvfBackend work
 ```
 
-### Implementation Priority
+#### Implementation Priority
 
 | Priority | Items | Total Effort | Impact |
 |----------|-------|-------------|--------|
@@ -366,9 +323,9 @@ Phase 6 (MCP Surface) — after Phase 5
 
 **Total estimated effort: ~52 hours across all phases.**
 
-## Decision: Refinement (SPARC-R)
+### Refinement (SPARC-R)
 
-### What to do first
+#### What to do first
 
 **Start with P0 (3 hours):** MemoryGraph callers + LearningBridge wrapper. These are the cheapest wins — controllers already enabled and instantiated, just need callers added. Immediately observable in `intelligence_stats`.
 
@@ -376,25 +333,17 @@ Phase 6 (MCP Surface) — after Phase 5
 
 **SolverBandit (P2-C) requires investigation first:** Check if `SolverBandit` is exported from the agentdb package in our fork. If not, we'd need to implement or find it. Do not start Phase 2-C until this is confirmed.
 
-### Validation
-
-After each phase, verify via MCP tools:
-- `intelligence_stats` should show non-zero values for activated controllers
-- `memory_search` should show graph-boosted scores (Phase 3)
-- `hooks_route` should show learned routing decisions (Phase 2)
-- `agentdb_health` should show all activated controllers in health report
-
-### Regression guards
+#### Regression guards
 
 - `npm test` (255 unit tests) must pass after each phase
 - `npm run test:verify` (24 acceptance) must pass before deploy
 - `tsc --noEmit` for each fork must pass
 
-### Testing Strategy (designed 2026-03-15)
+#### Testing Strategy (designed 2026-03-15)
 
 Full test design documents: `docs/test-design-adr0033-integration.md`
 
-#### L1 Unit Tests — 67 new tests (2 new files + additions to 4 existing)
+##### L1 Unit Tests — 67 new tests (2 new files + additions to 4 existing)
 
 | File | Tests | Coverage |
 |------|:-----:|----------|
@@ -407,20 +356,20 @@ Full test design documents: `docs/test-design-adr0033-integration.md`
 
 **Critical gap found**: Controller-registry factory layer (file 12) has ZERO existing tests. Factory returning null silently disables entire controller chains — all downstream tests mock past this layer, so happy-path tests pass vacuously.
 
-#### L1 Integration Tests — 32 tests (1 new file, requires build artifacts)
+##### L1 Integration Tests — 32 tests (1 new file, requires build artifacts)
 
 | File | Tests | Coverage |
 |------|:-----:|----------|
 | `12-controller-integration.test.mjs` | 32 | Real wiring chain (Handler→Bridge→Registry→Controller) using built artifacts from `/tmp/ruflo-build/`. Only DB/storage mocked. Routing cascade, memory scope isolation, learning feedback loop, health check, COW lifecycle. Guarded by `{ skip: !hasBuild }`. |
 
-#### L1 Chaos / Edge Case Tests — 35 tests (1 new file + 1 property file)
+##### L1 Chaos / Edge Case Tests — 35 tests (1 new file + 1 property file)
 
 | File | Tests | Coverage |
 |------|:-----:|----------|
 | `13-controller-chaos.test.mjs` | 26 | 50 concurrent calls, controller init failure cascade, timeout cascade across 4 routing phases, corrupted JSON state, cold-start boundary (4→5 edges), scope leakage (negative test), double-fire prevention |
 | `14-controller-properties.test.mjs` | 9 | AgentMemoryScope key symmetry (`unscopeKey(scopeKey(k)) === k`), SolverBandit convergence (Thompson Sampling learns from rewards), cold-start guard monotonicity |
 
-#### L1 Regression Tests — 11 tests (additions to existing files)
+##### L1 Regression Tests — 11 tests (additions to existing files)
 
 Cover 5 specific bugs fixed during implementation:
 - MMR error handling (commit 322b3e2f8)
@@ -428,7 +377,7 @@ Cover 5 specific bugs fixed during implementation:
 - MutationGuard enforcement verification (P5-B)
 - causalRecall getStats edge cases
 
-#### L2/L3 Acceptance Tests — 8 new checks (T17-T24)
+##### L2/L3 Acceptance Tests — 8 new checks (T17-T24)
 
 All self-contained, parallelizable, adding ~6-8s wall-clock to test-verify.sh.
 
@@ -449,7 +398,7 @@ Wired into `scripts/test-verify.sh` Group 6 (parallel execution, ~8s wall-clock)
 All checks use `_run_and_kill` (handles SQLite handle hangs) and lenient pass criteria
 for cold-start conditions. MCP-only tools invoked via `cli mcp exec -t <tool>`.
 
-#### Test Count Summary (Implemented)
+##### Test Count Summary (Implemented)
 
 | Layer | Before ADR-0033 | Added | Total |
 |-------|:-------:|:---:|:-----:|
@@ -459,7 +408,7 @@ for cold-start conditions. MCP-only tools invoked via `cli mcp exec -t <tool>`.
 | L2/L3 Acceptance (T17-T24) | 16 | +8 | 24 |
 | **Total** | **256** | **+105 unit, +8 acceptance** | **361 unit + 24 acceptance** |
 
-#### Priority Matrix
+##### Priority Matrix
 
 | Priority | Count | What | Risk if untested |
 |----------|:-----:|------|-----------------|
@@ -468,13 +417,13 @@ for cold-start conditions. MCP-only tools invoked via `cli mcp exec -t <tool>`.
 | **P2** | 19 | Property tests, boundary values, chaos scenarios | Edge cases in adversarial conditions |
 | **Acceptance** | 8 | T17-T24 end-to-end checks | Published packages missing features |
 
-## Decision: Completion (SPARC-C)
+### Completion (SPARC-C)
 
-### Implementation as fork patches
+#### Implementation as fork patches
 
 Each phase creates patches in `~/src/forks/ruflo` (TypeScript source), committed to fork main, deployed via `npm run deploy`. No runtime patching.
 
-### Estimated timeline
+#### Estimated timeline
 
 | Phase | Effort | Can parallelize with |
 |-------|--------|---------------------|
@@ -485,7 +434,7 @@ Each phase creates patches in `~/src/forks/ruflo` (TypeScript source), committed
 | P4 (Optimization) | 8h | P3 |
 | **Total** | **52h** | — |
 
-### Success criteria
+#### Success criteria
 
 | Metric | Current | After P0 | After P1 | After All |
 |--------|---------|----------|----------|-----------|
@@ -495,6 +444,82 @@ Each phase creates patches in `~/src/forks/ruflo` (TypeScript source), committed
 | Graph nodes | 0 | >0 | >10 | All entries |
 | Search quality (importance boost) | 0% | 5-10% | 10-15% | 15-25% |
 | Controllers with 0 callers | 23 | 21 | 16 | 3 |
+
+### Consequences
+
+* Good, because it activates $200K+ worth of upstream AgentDB engineering that's currently dead code
+* Good, because the self-learning loop closes — system improves over sessions
+* Good, because graph-aware ranking improves search relevance
+* Good, because proof-gated mutations add security guarantees
+* Good, because learned routing replaces static pattern matching
+* Bad, because 52 hours of integration work across 5 fork files
+* Bad, because some controllers may have undiscovered API bugs (ADR-055 found 7 in Phase 1 alone)
+* Bad, because SolverBandit may not be exported from agentdb (blocker for learned routing)
+* Neutral, because (risk) controller instantiation may fail silently (all have null fallbacks — by design)
+* Neutral, because (risk) performance impact of 28 active controllers unknown (may need lazy loading)
+* Neutral, because (risk) FederatedSession API undefined upstream (blocked indefinitely)
+* Neutral, because (risk) SolverBandit class exists (270 lines) but has never been exported or tested in the full pipeline — may have API mismatches similar to ADR-055's 7 bugs
+* Neutral, because (risk) SolverBandit state persistence requires storing serialized bandit state in memory store — adds write on every feedback call
+* Neutral, because (risk) two-fork patches (agentic-flow + ruflo) require coordinated deployment — agentic-flow export must publish before ruflo can import
+* Neutral, because (NEW, π-brain risk) MCP tool param signatures differ from documentation — 12 mismatches found. Silent failures if wrong param names used in bridge calls
+* Neutral, because (NEW, π-brain risk) 7 controllers have zero community knowledge (causalRecall, AgentMemoryScope, GuardedVectorBackend, graphAdapter, contextSynthesizer, rvfOptimizer, mmrDiversityRanker) — higher risk of undiscovered API bugs
+* Neutral, because (NEW, π-brain risk) GraphTransformerService has 9 internal modules — wiring the full suite risks scope explosion; scope-reduce to proof_gated only
+
+### Confirmation
+
+#### Validation
+
+After each phase, verify via MCP tools:
+- `intelligence_stats` should show non-zero values for activated controllers
+- `memory_search` should show graph-boosted scores (Phase 3)
+- `hooks_route` should show learned routing decisions (Phase 2)
+- `agentdb_health` should show all activated controllers in health report
+
+#### Implementation Log (2026-03-15)
+
+**Commits (11 total across 2 forks):**
+- `719d85d` (agentic-flow) — P2-C: Export SolverBandit from agentdb barrel files
+- `f46a104b0` (ruflo) — P2-B/C + P5-C: Bridge + registry patches
+- `54d66c71e` (ruflo) — P2-C/P3-D/P4-C/P5-E: Hooks controller activation
+- `68e57a37a` (ruflo) — P3-B/C: Reflexion retrieve/store + causal query MCP tools
+- `0a3ac771a` (ruflo) — P4-B + P5-A/D: ExplainableRecall Merkle + GuardedVector + GraphTransformer
+- `6ac5be144` (ruflo) — P4-A + P5-F: SkillLibrary routing + SonaTrajectory integration
+- `0f034f89f` (ruflo) — P4-D: AgentMemoryScope 3-scope isolation
+- `594d8cd3a` (ruflo) — P6-B: COW branching via RvfBackend.derive()
+- `72032f44c` (ruflo) — causalRecall + batchOperations bridge + MCP tools
+- `322b3e2f8` (ruflo) — contextSynthesizer + mmrDiversityRanker wiring + MMR bugfix
+- `35d851fdb` (ruflo) — graphAdapter + gnnService + rvfOptimizer inline wrappers
+
+**Issues:** #81-#91 (sparkling/ruflo-patch)
+
+**All 27 controllers wired (of 28 total):**
+- P2-B: LearningBridge dedicated bridge function
+- P2-C: SolverBandit export + registry + bridge + hooks routing + feedback
+- P3-A: MemoryGraph callers (pre-existing)
+- P3-B: ReflexionMemory retrieve/store MCP tools
+- P3-C: CausalMemoryGraph causal_query with cold-start guard
+- P3-D: NightlyLearner consolidation on session end
+- P4-A: SkillLibrary search in routing + skill creation on novel patterns
+- P4-B: ExplainableRecall Merkle proof chain via AttestationLog
+- P4-C: LearningSystem.recommendAlgorithm in routing
+- P4-D: AgentMemoryScope 3-scope isolation (agent/session/global)
+- P5-A: GuardedVectorBackend overlay on store/search paths
+- P5-B: MutationGuard enforcement (pre-existing)
+- P5-C: AttestationLog stats in health check
+- P5-D: GraphTransformerService proof_gated re-ranking
+- P5-E: SemanticRouter as primary router (falls back to TASK_PATTERNS)
+- P5-F: SonaTrajectoryService recording + stats
+- P6-B: COW branching (derive/branchGet/branchStore/branchMerge + MCP tool)
+- causalRecall: causal-aware search with cold-start guard + MCP tool
+- batchOperations: optimize/prune/stats bridge + MCP tool
+- contextSynthesizer: opt-in synthesis in memory_search + existing MCP tool
+- mmrDiversityRanker: fixed error handling in memory_search pipeline
+- graphAdapter: bridge function for graph database operations
+- gnnService: inline wrapper around GNN wrapper functions
+- rvfOptimizer: inline wrapper around backend.optimize()
+
+**Blocked (1 of 28):**
+- P4-E: FederatedSession — upstream API undefined
 
 ## π-Brain Collective Intelligence Analysis (2026-03-15)
 
@@ -618,46 +643,8 @@ skill_create:        { name: string, pattern: string, context?: string }
 | P4 | 8h | 6h | -2h | Defer graphAdapter, contextSynthesizer |
 | **Total** | **52h** | **49h** | **-3h** | Net savings from scope reduction |
 
-## Consequences
+## More Information
 
-### Positive
+This decision relates to several records. Upstream ADR-053 provided the original 6-phase plan for controller activation, and upstream ADR-055 covered bug remediation for Phase 1 controller bugs. Within this corpus it builds on ADR-0030 (memory system optimization, implemented patch.27-28), ADR-0031 (runtime validation, implemented patch.27-28), and ADR-0032 (claude-flow-patch adoption analysis). It also references π-brain entries: "AgentDB v3: 23 of 28 controllers are dead code" (id: 99c0537c), "SolverBandit: Thompson Sampling class exists but not exported" (id: 3211600c), "adaptive-pipeline: MCP signature audit — 12 fixes" (id: b63018dd), "adaptive-pipeline: P0 agentdb integration" (id: 1273a5b5), "Adaptive Pipeline 3-Package Optimization: Hive Consensus" (id: 47ae6292), "Adaptive Pipeline SKILL.md v2 — 3-Round Hive Audit" (id: 04458b9b), "SONA Self-Optimizing Neural Architecture" (id: 319a0a97), and "Graph Transformer with Proof-Gated Mutation" (id: 8a22db2a).
 
-- Activates $200K+ worth of upstream AgentDB engineering that's currently dead code
-- Self-learning loop closes — system improves over sessions
-- Graph-aware ranking improves search relevance
-- Proof-gated mutations add security guarantees
-- Learned routing replaces static pattern matching
-
-### Negative
-
-- 52 hours of integration work across 5 fork files
-- Some controllers may have undiscovered API bugs (ADR-055 found 7 in Phase 1 alone)
-- SolverBandit may not be exported from agentdb (blocker for learned routing)
-
-### Risks
-
-- Controller instantiation may fail silently (all have null fallbacks — by design)
-- Performance impact of 28 active controllers unknown (may need lazy loading)
-- FederatedSession API undefined upstream (blocked indefinitely)
-- SolverBandit class exists (270 lines) but has never been exported or tested in the full pipeline — may have API mismatches similar to ADR-055's 7 bugs
-- SolverBandit state persistence requires storing serialized bandit state in memory store — adds write on every feedback call
-- Two-fork patches (agentic-flow + ruflo) require coordinated deployment — agentic-flow export must publish before ruflo can import
-- **NEW (π-brain)**: MCP tool param signatures differ from documentation — 12 mismatches found. Silent failures if wrong param names used in bridge calls
-- **NEW (π-brain)**: 7 controllers have zero community knowledge (causalRecall, AgentMemoryScope, GuardedVectorBackend, graphAdapter, contextSynthesizer, rvfOptimizer, mmrDiversityRanker) — higher risk of undiscovered API bugs
-- **NEW (π-brain)**: GraphTransformerService has 9 internal modules — wiring the full suite risks scope explosion; scope-reduce to proof_gated only
-
-## Related
-
-- **ADR-053** (upstream): Original 6-phase plan for controller activation
-- **ADR-055** (upstream): Bug remediation for Phase 1 controller bugs
-- **ADR-0030**: Memory system optimization (implemented patch.27-28)
-- **ADR-0031**: Runtime validation (implemented patch.27-28)
-- **ADR-0032**: claude-flow-patch adoption analysis
-- **π-brain**: "AgentDB v3: 23 of 28 controllers are dead code" (id: 99c0537c)
-- **π-brain**: "SolverBandit: Thompson Sampling class exists but not exported" (id: 3211600c)
-- **π-brain**: "adaptive-pipeline: MCP signature audit — 12 fixes" (id: b63018dd)
-- **π-brain**: "adaptive-pipeline: P0 agentdb integration" (id: 1273a5b5)
-- **π-brain**: "Adaptive Pipeline 3-Package Optimization: Hive Consensus" (id: 47ae6292)
-- **π-brain**: "Adaptive Pipeline SKILL.md v2 — 3-Round Hive Audit" (id: 04458b9b)
-- **π-brain**: "SONA Self-Optimizing Neural Architecture" (id: 319a0a97)
-- **π-brain**: "Graph Transformer with Proof-Gated Mutation" (id: 8a22db2a)
+This record used the SPARC + MADR methodology, with section headings (Specification / Pseudocode / Architecture / Refinement / Completion) remapped to the canonical MADR sections during the ADR-0271 migration, preserving all content. The deciders were the sparkling team. Original status: "Implemented (27/28 controllers wired — only FederatedSession blocked)".

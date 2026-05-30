@@ -1,13 +1,15 @@
-# ADR-0122: Hive-mind T4 — 8 memory types with TTL
+---
+status: accepted
+date: 2026-05-02
+tags: [hive-mind, memory, ttl]
+supersedes: []
+depends-on: [ADR-0116, ADR-0118]
+implements: []
+---
 
-- **Status**: **Implemented (2026-05-03)** per ADR-0118 §Status (T4 complete; fork ca9e29e2c + ruflo-patch 74f29e7). Cites: `forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hive-mind-tools.ts:966-1039` (`hive-mind_memory` tool — typed `MemoryEntry` shape, lazy + periodic eviction, `withHiveStoreLock` on all four actions); `forks/ruflo/v3/@claude-flow/cli/__tests__/mcp-tools-deep.test.ts` (unit + integration matrix); `lib/acceptance-hive-memory-types.sh` (8-type matrix, TTL expiry, type filter, legacy migration, error rejection — wired in `scripts/test-acceptance.sh`).
-- **Date**: 2026-05-02
-- **Deciders**: Henrik Pettersen
-- **Depends on**: ADR-0116 (hive-mind marketplace plugin — verification matrix), ADR-0118 (hive-mind runtime gaps tracker — task definition)
-- **Related**: ADR-0114 (substrate/protocol/execution layering)
-- **Scope**: Fork-side runtime work in `forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hive-mind-tools.ts`. Per `feedback-patches-in-fork.md`, USERGUIDE-promised features that don't work are bugs and bugs are fixed in fork.
+# Hive-mind T4 — 8 memory types with TTL
 
-## Context
+## Context and Problem Statement
 
 ADR-0116's verification matrix flagged the row "8 memory types with TTL" as ⚠ partial. The USERGUIDE block `**Collective Memory Types:**` advertises 8 distinct types, each with a documented TTL semantic:
 
@@ -26,7 +28,7 @@ The runtime in `forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hive-mind-tools.ts
 
 ADR-0118 §T4 owns this gap as task T4 with no Tn dependencies. This ADR closes T4.
 
-## Decision drivers
+## Decision Drivers
 
 - USERGUIDE 8 distinct types each with a documented TTL — runtime currently honours none of them, so the entry shape itself must change (type discriminator + TTL fields), not just the handler logic
 - Per-type defaults from the USERGUIDE table must be encoded in code, not just docs, so a `set` without explicit `ttl` resolves to the documented value for its type rather than "permanent"
@@ -36,27 +38,13 @@ ADR-0118 §T4 owns this gap as task T4 with no Tn dependencies. This ADR closes 
 - `feedback-no-fallbacks.md`: a missing `type` argument, an unknown `type` value, or unparseable `ttlMs` must throw — silently defaulting omitted `type` to `system` (giving a caller who forgot `type: 'task'` permanent retention instead of 30-min) is a soft fallback and is rejected here
 - Single touch site (`hive-mind-tools.ts` `hive-mind_memory` tool) keeps blast radius small relative to splitting into 8 top-level dicts which would ripple through every existing call site
 
-## Considered options
+## Considered Options
 
 - **Option A — Inline typed entry shape** (CHOSEN): each value becomes `{ value, type, ttlMs, expiresAt, createdAt, updatedAt }` keyed in a single `state.sharedMemory` map
 - **Option B — Split top-level dicts**: separate maps per type (`state.knowledge`, `state.context`, `state.task`, …) with TTL fields on each entry
 - **Option C — Typed-adapter layer**: keep flat dict; introduce an adapter module that wraps reads/writes with type+TTL metadata stored sidecar in `state.sharedMemoryMeta`
 
-## Pros and cons of the options
-
-**Option A — Inline typed entry shape (CHOSEN)**
-- Pros: single index keeps T5 cache key space simple; one persistence path in `saveHiveState`/`loadHiveState`; type filtering on `list` is a single predicate on iteration; matches RVF row mapping directly; minimal touch surface (single file)
-- Cons: every per-type query (`list({type: 'task'})`) is a full-scan filter — O(N) over all entries regardless of how many match; eviction is not free per-key — needs a periodic sweep AND lazy-on-read to bound memory growth; legacy flat-dict entries on disk must be migrated on load (non-destructive default to `type: 'system'`, but every old write becomes one schema-bridge operation); lazy eviction does a `delete` on `state.sharedMemory`, so the read path must enter the cross-process lock or race writers — eliminating the existing lock-free `get`/`list` fast path; existing `hive-mind_memory.set` call sites that omit `type` must be migrated to pass an explicit `type` in the same commit (no graceful default)
-
-**Option B — Split top-level dicts (`state.knowledge`, `state.context`, …)**
-- Pros: per-type list is O(N_type) instead of O(N_total); type-specific eviction strategies could diverge cleanly later; legacy migration is a one-shot bucket-and-distribute
-- Cons: every existing call site that reads `state.sharedMemory` (and there are several outside this tool) must now know which of 8 dicts to consult, OR we keep `sharedMemory` as a virtual merged view — adding a layer; `get(key)` without a type hint becomes O(8) lookups across the dicts; T5 cache key space fragments across 8 namespaces; persistence path in `saveHiveState` multiplies into 8 serialization sites; cross-type `list({})` requires merging 8 sources
-
-**Option C — Typed-adapter layer (`state.sharedMemory` flat + sidecar `state.sharedMemoryMeta`)**
-- Pros: existing flat dict stays untouched; type+TTL is purely additive; legacy entries need no migration (a missing meta entry just means "no TTL")
-- Cons: two parallel persistence paths (value dict + metadata dict) double the failure surface — a `saveHiveState` that lands the value but not the meta produces an orphaned untyped entry; T5 must reach into both stores; the "missing meta means permanent system" branch is itself a silent fallback per `feedback-no-fallbacks.md` — recovery from partial writes becomes indistinguishable from legacy
-
-## Decision outcome
+## Decision Outcome
 
 Chosen option: **Option A — inline typed entry shape**. Each entry becomes:
 
@@ -75,22 +63,64 @@ The `set` action accepts `type` (one of the 8) and optional `ttlMs`; defaults de
 
 This option is chosen because it is the only one that simultaneously (1) presents a single index for T5's cache key space, (2) maps directly onto the RVF row shape T5 will use, (3) keeps all eight type-defaulting and eviction logic on one touch site, and (4) avoids the orphaning failure mode of Option C's sidecar. The honest trade-off accepted: per-type `list` becomes O(N_total) full-scan filtering rather than O(N_type), and the existing lock-free `get`/`list` fast path collapses because lazy eviction must take the write lock. Both are bounded and acceptable for hive-mind workloads (entry counts in the thousands, not millions).
 
-## Consequences
+### Consequences
 
-**Positive**
-- Single index keeps T5's LRU cache key space simple — one cache namespace, no per-type fragmentation
-- Single persistence path in `saveHiveState`/`loadHiveState` — one round-trip test covers all 8 types
-- RVF mapping is direct — typed entry fields become RVF row columns (T5 lands without re-deriving)
-- Lazy-on-read eviction means callers never see expired data even between sweeps
-- Default-TTL table is a single `const` adjacent to the handler; updating one type updates docs + code together
+* Good, because the single index keeps T5's LRU cache key space simple — one cache namespace, no per-type fragmentation.
+* Good, because of a single persistence path in `saveHiveState`/`loadHiveState` — one round-trip test covers all 8 types.
+* Good, because the RVF mapping is direct — typed entry fields become RVF row columns (T5 lands without re-deriving).
+* Good, because lazy-on-read eviction means callers never see expired data even between sweeps.
+* Good, because the default-TTL table is a single `const` adjacent to the handler; updating one type updates docs + code together.
+* Bad, because existing flat-dict entries require migration on first read after T4 lands — `loadHiveState` detects the legacy shape (raw value where a `MemoryEntry` is expected) and rewrites it as `{ value, type: 'system', ttlMs: null, expiresAt: null, createdAt: now, updatedAt: now }`. Non-destructive (no value mutated, no entry dropped) but every legacy write incurs a one-time schema-bridge cost.
+* Bad, because per-type `list` is a full scan — O(N_total) filter rather than O(N_type). Acceptable at hive-mind scale; documented so a future ADR can revisit if entry counts cross 10K.
+* Bad, because lazy eviction in `get`/`list` mutates `state.sharedMemory`, so both paths must take `withHiveStoreLock` — losing the existing lock-free read fast path.
+* Bad, because the periodic sweep timer must be lifecycle-managed (registered at hive init, cleared in `hive-mind_shutdown`) — orphaned timers leak across hive sessions if missed.
+* Bad, because daemon and CLI processes both running lazy/scheduled eviction can race on a `delete state.sharedMemory[key]` for the same expired key — resolved by the `withHiveStoreLock` cross-process lock; the second deleter is a no-op.
+* Neutral, because it adds 4 extra fields and one `Date.now()` per write — negligible at hive-mind scale.
 
-**Negative**
-- Existing flat-dict entries require migration on first read after T4 lands — `loadHiveState` detects the legacy shape (raw value where a `MemoryEntry` is expected) and rewrites it as `{ value, type: 'system', ttlMs: null, expiresAt: null, createdAt: now, updatedAt: now }`. Non-destructive (no value mutated, no entry dropped) but every legacy write incurs a one-time schema-bridge cost
-- Per-type `list` is a full scan — O(N_total) filter rather than O(N_type). Acceptable at hive-mind scale; documented so a future ADR can revisit if entry counts cross 10K
-- Lazy eviction in `get`/`list` mutates `state.sharedMemory`, so both paths must take `withHiveStoreLock` — losing the existing lock-free read fast path
-- Periodic sweep timer must be lifecycle-managed (registered at hive init, cleared in `hive-mind_shutdown`) — orphaned timers leak across hive sessions if missed
-- Daemon and CLI processes both running lazy/scheduled eviction can race on a `delete state.sharedMemory[key]` for the same expired key — resolved by the `withHiveStoreLock` cross-process lock; the second deleter is a no-op
-- Adds 4 extra fields and one `Date.now()` per write — negligible at hive-mind scale
+### Confirmation
+
+**Unit tests** (`forks/ruflo/v3/@claude-flow/cli/__tests__/mcp-tools-deep.test.ts`):
+- `t4_set_produces_typed_entry_shape` — `set` writes a `MemoryEntry` with all six fields populated
+- `t4_eviction_predicate_truth_table` — predicate returns true for `expiresAt = now - 1`, false for `expiresAt = now + 1000`, false for `expiresAt = null`, true for `expiresAt = now` (boundary), true for `expiresAt = 0` (epoch)
+- `t4_per_type_defaults_table` — one assertion per type: `knowledge`→null, `context`→3_600_000, `task`→1_800_000, `result`→null, `error`→86_400_000, `metric`→3_600_000, `consensus`→null, `system`→null
+- `t4_unknown_type_throws` — `set` with `type: 'invalid'` throws `InvalidMemoryTypeError`; no partial write to `state.sharedMemory`
+- `t4_non_numeric_ttl_throws` — `set` with `ttlMs: 'abc'` throws `InvalidTTLError`; no partial write
+- `t4_ttl_zero_accepted` — `set` with `ttlMs: 0` produces `expiresAt = now`; subsequent `get` (with any clock advance) returns null and evicts
+- `t4_negative_ttl_accepted_and_evicted` — `set` with `ttlMs: -1000` produces `expiresAt` in the past; immediate `get` returns null and evicts
+- `t4_missing_type_throws` — `set` with `type` undefined throws `MissingMemoryTypeError`; no partial write to `state.sharedMemory`
+- `t4_createdAt_preserved_on_update` — second `set` for the same key preserves `createdAt` and refreshes `updatedAt`
+
+**Integration tests** (same file, with real `state.sharedMemory`):
+- `t4_round_trip_within_ttl` — `set` with `ttlMs: 5000` → `get` returns value
+- `t4_lazy_eviction_on_get` — `set` with `ttlMs: 100` → wait 150ms → `get` returns null AND the entry key is absent from `state.sharedMemory`
+- `t4_lazy_eviction_on_list` — set 3 entries, two with short TTL; wait past TTL; `list` returns only the long-lived one and the two short-lived keys are absent from `state.sharedMemory`
+- `t4_persistence_preserves_expiresAt` — `set` with absolute `expiresAt = T` → `saveHiveState` → `loadHiveState` → `get` evicts at T regardless of restart wall-clock
+- `t4_legacy_migration_non_destructive` — pre-place `state.sharedMemory[key] = "raw"`, `loadHiveState` rewrites to `{ value: "raw", type: 'system', ttlMs: null, expiresAt: null, createdAt: <load-time>, updatedAt: <load-time> }`; `get` returns `"raw"`
+- `t4_periodic_sweep_removes_untouched_expired` — register hive, `set` with `ttlMs: 100`, advance fake timers by sweep interval (60s default), assert key absent from `state.sharedMemory` with no intervening `get`/`list`
+- `t4_sweep_handle_cleared_on_shutdown` — register hive, capture `setInterval` handle, call `hive-mind_shutdown`, assert handle cleared (no orphaned timer fires after shutdown)
+- `t4_concurrent_eviction_no_data_loss` — two processes each call `get` on the same expired key under `withHiveStoreLock`; the second sees the entry absent and returns null without throwing
+
+**Acceptance tests** (`lib/acceptance-hive-memory-types.sh` wired via `scripts/test-acceptance.sh` in init'd project):
+- `acc_t4_8_type_matrix` — for each of the 8 types: `hive-mind_memory set --type=<T>` then `get`; round-trips successfully and persisted state shows the documented default `ttlMs`
+- `acc_t4_ttl_expiry_short` — `set --ttlMs=200`, `sleep 0.5`, `get` returns null
+- `acc_t4_type_filter_list` — set 3 entries (two `task`, one `knowledge`), `list --type=task` returns exactly the two task entries
+- `acc_t4_unknown_type_rejected` — `set --type=invalid` exits non-zero with `InvalidMemoryTypeError`
+- `acc_t4_missing_type_rejected` — `set` with no `--type` flag exits non-zero with `MissingMemoryTypeError`; no entry written to `state.sharedMemory`
+- `acc_t4_legacy_dict_migration` — pre-place a legacy untyped entry in `state.json`, run a `get` through the CLI, assert success and migrated shape on disk
+
+## Pros and Cons of the Options
+
+**Option A — Inline typed entry shape (CHOSEN)**
+- Good, because the single index keeps T5 cache key space simple; one persistence path in `saveHiveState`/`loadHiveState`; type filtering on `list` is a single predicate on iteration; matches RVF row mapping directly; minimal touch surface (single file).
+- Bad, because every per-type query (`list({type: 'task'})`) is a full-scan filter — O(N) over all entries regardless of how many match; eviction is not free per-key — needs a periodic sweep AND lazy-on-read to bound memory growth; legacy flat-dict entries on disk must be migrated on load (non-destructive default to `type: 'system'`, but every old write becomes one schema-bridge operation); lazy eviction does a `delete` on `state.sharedMemory`, so the read path must enter the cross-process lock or race writers — eliminating the existing lock-free `get`/`list` fast path; existing `hive-mind_memory.set` call sites that omit `type` must be migrated to pass an explicit `type` in the same commit (no graceful default).
+
+**Option B — Split top-level dicts (`state.knowledge`, `state.context`, …)**
+- Good, because per-type list is O(N_type) instead of O(N_total); type-specific eviction strategies could diverge cleanly later; legacy migration is a one-shot bucket-and-distribute.
+- Bad, because every existing call site that reads `state.sharedMemory` (and there are several outside this tool) must now know which of 8 dicts to consult, OR we keep `sharedMemory` as a virtual merged view — adding a layer; `get(key)` without a type hint becomes O(8) lookups across the dicts; T5 cache key space fragments across 8 namespaces; persistence path in `saveHiveState` multiplies into 8 serialization sites; cross-type `list({})` requires merging 8 sources.
+
+**Option C — Typed-adapter layer (`state.sharedMemory` flat + sidecar `state.sharedMemoryMeta`)**
+- Good, because the existing flat dict stays untouched; type+TTL is purely additive; legacy entries need no migration (a missing meta entry just means "no TTL").
+- Bad, because two parallel persistence paths (value dict + metadata dict) double the failure surface — a `saveHiveState` that lands the value but not the meta produces an orphaned untyped entry; T5 must reach into both stores; the "missing meta means permanent system" branch is itself a silent fallback per `feedback-no-fallbacks.md` — recovery from partial writes becomes indistinguishable from legacy.
 
 ## Validation
 
@@ -111,6 +141,7 @@ This option is chosen because it is the only one that simultaneously (1) present
 - `t4_lazy_eviction_on_list` — set 3 entries, two with short TTL; wait past TTL; `list` returns only the long-lived one and the two short-lived keys are absent from `state.sharedMemory`
 - `t4_persistence_preserves_expiresAt` — `set` with absolute `expiresAt = T` → `saveHiveState` → `loadHiveState` → `get` evicts at T regardless of restart wall-clock
 - `t4_legacy_migration_non_destructive` — pre-place `state.sharedMemory[key] = "raw"`, `loadHiveState` rewrites to `{ value: "raw", type: 'system', ttlMs: null, expiresAt: null, createdAt: <load-time>, updatedAt: <load-time> }`; `get` returns `"raw"`
+- `t4_persistence_preserves_expiresAt` — covered above
 - `t4_periodic_sweep_removes_untouched_expired` — register hive, `set` with `ttlMs: 100`, advance fake timers by sweep interval (60s default), assert key absent from `state.sharedMemory` with no intervening `get`/`list`
 - `t4_sweep_handle_cleared_on_shutdown` — register hive, capture `setInterval` handle, call `hive-mind_shutdown`, assert handle cleared (no orphaned timer fires after shutdown)
 - `t4_concurrent_eviction_no_data_loss` — two processes each call `get` on the same expired key under `withHiveStoreLock`; the second sees the entry absent and returns null without throwing
@@ -374,8 +405,15 @@ Per ADR-0118: legacy untyped entries (`state.sharedMemory[key] = rawValue`) are 
 - **Type-enum drift.** If USERGUIDE adds a 9th memory type, the enum, `DEFAULT_TTL_MS_BY_TYPE` table, validation matrix, and acceptance script all update together. Single-file scope keeps this tractable.
 - **T5 cache-key contract.** ADR-0123 references `entry.id` in its pseudocode; T4's `MemoryEntry` shape has no `id` field — the entry key is the `state.sharedMemory` map key. T5 must be updated to use the map key, not a non-existent `id`. Captured in Review note 1.
 
-## References
+## More Information
 
+Original status: **Implemented (2026-05-03)** per ADR-0118 §Status (T4 complete; fork ca9e29e2c + ruflo-patch 74f29e7). Cites: `forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hive-mind-tools.ts:966-1039` (`hive-mind_memory` tool — typed `MemoryEntry` shape, lazy + periodic eviction, `withHiveStoreLock` on all four actions); `forks/ruflo/v3/@claude-flow/cli/__tests__/mcp-tools-deep.test.ts` (unit + integration matrix); `lib/acceptance-hive-memory-types.sh` (8-type matrix, TTL expiry, type filter, legacy migration, error rejection — wired in `scripts/test-acceptance.sh`).
+
+This ADR depends on ADR-0116 (hive-mind marketplace plugin — verification matrix) and ADR-0118 (hive-mind runtime gaps tracker — task definition). It is related to ADR-0114 (substrate/protocol/execution layering).
+
+Scope: Fork-side runtime work in `forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hive-mind-tools.ts`. Per `feedback-patches-in-fork.md`, USERGUIDE-promised features that don't work are bugs and bugs are fixed in fork.
+
+References:
 - ADR-0116 (hive-mind marketplace plugin — verification matrix audit)
 - ADR-0118 §T4 (hive-mind runtime gaps tracker — task definition)
 - ADR-0123 §Specification (T5 — caches the typed `MemoryEntry` shape this ADR introduces)
@@ -385,7 +423,7 @@ Per ADR-0118: legacy untyped entries (`state.sharedMemory[key] = rawValue`) are 
 - USERGUIDE substring anchor `**Collective Memory Types:**` in `/Users/henrik/source/ruvnet/ruflo/docs/USERGUIDE.md`
 - Touch site: `forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hive-mind-tools.ts` — `hive-mind_memory` tool currently `:966-1039`; line numbers will drift as the file grows so the entry-name anchor is the stable reference
 
-## Review notes
+### Review notes
 
 1. **T5 (ADR-0123) `entry.id` reference.** ADR-0123 §Pseudocode line for `saveHiveState` writes `rvfBackend.write(entryKey(entry.id), entry)`, but T4's `MemoryEntry` defines no `id` field — the per-entry key IS the `state.sharedMemory` map key. T5 needs an editorial fix: `entryKey(key)` where `key` comes from the map-iteration tuple, not from `entry.id`. Not a T4 blocker; flagging for the T5 commit. — resolved (triage row 17: ADR-0123 §Pseudocode now uses map-iteration tuple). See `/docs/adr/ADR-0118b-review-notes-triage.md`.
 2. **Migration false-positive bound.** A legacy user-stored object that happens to contain all four of `type`/`ttlMs`/`expiresAt`/`createdAt` keys at the top level would be misclassified as a `MemoryEntry` and skip migration. Probability is low (legacy storage is `state.sharedMemory[key] = userValue` directly, not wrapped) but non-zero. If this surfaces, the fix is to require a `MEMORY_ENTRY_MARKER: true` field on writes — strictly additive, no migration needed. (triage row 18 — DEFER-TO-IMPL: low non-zero false-positive; fix if surfaces by adding MEMORY_ENTRY_MARKER field). See `/docs/adr/ADR-0118b-review-notes-triage.md`.

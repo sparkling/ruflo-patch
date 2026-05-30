@@ -1,10 +1,15 @@
-# ADR-0018: Initial Setup Runbook
+---
+status: accepted
+date: 2026-03-05
+tags: [runbook, setup, secrets, systemd]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-## Status
+# Initial Setup Runbook
 
-Accepted
-
-## Context
+## Context and Problem Statement
 
 ### Specification (SPARC-S)
 
@@ -56,7 +61,7 @@ STEP 8 — Verify:
   npx ruflo --version
 ```
 
-## Decision
+## Setup Procedure
 
 ### Architecture (SPARC-A)
 
@@ -209,7 +214,7 @@ npx ruflo --version   # should print the published version
 npm view ruflo dist-tags   # should show latest
 ```
 
-### Considered Alternatives
+## Considered Alternatives
 
 1. **Store secrets in environment variables set in `.bashrc`** -- Rejected. Environment variables persist across all processes for the user, increasing exposure surface. A dedicated `EnvironmentFile` loaded only by the systemd service limits exposure to the build process.
 
@@ -219,9 +224,7 @@ npm view ruflo dist-tags   # should show latest
 
 4. **Automate setup with a bootstrap script** -- Considered for future work. The manual steps described here are a prerequisite for writing such a script. Once the runbook is validated by performing setup at least once, the steps can be automated. Premature automation of an untested procedure creates a script that encodes mistakes.
 
-## Consequences
-
-### Refinement (SPARC-R)
+## Refinement (SPARC-R)
 
 **Positive:**
 
@@ -242,7 +245,7 @@ npm view ruflo dist-tags   # should show latest
 - If GitHub forks are deleted, re-forking is trivial (`gh repo fork`), but the local clones must be re-pointed to the new fork URLs
 - If the build server changes architecture (e.g., x86 to ARM), `better-sqlite3` and any native addons must be rebuilt. The build script handles this via `pnpm install` which triggers native compilation
 
-### Completion (SPARC-C)
+## Completion (SPARC-C)
 
 Acceptance criteria:
 

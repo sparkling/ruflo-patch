@@ -1,11 +1,15 @@
-# ADR-0071: Native Binary Build, Scope Rename, and Bundling
+---
+status: accepted
+date: 2026-04-06
+tags: [native, napi, build, ruvector]
+supersedes: []
+depends-on: [ADR-0069]
+implements: []
+---
 
-- **Status**: Implemented
-- **Date**: 2026-04-06
-- **Implemented**: 2026-04-06
-- **Depends on**: ADR-0069 (F1 consolidation, config chain)
+# Native Binary Build, Scope Rename, and Bundling
 
-## Context
+## Context and Problem Statement
 
 The `@sparkleideas/*` packages depend on 13 `@ruvector/*` packages, 10 of which are NAPI-RS
 native binaries requiring platform-specific `.node` files. Upstream (`ruvnet/RuVector`) publishes
@@ -24,7 +28,15 @@ these to npm, but:
 6. **Stale branches**: 56 upstream branches with unmerged Rust changes, but almost all include
    destructive repo restructuring (8K-144K lines deleted). No branch is safe to merge wholesale.
 
-## Decision
+## Considered Options
+
+* **Build all NAPI-RS binaries from fork HEAD, rename `@ruvector/*` → `@sparkleideas/ruvector-*`, and bundle the `.node` binaries into parent packages (chosen)** — with cherry-pick-only upstream branch policy.
+
+(No alternatives were recorded; the upstream branch analysis below shows why wholesale merges were rejected in favor of cherry-picks.)
+
+## Decision Outcome
+
+Chosen option: "Build all NAPI-RS binaries from fork HEAD, rename `@ruvector/*` → `@sparkleideas/ruvector-*`, and bundle the `.node` binaries into parent packages", because building from fork HEAD guarantees our patches and traceable provenance are in every binary, the scope rename stops shipping modified code under someone else's name, and bundling the `.node` into the parent tarball eliminates ~80 platform-specific packages.
 
 ### Build all NAPI-RS binaries from fork HEAD
 
@@ -90,27 +102,12 @@ Wholesale merges would delete source for binaries we ship.
 - 12 branches include destructive restructuring that would break our binaries
 - 3 branches (sona fixes) have actionable cherry-picks listed above
 
-## Binary Inventory (darwin-arm64)
-
-| Package | NAPI Crate | Upstream Declares | Our Version | Tag? |
-|---------|-----------|-------------------|-------------|------|
-| attention | `ruvector-attention-node` | 0.1.31 | `sha.<HEAD>` | `v0.1.31` |
-| core | `ruvector-node` | 0.1.29 | `sha.<HEAD>` | None |
-| gnn | `ruvector-gnn-node` | 0.1.25 | `sha.<HEAD>` | `v0.1.25` |
-| graph-node | `ruvector-graph-node` | 2.0.2 | `sha.<HEAD>` | None |
-| graph-transformer | `ruvector-graph-transformer-node` | 2.0.4 | `sha.<HEAD>` | `v2.0.4` |
-| router | `ruvector-router-ffi` | 0.1.27 | `sha.<HEAD>` | `v0.1.27` |
-| ruvllm | `examples/ruvLLM` (+F napi) | 2.3.0 (never published) | `sha.<HEAD>` | None |
-| rvf-node | `rvf/rvf-node` | 0.1.7 | `sha.<HEAD>` | None |
-| sona | `sona` | 0.1.5 | `sha.<HEAD>` | `sona-v0.1.5` |
-| tiny-dancer | `ruvector-tiny-dancer-node` | 0.1.15 | `sha.<HEAD>` | `v0.1.15` |
-
-## Scope Rename: `@ruvector/*` → `@sparkleideas/ruvector-*`
+### Scope Rename: `@ruvector/*` → `@sparkleideas/ruvector-*`
 
 Since we build these binaries from our fork (with our patches), shipping them under the
 original `@ruvector/*` name is misleading — they're modified code under someone else's name.
 
-### Current state (excluded from codemod — to be removed)
+#### Current state (excluded from codemod — to be removed)
 
 8 packages in `config/package-map.json` `excluded` array are passed through without renaming:
 `ruvector`, `@ruvector/core`, `@ruvector/router`, `@ruvector/graph-transformer`,
@@ -119,7 +116,7 @@ original `@ruvector/*` name is misleading — they're modified code under someon
 **The `excluded` array should be removed entirely.** Every package we ship should be under
 `@sparkleideas/*`. No exceptions — if we build it from our fork, it gets our scope.
 
-### Target state (renamed in codemod)
+#### Target state (renamed in codemod)
 
 Move all `@ruvector/*` from `excluded` to a new `ruvector` scope mapping:
 
@@ -132,7 +129,7 @@ Move all `@ruvector/*` from `excluded` to a new `ruvector` scope mapping:
 
 This renames `@ruvector/core` → `@sparkleideas/ruvector-core`, etc.
 
-### Scope of change
+#### Scope of change
 
 - **1336 source file references** across `agentic-flow/src/` and `packages/`
 - **~60 unique package names** including platform-specific binaries (`-darwin-arm64`, `-linux-x64-gnu`, etc.)
@@ -140,7 +137,7 @@ This renames `@ruvector/core` → `@sparkleideas/ruvector-core`, etc.
 - `optionalDependencies` in all parent package.json files must be rewritten
 - The `install-native-deps.sh` script must produce `@sparkleideas/ruvector-*` package names
 
-### Implementation phases
+#### Implementation phases
 
 **Phase 1: Cherry-pick upstream fixes into fork**
 
@@ -195,25 +192,46 @@ Results:
 - Verdaccio `max_body_size` increased to 100mb (ruvector-core is 5.2MB with binary)
 - Duplicate package issue documented: `npm/core` (stale) vs `npm/packages/core` (correct)
 
-## Consequences
+### Consequences
 
-### Positive
-- Every binary has traceable provenance (SHA in package.json)
-- Fork patches automatically included in every build
-- No dependency on upstream npm publish cadence
-- Missing/broken build configs fixed in fork
-- Build is reproducible from any checkout of the fork
-- `.node` bundled in parent packages — no separate platform packages needed (~80 eliminated)
-- 10/10 native binaries verified from fresh install
+* Good, because every binary has traceable provenance (SHA in package.json).
+* Good, because fork patches are automatically included in every build.
+* Good, because there is no dependency on upstream npm publish cadence.
+* Good, because missing/broken build configs are fixed in fork.
+* Good, because the build is reproducible from any checkout of the fork.
+* Good, because `.node` is bundled in parent packages — no separate platform packages needed (~80 eliminated).
+* Good, because 10/10 native binaries verified from fresh install.
+* Bad, because it requires a Rust toolchain + NAPI-RS CLI for development setup.
+* Bad, because the first build takes ~5 minutes (subsequent builds use cargo cache, ~10s).
+* Bad, because you must rebuild after pulling fork changes (script is idempotent — only rebuilds if SHA changes).
+* Bad, because Linux/Windows binaries are not built (only darwin-arm64 tested); cross-compilation is needed for CI.
+* Bad, because parent package tarballs are larger (0.5-5.2MB each with bundled binary).
+* Neutral, because upstream Cargo.toml workspace changes could break our builds.
+* Neutral, because some crates may gain new Rust dependencies that need native libs (e.g., Metal framework for ruvllm).
+* Neutral, because the 4 packages with no upstream tag have no baseline to diff against.
+* Neutral, because duplicate package.json files in the ruvector repo (`npm/core` vs `npm/packages/core`) mean the publish script must use `npm/packages/*` (the correct versions).
 
-### Negative
-- Requires Rust toolchain + NAPI-RS CLI for development setup
-- First build takes ~5 minutes (subsequent builds use cargo cache, ~10s)
-- Must rebuild after pulling fork changes (script is idempotent — only rebuilds if SHA changes)
-- Linux/Windows binaries not built (only darwin-arm64 tested); cross-compilation needed for CI
-- Parent package tarballs are larger (0.5-5.2MB each with bundled binary)
+### Confirmation
 
-### Risks
+Phase 3 verification (DONE 2026-04-06): 10/10 native NAPI binaries load from a fresh `npm install @sparkleideas/cli`, 148/148 acceptance tests pass (0 failures), and 1265 unit tests pass. New acceptance checks were added (`check_adr0071_no_ruvector_refs`, `check_adr0071_node_binary_exists`) per the post-sync update.
+
+## Binary Inventory (darwin-arm64)
+
+| Package | NAPI Crate | Upstream Declares | Our Version | Tag? |
+|---------|-----------|-------------------|-------------|------|
+| attention | `ruvector-attention-node` | 0.1.31 | `sha.<HEAD>` | `v0.1.31` |
+| core | `ruvector-node` | 0.1.29 | `sha.<HEAD>` | None |
+| gnn | `ruvector-gnn-node` | 0.1.25 | `sha.<HEAD>` | `v0.1.25` |
+| graph-node | `ruvector-graph-node` | 2.0.2 | `sha.<HEAD>` | None |
+| graph-transformer | `ruvector-graph-transformer-node` | 2.0.4 | `sha.<HEAD>` | `v2.0.4` |
+| router | `ruvector-router-ffi` | 0.1.27 | `sha.<HEAD>` | `v0.1.27` |
+| ruvllm | `examples/ruvLLM` (+F napi) | 2.3.0 (never published) | `sha.<HEAD>` | None |
+| rvf-node | `rvf/rvf-node` | 0.1.7 | `sha.<HEAD>` | None |
+| sona | `sona` | 0.1.5 | `sha.<HEAD>` | `sona-v0.1.5` |
+| tiny-dancer | `ruvector-tiny-dancer-node` | 0.1.15 | `sha.<HEAD>` | `v0.1.15` |
+
+## Risks
+
 - Upstream Cargo.toml workspace changes could break our builds
 - Some crates may gain new Rust dependencies that need native libs (e.g., Metal framework for ruvllm)
 - The 4 packages with no upstream tag have no baseline to diff against
@@ -229,3 +247,7 @@ Impact: SIGNIFICANT — needs verification.
 - RVM is a bare-metal OS — NOT an npm package, should NOT be published by the fork
 - Decompiler (ruDevolution) could be published as @sparkleideas/ruvector-decompiler if user demand exists
 - New acceptance checks added: check_adr0071_no_ruvector_refs, check_adr0071_node_binary_exists
+
+## More Information
+
+Original status: "Implemented (2026-04-06)." Recorded and implemented 2026-04-06. This ADR depends on ADR-0069 (F1 consolidation, config chain).

@@ -1,14 +1,13 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-26
-tags: [adr-schema, completion-tracking, upstream-alignment, plugin-conformance, taxonomy]
+tags: [adr-schema, completion-tracking, upstream-alignment, taxonomy]
 supersedes: []
 depends-on: []
 implements: []
 ---
 
-# ADR-0262 — Extend ADR schema with `completed` boolean; align status enum with upstream
+# Extend ADR schema with `completed` boolean; align status enum with upstream
 
 ## Context and Problem Statement
 

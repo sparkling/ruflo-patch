@@ -1,12 +1,15 @@
-# ADR-0064: Controller Configuration Alignment
+---
+status: accepted
+date: 2026-04-05
+tags: [controller, config, embeddings, memory]
+supersedes: []
+depends-on: [ADR-0061, ADR-0062, ADR-0063]
+implements: []
+---
 
-- **Status**: Implemented (2026-04-11). P0-P3 complete. || vs ?? fixed (7 lines). solverBandit already config-driven.
-- **Date**: 2026-04-05
-- **Implemented**: 2026-04-11
-- **Deciders**: Henrik Pettersen
-- **Builds on**: ADR-0061 (controller integration), ADR-0062 (storage config unification), ADR-0063 (storage audit remediation)
+# Controller Configuration Alignment
 
-## Context
+## Context and Problem Statement
 
 Post-ADR-0063, the 45 controllers in `controller-registry.js` are wired and the
 dimension defaults were moved from 1536 to 768 in most backends. However a deep
@@ -42,7 +45,15 @@ and `embeddings.json` reveals a second tier of issues:
 | `numHeads` inconsistency | Not addressed | 4 vs 8 in related controllers |
 | `maxElements` 100K vs 1M split | H2 partially fixed registry | Backends still default to 1M |
 
-## Decision
+## Considered Options
+
+* **Align controller configuration across registry, constants, config.json, and backends via a prioritized P0–P3 remediation (chosen)** — wire `getEmbeddingConfig()` into the registry, remove dead constants/fields, expose hardcoded constructor args, and align `numHeads`/`maxElements`.
+* **Delete `embedding-constants.ts` entirely (Option A, preferred for the `EMBEDDING_DIM` sub-decision)** — the registry resolves dimensions internally via P0.
+* **Have `createEmbeddingService()` import `EMBEDDING_DIM` as a fallback (Option B for the `EMBEDDING_DIM` sub-decision)** — retained as the alternative to deletion.
+
+## Decision Outcome
+
+Chosen option: "Align controller configuration across registry, constants, config.json, and backends via a prioritized P0–P3 remediation", because resolving dimensions from the canonical source eliminates the 384/768 split at the root, removes dead configuration, and makes hardcoded constructor args operator-tunable.
 
 ### P0: Wire `getEmbeddingConfig()` into Controller Registry
 
@@ -222,6 +233,40 @@ backend = new RvfBackend({
 
 **Location**: `ruflo` fork, `v3/@claude-flow/memory/src/database-provider.ts`.
 
+### Consequences
+
+* Good, because it eliminates the last 384/768 dimension split at the source (controller-registry).
+* Good, because it removes 8 dead config fields that cause confusion.
+* Good, because it makes all hardcoded constructor args configurable.
+* Good, because it fixes `batchOperations` getting zero-vector embeddings.
+* Good, because it aligns `numHeads` between related attention controllers.
+* Good, because it documents the 3-storage-system architecture for future simplification.
+* Bad, because P0 adds a dynamic import to `initialize()` — 1 additional `await import()` call.
+* Bad, because P1 changes `config.json` schema — existing deployments with the old fields see warnings (not errors).
+* Bad, because P2 `numHeads` 4→8 change for `multiHeadAttention` may increase memory usage slightly.
+* Neutral, because P0 depends on `@sparkleideas/agentdb` being importable at registry init time. If the import fails, the fallback remains 768 (not 384), which is correct for all current models.
+* Neutral, because changing `config.json` in this repo only affects the local `.claude-flow/` config. Published packages carry their own defaults from source code.
+
+### Confirmation
+
+All changes target upstream fork source (`controller-registry.ts`,
+`database-provider.ts`, `embedding-constants.ts`) and local config
+(`config.json`). Existing tests in this repo already cover the patterns:
+
+| Test File | Covers |
+|-----------|--------|
+| `controller-adr0061.test.mjs` | Factory construction contracts |
+| `controller-registry-activation.test.mjs` | Enable/disable logic |
+| `storage-config-adr0062.test.mjs` | Dimension resolution, HNSW params, pragmas |
+| `storage-audit-adr0063.test.mjs` | Import paths, embedder reuse, dimension defaults |
+
+New tests needed:
+
+1. **Unit**: `resolvedDimension` uses `getEmbeddingConfig()` when `config.dimension` omitted
+2. **Unit**: `batchOperations` gets real embedder via `createEmbeddingService()`
+3. **Unit**: `multiHeadAttention` reads `numHeads` from config
+4. **Acceptance**: `check_embedding_dim_consistency` — verify all initialized controllers report matching dimension
+
 ## Full Inventory: All Hardcoded Values in Controller Factories
 
 | Controller | Hardcoded Value | Config Path (proposed) | Priority |
@@ -318,51 +363,11 @@ the separate `backend` handle entirely.
 These add init overhead (dynamic import attempts) for zero value. Consider
 removing from INIT_LEVELS and activating only via `config.controllers[name] = true`.
 
-## Test Impact
-
-All changes target upstream fork source (`controller-registry.ts`,
-`database-provider.ts`, `embedding-constants.ts`) and local config
-(`config.json`). Existing tests in this repo already cover the patterns:
-
-| Test File | Covers |
-|-----------|--------|
-| `controller-adr0061.test.mjs` | Factory construction contracts |
-| `controller-registry-activation.test.mjs` | Enable/disable logic |
-| `storage-config-adr0062.test.mjs` | Dimension resolution, HNSW params, pragmas |
-| `storage-audit-adr0063.test.mjs` | Import paths, embedder reuse, dimension defaults |
-
-New tests needed:
-
-1. **Unit**: `resolvedDimension` uses `getEmbeddingConfig()` when `config.dimension` omitted
-2. **Unit**: `batchOperations` gets real embedder via `createEmbeddingService()`
-3. **Unit**: `multiHeadAttention` reads `numHeads` from config
-4. **Acceptance**: `check_embedding_dim_consistency` — verify all initialized controllers report matching dimension
-
-## Consequences
-
-### Positive
-
-- Eliminates the last 384/768 dimension split at the source (controller-registry)
-- Removes 8 dead config fields that cause confusion
-- Makes all hardcoded constructor args configurable
-- Fixes `batchOperations` getting zero-vector embeddings
-- Aligns `numHeads` between related attention controllers
-- Documents the 3-storage-system architecture for future simplification
-
-### Negative
-
-- P0 adds a dynamic import to `initialize()` — 1 additional `await import()` call
-- P1 changes `config.json` schema — existing deployments with the old fields see warnings (not errors)
-- P2 `numHeads` 4→8 change for `multiHeadAttention` may increase memory usage slightly
-
-### Risks
+## Risks
 
 - P0 depends on `@sparkleideas/agentdb` being importable at registry init time. If the import fails, the fallback remains 768 (not 384), which is correct for all current models.
 - Changing `config.json` in this repo only affects the local `.claude-flow/` config. Published packages carry their own defaults from source code.
 
-## Related
+## More Information
 
-- **ADR-0063**: Storage Audit Remediation (predecessor — this ADR addresses gaps found after 0063's fixes shipped)
-- **ADR-0062**: Storage & Configuration Unification
-- **ADR-0061**: Controller Integration Completion
-- **ADR-0052**: Config-driven Embedding Framework
+Original status: "Implemented (2026-04-11). P0-P3 complete. || vs ?? fixed (7 lines). solverBandit already config-driven." Recorded 2026-04-05, implemented 2026-04-11; deciders: Henrik Pettersen. This ADR builds on ADR-0061 (controller integration), ADR-0062 (storage config unification), and ADR-0063 (storage audit remediation) — it addresses gaps found after ADR-0063's fixes shipped. It also relates to ADR-0052 (config-driven embedding framework).

@@ -1,16 +1,13 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-18
-implemented: 2026-05-18
-methodology: [MADR]
-decision-makers: [Henrik Pettersen]
-tags: [pipeline, ci, napi, fail-loud, ADR-0082]
-related: [0082, 0133, 0162, 0186]
-audience: ai-executor
+tags: [pipeline, ci, napi]
+supersedes: []
+depends-on: [ADR-0082]
+implements: []
 ---
 
-# ADR-0189: Fail-loud detection for new NAPI crates outside `NAPI_PACKAGES` allowlist
+# Fail-loud detection for new NAPI crates outside `NAPI_PACKAGES` allowlist
 
 ## Context and Problem Statement
 
@@ -217,29 +214,16 @@ default on `main`.
 Option 1 lets devs iterate locally without the check; Option 2
 catches the bug at every `npm run release` call but slows iteration.
 
-## Consequences
+### Consequences
 
-**If Option 1 (CI-only)**:
-* No `npm run release` slowdown.
-* PR merges blocked until allowlist matches.
-* Local `npm run release` can ship an inconsistent state if the dev
-  doesn't push the PR.
-
-**If Option 2 (pre-flight)**:
-* `npm run release` cycle adds a sub-second check (toml parse + glob
-  walk).
-* No local-vs-CI divergence: same gate everywhere.
-* Slight friction for dev iteration; mitigated by `ACCEPTANCE_HEAVY=0`-style
-  opt-out env var if needed.
-
-**If Option 3 (advisory)**:
-* Cheap to implement; defeats the point.
-
-**If Option 4 (per-crate intent declaration)**:
-* Highest signal-to-noise; explicitly documents intent.
-* High upfront cost — every fork crate gets a `[package.metadata.ruflo]`
-  section.
-* Drift risk: future upstream crates land without the section, the
-  check has to handle "missing-metadata" as a separate case.
+* Good, because the chosen Option 2 (pre-flight) cycle adds only a sub-second check (toml parse + glob walk) and there is no local-vs-CI divergence — the same gate runs everywhere.
+* Bad, because Option 2 adds slight friction for dev iteration; mitigated by an `ACCEPTANCE_HEAVY=0`-style opt-out env var if needed.
+* Neutral, because Option 1 (CI-only) would have avoided `npm run release` slowdown but blocked PR merges until the allowlist matches, and a local `npm run release` could ship an inconsistent state if the dev doesn't push the PR.
+* Neutral, because Option 3 (advisory) is cheap to implement but defeats the point.
+* Neutral, because Option 4 (per-crate intent declaration) has the highest signal-to-noise and explicitly documents intent, but a high upfront cost (every fork crate gets a `[package.metadata.ruflo]` section) plus drift risk: future upstream crates land without the section, so the check has to handle "missing-metadata" as a separate case.
 
 This ADR closes when one of the options is implemented.
+
+## More Information
+
+Original status: accepted, implemented, and completed 2026-05-18. Original frontmatter recorded `methodology: [MADR]`, `decision-makers: [Henrik Pettersen]`, `audience: ai-executor`, and `related: [0082, 0133, 0162, 0186]`. The finding originated from ADR-0186's "Pipeline silently-drops new artifacts" audit (ADR-0162 follow-up #3).

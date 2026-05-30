@@ -1,12 +1,9 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-21
-accepted-on: 2026-05-21
-implemented-on: 2026-05-21
 tags: [mcp, stdio, jsonrpc, protocol, console, lost-reply, bugfix]
 supersedes: []
-depends-on: [0204]
+depends-on: [ADR-0204]
 implements: []
 ---
 
@@ -107,6 +104,10 @@ Implemented in fork commit `0bdd3b4b3`, shipped in
 * **Acceptance (behavioural):** `adr0204-archivist-rt` (lib/acceptance-adr0204-checks.sh)
   now fails on a MISSING first-store reply, rather than tolerating it. Wired into
   the canonical `scripts/test-acceptance.sh`, not only the fast runner.
+
+## More Information
+
+This decision was completed; accepted and implemented on 2026-05-21.
 
 ## Direct review (2026-05-22)
 

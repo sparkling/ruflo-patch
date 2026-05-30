@@ -1,10 +1,9 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-24
-tags: [audit-followup, cli, dishonest-envelopes, parser, brand-drift, ct-k, mcp-cli]
+tags: [audit-followup, cli, dishonest-envelopes, parser]
 supersedes: []
-depends-on: [0201, 0208, 0233, 0234]
+depends-on: [ADR-0201, ADR-0208, ADR-0233, ADR-0234]
 implements: []
 ---
 
@@ -305,7 +304,7 @@ Each fix carries:
 | 10 | `forks/ruflo/v3/@claude-flow/cli/src/commands/completions.ts` | 12, 20, 23, 47-51, 365-371, 421 | F-01-013 | LOW | CC-02 | Derive command lists from `getCommandNames()` and `.subcommands` |
 | 11 | `forks/ruflo/v3/@claude-flow/cli/src/parser.ts` | 481-498 (`applyDefaults`) | F-01-009 | MEDIUM | CC-03 | Two-line coercion of `opt.default` to declared type |
 
-## Consequences
+### Consequences
 
 * Good, because closes the CC-01 CLI dishonest-envelope class at the 5
   audited sites and adopts the same [[ADR-0210]] stub-honesty mandate that

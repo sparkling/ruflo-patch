@@ -1,13 +1,15 @@
-# ADR-0080: Storage Consolidation Verdict
+---
+status: accepted
+date: 2026-04-11
+tags: [storage, rvf, sqlite, config]
+supersedes: []
+depends-on: [ADR-0075, ADR-0076, ADR-0077]
+implements: []
+---
 
-- **Status**: Implemented
-- **Date**: 2026-04-11
-- **Implemented**: 2026-04-11
-- **Deciders**: Henrik Pettersen
-- **Methodology**: Hive deliberation (Queen + 7 experts + 2 Devil's Advocates)
-- **Depends on**: ADR-0075 (Architecture State Assessment), ADR-0076 (Consolidation Plan), ADR-0077 (Upstream-Compatible Revision)
+# Storage Consolidation Verdict
 
-## Context
+## Context and Problem Statement
 
 A 10-agent hive council audited the storage system after ADR-0076 Phases 0-4 were
 implemented. The council comprised a queen (synthesis), 7 domain experts (RVF backend,
@@ -35,7 +37,16 @@ consolidation).
 | 4 | Shared controller instances (`controller-intercept.ts`) | Complete |
 | 5 | Single data flow path (`memory-router.ts`) | **Complete** (ADR-0083 reversed "Abandon"; ADR-0086 implemented. Router delegates to RvfBackend. memory-initializer.ts deleted.) |
 
-## Decision
+## Considered Options
+
+* **Fix three high-priority problems (P1 RVF half-migration, P2 unbounded JSON, P3 maxElements divergence), converge storage parameters on `resolveConfig()`, and adopt an RVF-primary shim — while explicitly NOT deleting upstream files, NOT consolidating JSON into SQLite, NOT adding abstraction interfaces, and NOT radically simplifying to 3 files (chosen).**
+* **Radically simplify to 3 files** — Rejected: correct diagnosis but impossible under the upstream-compatibility constraint.
+* **Delete upstream files (`memory-bridge.ts`, `memory-initializer.ts`)** — Rejected at decision time under the fork-patching model (merge conflicts). (Note: subsequently overridden by ADR-0083 → ADR-0086.)
+* **Against further consolidation** — Rejected as a blanket position: different engines serve genuinely different access patterns, but the three identified problems still warranted targeted fixes.
+
+## Decision Outcome
+
+Chosen option: "Fix the three high-priority problems and converge on a single config source while preserving the multi-engine architecture", because the council's evidence showed the divergences (maxElements crash risk, unbounded JSON growth, half-completed RVF migration) were real hazards, while wholesale deletion or radical simplification was infeasible under the fork-patching upstream-compatibility constraint.
 
 ### Three problems to fix (HIGH priority)
 
@@ -148,6 +159,19 @@ file (3 lines each, additive, wrapped in try/catch).
 | Consolidate JSON intelligence files into SQLite | CJS subprocess workers can't import TypeScript modules — JSON is the IPC contract |
 | Add more abstraction interfaces | 5 exist already (`IStorage`, `IMemoryBackend`, `IStorageContract`, `VectorBackend`, `VectorBackendAsync`) — four too many |
 | Radically simplify to 3 files | Correct diagnosis but impossible under upstream-compatibility constraint |
+
+### Consequences
+
+* Good, because the P3 fix eliminates the AgentDB 10K hard-throw time bomb and the 10x memory over-allocation from `database-provider.ts`. All HNSW indices share one capacity value from `resolveConfig()`.
+* Good, because the P1/P3 fixes together converge on a single factory path, eliminating config divergence.
+* Good, because the P2 fix prevents data loss from concurrent hook writes and caps unbounded JSON growth.
+* Good, because abandoning Phase 5 saves 18 upstream file modifications worth of merge conflict risk.
+* Neutral, because the storage system remains multi-engine (SQLite + RVF + Graph + JSON) but with clear ownership boundaries instead of competing factory paths.
+* Neutral, because per-subsystem caps (SONA=1K, QueryCache=1K, agent-scope=20) are preserved — these are correctly sized for their specific access patterns and are not part of the `maxElements` unification.
+
+### Confirmation
+
+Implemented 2026-04-11 (and completed by ADR-0086). Verification is tracked in the Priority Scorecard below (each problem marked DONE with its implementing ADR/Debt item) and by the Phase 6 acceptance-test implications: a clean init'd project can store via CLI, have `intelligence.cjs init()` build a graph with nodes > 0, return ranked matches from `getContext`, and boost confidence via `feedback(true)`.
 
 ## Council Findings (by agent)
 
@@ -523,15 +547,6 @@ The acceptance test should verify:
 The test cannot verify token consumption because the product doesn't expose it. This is
 a separate product gap — tracked but not blocking.
 
-## Consequences
+## More Information
 
-- P3 fix eliminates the AgentDB 10K hard-throw time bomb and the 10x memory over-allocation
-  from `database-provider.ts`. All HNSW indices share one capacity value from `resolveConfig()`
-- P1/P3 fixes together converge on a single factory path, eliminating config divergence
-- P2 fix prevents data loss from concurrent hook writes and caps unbounded JSON growth
-- Abandoning Phase 5 saves 18 upstream file modifications worth of merge conflict risk
-- The storage system remains multi-engine (SQLite + RVF + Graph + JSON) but with clear
-  ownership boundaries instead of competing factory paths
-- Per-subsystem caps (SONA=1K, QueryCache=1K, agent-scope=20) are preserved — these are
-  correctly sized for their specific access patterns and are not part of the `maxElements`
-  unification
+Original status: "Implemented", with a recorded Date of 2026-04-11. The methodology recorded was a hive deliberation (Queen + 7 experts + 2 Devil's Advocates). This verdict depends on ADR-0075 (Architecture State Assessment), ADR-0076 (Consolidation Plan), and ADR-0077 (Upstream-Compatible Revision). The original Phase 5 "Abandon" guidance was later reversed by ADR-0083 and completed by ADR-0086 (Debt 6 deleted memory-initializer.ts; Debt 7 removed better-sqlite3 from the CLI).

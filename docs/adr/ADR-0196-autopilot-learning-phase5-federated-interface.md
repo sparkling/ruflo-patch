@@ -1,16 +1,13 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-19
-accepted: 2026-05-19
-implemented: 2026-05-19
-methodology: [MADR]
-decision-makers: [Henrik Pettersen]
-tags: [autopilot, learning, federated, quic, crdt, phase5, ADR-0193, ADR-059]
-related: [0192, 0193, 0194, 0195]
-upstream-related: [agentic-flow/ADR-059]
-audience: ai-executor
+tags: [autopilot, learning, federated, quic, crdt]
+supersedes: []
+depends-on: [ADR-0193]
+implements: []
 ---
+
+# AutopilotLearning Phase 5 — federated learning interface (runtime deferred)
 
 > **Implementation note (2026-05-19):** Runtime is wired — `FederatedSyncProvider`
 > interface + `NoopFederatedSyncProvider` default + `SyncCoordinatorFederatedAdapter`
@@ -25,8 +22,6 @@ audience: ai-executor
 > open; status flips to `implemented` here because the interface + adapter
 > landed and ADR-0196's scope was explicitly "interface + adapter, runtime
 > deferred."
-
-# ADR-0196: AutopilotLearning Phase 5 — federated learning interface (runtime deferred)
 
 ## Context and Problem Statement
 
@@ -232,7 +227,15 @@ transport (e.g. shared-fs MVP).
 
 ## Decision Outcome
 
-**Choose Option 2 — adapter over `SyncCoordinator`. Accepted 2026-05-19.**
+Chosen option: "Option 2 — adapter over `SyncCoordinator`", because the existing federation primitives in agentdb are too built to ignore and an adapter composes with the existing CRDT / conflict resolution / Merkle verification while remaining testable on one host. Accepted 2026-05-19.
+
+### Consequences
+
+* Good, because it composes with existing CRDT / conflict resolution / Merkle verification.
+* Good, because it is testable on one host — two SQLite files + two `SyncCoordinator` instances, manual sync. Real adapter + real CRDT + stub transport.
+* Good, because when transport is wired, no autopilot-side change is needed.
+* Bad, because it adds two fields to `AutopilotEpisode` metadata and one source of `originInstallId`.
+* Bad, because it pre-commits the future runtime ADR to agentdb's QUIC stack — reasonable given existing investment.
 
 Rationale: the existing federation primitives in agentdb are
 **too built** to ignore. Defining a parallel `FederatedSyncProvider`

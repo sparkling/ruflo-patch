@@ -1,11 +1,15 @@
-# ADR-0098: Swarm-Init Sprawl — Generator Instructions + CLI Dedupe
+---
+status: accepted
+date: 2026-04-22
+tags: [swarm, init, cli, generator]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: Implemented 2026-04-22 — shipped as `@sparkleideas/cli@3.5.58-patch.234` (verified in published tarball). Fork `32c13d322` on `sparkling/main`; ruflo-patch companions `76153ef` + `c78c91d`. Pending: upstream issue filed against `ruvnet/claude-flow`, ADR-0097 Tier Y paired unit test for bash acceptance checks, fixture-leak cleanup (see §"Scope-unit clarification" 2026-04-23).
-- **Date**: 2026-04-22
-- **Scope**: fork `forks/ruflo/v3/@claude-flow/cli/src/init/claudemd-generator.ts`, fork `forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/swarm-tools.ts` (MCP `swarm_init` handler, L83–132), fork `forks/ruflo/v3/@claude-flow/cli/src/commands/swarm.ts` (CLI wrappers at L202 and L431), acceptance harness addition, local `.swarm/swarm-state.json` cleanup in ruflo-patch repo
-- **Related**: ADR-0082 (no silent fallbacks — `swarm init` silently appending is the same anti-pattern for state), ADR-0094 (acceptance coverage — new check belongs in Phase 9+), ADR-0097 (check-code quality — any new check follows the paired-unit-test rule)
+# Swarm-Init Sprawl — Generator Instructions + CLI Dedupe
 
-## Context
+## Context and Problem Statement
 
 Forensic evidence from ruflo-patch working directory as of 2026-04-22:
 
@@ -35,9 +39,22 @@ Forensic evidence from ruflo-patch working directory as of 2026-04-22:
 
 But it's a cleanliness bug that **poisons future decisions**: a session that legitimately wants to reuse an existing swarm is selecting from 66 orphans of unknown provenance.
 
-## Decision
+## Considered Options
 
-Fix at the two layers we own (fork) — not (3), which is emergent model behavior shaped by (1) and (2).
+* **Fix at both owned layers — generator instructions + MCP handler config-fingerprint dedupe** (chosen).
+* **A. Fix only the instructions, not the CLI** — Pros: smaller diff, one file. Cons: any future instruction drift, any user typo-loop, any hook regression refills the orphan pile. The CLI is the backstop that makes the instruction fix durable. Rejected.
+* **B. Fix only the CLI, not the instructions** — Pros: one change, cures the symptom regardless of what Claude is told. Cons: Claude still wastes tool-call budget and latency firing `swarm_init` every task. Symptom-only fix. Rejected.
+* **C. Global (not session-scoped) dedupe** — Pros: strongest guarantee of a single swarm per project. Cons: breaks legitimate multi-swarm workflows (parallel research + implementation). Per devil's-advocate objection. Rejected.
+* **E. Session-scoped dedupe (initial design, revised out)** — Pros: reuse only within the same Claude Code session — tighter scope. Cons: requires propagating a session ID from Claude Code → Bash tool invocations → `npx` CLI subprocess → MCP handler. That channel doesn't currently exist and adding it is more surface area than the fix warrants. Config-fingerprint dedupe (shipped §2) achieves the same practical outcome because all reflex-init calls use the generator's default config and collapse onto one record regardless of session boundary.
+* **F. Session-end auto-shutdown hook** — Pros: symmetric to init — every swarm a session created gets torn down at end. Cons: superfluous once dedupe lands, because dedupe already caps record count. Also needs session-scoped swarm tracking we don't have. Defer — revisit if orphans reappear despite dedupe.
+* **G. Reference-counting / ownership-gated shutdown (rejected at adversarial review)** — Pros: would cleanly solve the "reused caller shuts down shared swarm" scenario (see "Adversarial Review Outcome" below). Cons: requires a caller-ID channel that the MCP handler cannot see today; implementation is error-prone (stale references, forged IDs, race on counter); adds state semantics that are harder to debug than the original bug. Flaw surface exceeds flaw surface of the unfixed problem. Moved to convention (documented in CLAUDE.md guardrail) rather than enforcement.
+* **D. Force a cleanup at every `swarm init` (delete old before creating new)** — Pros: cleanliness guaranteed. Cons: destroys legitimate long-running swarms on any reflex-init. Worst of both worlds. Rejected.
+
+## Decision Outcome
+
+Chosen option: "Fix at the two layers we own (fork) — generator instructions + MCP handler config-fingerprint dedupe", because the reflex-init that produced 66 orphans is shaped by the generator's "ALWAYS"-language and worked example (layer 1) and unconditioned by the handler's blind-append (layer 2); fixing both makes the instruction fix durable against drift while config-fingerprint dedupe collapses all default-config reflex-inits onto one record without punishing legitimate multi-swarm use.
+
+The third layer (emergent model reinforcement) is not fixed directly — it is shaped by layers 1 and 2.
 
 ### 1. Generator instruction rewrite
 
@@ -112,50 +129,20 @@ Truncate `/Users/henrik/source/ruflo-patch/.swarm/swarm-state.json` to `{"swarms
 - **Pattern-store pruning** (removing past swarm-usage patterns that self-reinforce the behavior) — second-order effect; let the fixed generator produce new data for a few weeks first, then evaluate.
 - **Upstream patch** to `ruvnet/claude-flow`'s own generator — file as an issue with a reproducer (our 66-orphan dataset), keep our fork patch as the shipping fix. Per `feedback-patches-in-fork.md`, upstream-worthiness doesn't block our ship.
 
-## Alternatives
-
-### A. Fix only the instructions, not the CLI
-**Pros**: smaller diff, one file.
-**Cons**: any future instruction drift, any user typo-loop, any hook regression refills the orphan pile. The CLI is the backstop that makes the instruction fix durable. Rejected.
-
-### B. Fix only the CLI, not the instructions
-**Pros**: one change, cures the symptom regardless of what Claude is told.
-**Cons**: Claude still wastes tool-call budget and latency firing `swarm_init` every task. Symptom-only fix. Rejected.
-
-### C. Global (not session-scoped) dedupe
-**Pros**: strongest guarantee of a single swarm per project.
-**Cons**: breaks legitimate multi-swarm workflows (parallel research + implementation). Per devil's-advocate objection. Rejected.
-
-### E. Session-scoped dedupe (initial design, revised out)
-**Pros**: reuse only within the same Claude Code session — tighter scope.
-**Cons**: requires propagating a session ID from Claude Code → Bash tool invocations → `npx` CLI subprocess → MCP handler. That channel doesn't currently exist and adding it is more surface area than the fix warrants. Config-fingerprint dedupe (shipped §2) achieves the same practical outcome because all reflex-init calls use the generator's default config and collapse onto one record regardless of session boundary.
-
-### F. Session-end auto-shutdown hook
-**Pros**: symmetric to init — every swarm a session created gets torn down at end.
-**Cons**: superfluous once dedupe lands, because dedupe already caps record count. Also needs session-scoped swarm tracking we don't have. Defer — revisit if orphans reappear despite dedupe.
-
-### G. Reference-counting / ownership-gated shutdown (rejected at adversarial review)
-**Pros**: would cleanly solve the "reused caller shuts down shared swarm" scenario (see "Adversarial Review Outcome" below).
-**Cons**: requires a caller-ID channel that the MCP handler cannot see today; implementation is error-prone (stale references, forged IDs, race on counter); adds state semantics that are harder to debug than the original bug. Flaw surface exceeds flaw surface of the unfixed problem. Moved to convention (documented in CLAUDE.md guardrail) rather than enforcement.
-
-### D. Force a cleanup at every `swarm init` (delete old before creating new)
-**Pros**: cleanliness guaranteed.
-**Cons**: destroys legitimate long-running swarms on any reflex-init. Worst of both worlds. Rejected.
-
-## Consequences
+### Consequences
 
 **Positive**:
-- Fresh-init'd projects stop accumulating orphan swarm records.
-- Sessions that still honestly need coordination state get a working `swarm_init` flow with explicit reuse and cleanup semantics.
-- Acceptance check catches regressions (instruction drift, generator edits that re-introduce the copied-example pattern).
+* Good, because fresh-init'd projects stop accumulating orphan swarm records.
+* Good, because sessions that still honestly need coordination state get a working `swarm_init` flow with explicit reuse and cleanup semantics.
+* Good, because the acceptance check catches regressions (instruction drift, generator edits that re-introduce the copied-example pattern).
 
 **Negative**:
-- The 66 existing orphans in ruflo-patch are cleaned but not preserved as a telemetry artifact. Accept — they contain no task/agent data, only topology metadata that is also recoverable from config.
-- Advanced users relying on multiple simultaneous swarms within one session must learn the `--new` flag. Document in the CLI help text.
-- One more check in an already-dense acceptance suite (cf. ADR-0090/ADR-0094 throughput concerns).
+* Bad, because the 66 existing orphans in ruflo-patch are cleaned but not preserved as a telemetry artifact. Accept — they contain no task/agent data, only topology metadata that is also recoverable from config.
+* Bad, because advanced users relying on multiple simultaneous swarms within one session must learn the `--new` flag. Document in the CLI help text.
+* Bad, because there is one more check in an already-dense acceptance suite (cf. ADR-0090/ADR-0094 throughput concerns).
 
 **Neutral / needs monitoring**:
-- Intelligence pattern store still biased toward swarm-init patterns for the first few weeks until new post-fix data dilutes the signal. Revisit pruning if new orphans appear despite fixed generator.
+* Neutral, because the intelligence pattern store is still biased toward swarm-init patterns for the first few weeks until new post-fix data dilutes the signal. Revisit pruning if new orphans appear despite fixed generator.
 
 ## Adversarial Review Outcome (2026-04-22 PM)
 
@@ -267,3 +254,9 @@ CWD-scoped is correct. The ADR-0098 config-fingerprint dedupe applies **within**
 3. **Document the CWD-scope rule** in the generated CLAUDE.md — one line: `.swarm/ is per-CWD state, not per-repo. Worktrees and test fixtures legitimately get their own.`
 
 Not adding new acceptance checks for this — the fixture leaks are a hygiene issue caught by visual inspection, not a recurring behavior the MCP handler is responsible for.
+
+## More Information
+
+Original status: "Implemented 2026-04-22 — shipped as `@sparkleideas/cli@3.5.58-patch.234` (verified in published tarball). Fork `32c13d322` on `sparkling/main`; ruflo-patch companions `76153ef` + `c78c91d`. Pending: upstream issue filed against `ruvnet/claude-flow`, ADR-0097 Tier Y paired unit test for bash acceptance checks, fixture-leak cleanup (see §"Scope-unit clarification" 2026-04-23)." Dated 2026-04-22. Scope: fork `forks/ruflo/v3/@claude-flow/cli/src/init/claudemd-generator.ts`, fork `forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/swarm-tools.ts` (MCP `swarm_init` handler, L83–132), fork `forks/ruflo/v3/@claude-flow/cli/src/commands/swarm.ts` (CLI wrappers at L202 and L431), acceptance harness addition, local `.swarm/swarm-state.json` cleanup in ruflo-patch repo.
+
+The original record cross-referenced these related decisions: ADR-0082 (no silent fallbacks — `swarm init` silently appending is the same anti-pattern for state); ADR-0094 (acceptance coverage — the new check belongs in Phase 9+); and ADR-0097 (check-code quality — any new check follows the paired-unit-test rule). The CWD-scope reasoning here was later superseded by ADR-0100.

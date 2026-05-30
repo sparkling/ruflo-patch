@@ -1,10 +1,15 @@
-# ADR-0012: Version numbering scheme
+---
+status: accepted
+date: 2026-03-06
+tags: [versioning, semver, npm, publish]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-## Status
+# Version numbering scheme
 
-Accepted (rewritten 2026-03-06 — supersedes `-patch.N` scheme)
-
-## Context
+## Context and Problem Statement
 
 ### Specification (SPARC-S)
 
@@ -36,7 +41,18 @@ next_version = bump_last_segment( max(upstream_version, last_published) )
 # upstream 3.0.0-alpha.7, last pub 3.0.0-alpha.8 -> 3.0.0-alpha.9
 ```
 
-## Decision
+## Considered Options
+
+* **Use bump-last-segment versioning: increment the final numeric component of `max(upstream, lastPublished)`, tracked per package (chosen).**
+* **`{upstream}-patch.{N}` (previous scheme)** — Rejected. The `-patch.N` suffix is a prerelease identifier. npm won't match `3.0.2-patch.1` against `^3.0.2`. This broke dependency resolution across the 24-package ecosystem.
+* **Independent versioning (1.0.0, 1.0.1, ...)** — Rejected. Loses the connection to the upstream version entirely.
+* **Date-based suffix** — Rejected. Not sortable across months without zero-padding, doesn't communicate patch iteration.
+* **Git hash suffix** — Rejected. Not human-readable, not sortable.
+* **CalVer** — Rejected. No upstream version visible, breaks npm semver convention.
+
+## Decision Outcome
+
+Chosen option: "Use bump-last-segment versioning: increment the final numeric component of `max(upstream, lastPublished)`", because it is always strictly greater than both upstream and our last publish (so caret ranges resolve and versions increase monotonically) while remaining valid, sortable semver with per-package independence.
 
 ### Architecture (SPARC-A)
 
@@ -83,34 +99,19 @@ Each `@sparkleideas/*` package tracks its own upstream version and its own publi
 
 **Git tagging**: `sparkleideas/v{cli-version}` per build (e.g., `sparkleideas/v3.1.0-alpha.15`). Uses the CLI package version as the primary tag. `git tag -l 'sparkleideas/*'` lists our releases separately from upstream.
 
-### Considered Alternatives
+### Consequences
 
-1. **`{upstream}-patch.{N}` (previous scheme)** — Rejected. The `-patch.N` suffix is a prerelease identifier. npm won't match `3.0.2-patch.1` against `^3.0.2`. This broke dependency resolution across the 24-package ecosystem.
-2. **Independent versioning (1.0.0, 1.0.1, ...)** — Rejected. Loses the connection to the upstream version entirely.
-3. **Date-based suffix** — Rejected. Not sortable across months without zero-padding, doesn't communicate patch iteration.
-4. **Git hash suffix** — Rejected. Not human-readable, not sortable.
-5. **CalVer** — Rejected. No upstream version visible, breaks npm semver convention.
+* Good, because caret ranges (`^3.0.2`) resolve correctly — no more `ETARGET` errors.
+* Good, because each package version clearly communicates it's "one past upstream" (3.0.3 for upstream 3.0.2).
+* Good, because per-package tracking eliminates the misleading situation where `@sparkleideas/agentdb` got version `3.5.2-patch.1` when its upstream is actually `3.0.0-alpha.6`.
+* Good, because `config/published-versions.json` provides a single source of truth for what's published.
+* Good, because it supports unlimited rebuilds from the same upstream base (each publish bumps from the last).
+* Bad, because our version numbers are close to upstream's version space. Since we use a different npm scope (`@sparkleideas` vs `@claude-flow`), there is no actual collision, but the versions might look confusingly similar.
+* Bad, because if upstream publishes the exact version we used (e.g., upstream publishes `3.0.3` after we already published `@sparkleideas/aidefence@3.0.3`), there is no npm collision (different scope) but it may be confusing to humans.
 
-## Consequences
+### Confirmation
 
-### Refinement (SPARC-R)
-
-**Positive:**
-
-- Caret ranges (`^3.0.2`) resolve correctly — no more `ETARGET` errors
-- Each package version clearly communicates it's "one past upstream" (3.0.3 for upstream 3.0.2)
-- Per-package tracking eliminates the misleading situation where `@sparkleideas/agentdb` got version `3.5.2-patch.1` when its upstream is actually `3.0.0-alpha.6`
-- `config/published-versions.json` provides a single source of truth for what's published
-- Unlimited rebuilds from the same upstream base (each publish bumps from the last)
-
-**Negative:**
-
-- Our version numbers are close to upstream's version space. Since we use a different npm scope (`@sparkleideas` vs `@claude-flow`), there is no actual collision, but the versions might look confusingly similar
-- If upstream publishes the exact version we used (e.g., upstream publishes `3.0.3` after we already published `@sparkleideas/aidefence@3.0.3`), there is no npm collision (different scope) but it may be confusing to humans
-
-### Completion (SPARC-C)
-
-Acceptance criteria:
+Completion (SPARC-C) — acceptance criteria:
 
 - [x] `publish.mjs` computes per-package versions using `nextVersion(upstream, lastPublished)`
 - [x] `config/published-versions.json` is updated after each successful publish
@@ -118,3 +119,7 @@ Acceptance criteria:
 - [x] `npm test` passes with updated version computation tests
 - [x] No `-patch.N` versions are published going forward
 - [x] Git tags use `sparkleideas/v{version}` format
+
+## More Information
+
+Original status: "Accepted (rewritten 2026-03-06 — supersedes `-patch.N` scheme)".

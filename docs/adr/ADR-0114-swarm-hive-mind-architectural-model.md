@@ -1,13 +1,15 @@
-# ADR-0114: Swarm vs Hive-Mind — v3 architectural model
+---
+status: proposed
+date: 2026-05-02
+tags: [hive-mind, swarm, architecture, coordination]
+supersedes: []
+depends-on: [ADR-0111, ADR-0113]
+implements: []
+---
 
-- **Status**: **[RECONCILED 2026-05-29 → FOLDED-COMPLETE; see [[ADR-0270]]]** The two code-bearing items shipped despite the still-unchecked `[ ]` §Done boxes: U4 (init delivery — `init/executor.ts` SKILLS_MAP `hiveMind: ['hive-mind-advanced']`, cites ADR-0140) and U5 (spawned [[ADR-0115]], Regression-A fix live). Remaining items are doc back-reference chores with no forcing function. Original status preserved below. — Proposed (2026-05-02). Investigation; no code changes yet. Frames the model that ADR-0103/0104/0105/0106/0107/0108/0109 should consolidate around. Marketplace gap surfaced by user follow-up to ADR-0113. **Post-empirical-validation 2026-05-02**: substrate+preset model extended to 3 layers (Lens 10) — Layer 1 substrate (CLI, ships, works), Layer 2 protocol (council methodology, NOT shipped, project-specific), Layer 3 execution (Agent tool with personas). Most cross-ADR implementation work (0105/0106/0107/0109) is Layer 1 cleanup; doesn't deliver the hive's USERGUIDE promise. Layer 2 work would be a separate ADR.
-- **Date**: 2026-05-02
-- **Deciders**: Henrik Pettersen
-- **Methodology**: 4-agent parallel research swarm covering ADRs (`v3/implementation/adrs/`), code (`v3/@claude-flow/cli/src/commands/{swarm,hive-mind}.ts`, `mcp-tools/`), plugins (`forks/ruflo/.claude-plugin/marketplace.json`, `plugins/ruflo-swarm/`), and user-facing docs (`docs/USERGUIDE.md`). User-corrected with the v3-canonical mental model after agents reported pre-v3 framing.
-- **Depends on**: ADR-0111 (W4 merge brought in current upstream architecture); ADR-0113 (marketplace coverage gap surfaced this question).
-- **Related**: ADR-0103, ADR-0104, ADR-0105, ADR-0106, ADR-0107, ADR-0108, ADR-0109 (all of these touch hive-mind/swarm/topology/consensus and need a shared mental model — this ADR documents that model).
+# Swarm vs Hive-Mind — v3 architectural model
 
-## Context
+## Context and Problem Statement
 
 After ADR-0113 closed, a user question — "do we have a plugin for the hive config? if swarm is a plugin, is a hive a kind of swarm? what is the intention upstream?" — surfaced that the project does NOT have a coherent shared model for what swarm is, what hive-mind is, and how they relate. The marketplace ships `ruflo-swarm` (a plugin) but no `ruflo-hive-mind` plugin, and the README of `ruflo-swarm` mentions "Hive-Mind Consensus" while declaring `allowed-tools` for `mcp__ruflo__swarm_*` only — never `mcp__ruflo__hive-mind_*`.
 
@@ -372,7 +374,14 @@ The 16-agent ecosystem categorizes coordination work as AGENT ROLES, not as sepa
 
 The coordination work is done BY AGENTS, not by separate "coordination machinery". Hive-mind is the configuration where you spawn the queen-coordinator + consensus agents into a swarm. There's no architectural Coordination subsystem distinct from agents — there's a swarm with topology, and you spawn the agents that do the coordination work.
 
-## Decision
+## Considered Options
+
+* **Canonical v3 model: substrate + agent presets (chosen)** — adopt one canonical v3 mental model (Swarm = substrate; Hive-Mind = preset of substrate + agent set + persistence config) and document it; future code work consolidates around this model.
+* **ADR-004 v2-era separate Official Plugin (`@claude-flow/hive-mind`)** — extract hive-mind as a standalone marketplace plugin. Rejected: v2-era thinking that v3 walked away from; hive-mind is a preset of `ruflo-swarm`, not a separate plugin.
+
+## Decision Outcome
+
+Chosen option: "Canonical v3 model: substrate + agent presets", because a "hive-mind" is a swarm with a specific agent configuration — not a separate system, not a kind of swarm — and documenting this one canonical model gives ADR-0103 through ADR-0109 a shared vocabulary so they stop disagreeing about what swarm and hive-mind are.
 
 Adopt one canonical v3 mental model and document it here. Future code work consolidates around this model.
 
@@ -441,6 +450,33 @@ This ADR documents the model. It does not implement consolidation. The actual co
 
 Each of those should reference THIS ADR for the canonical model. When a new ADR talks about "swarm" vs "hive-mind", it's using the substrate + preset model — not the v2-era "two parallel systems" framing or the v3 "Coordination as separate module" diagram framing.
 
+### Consequences
+
+#### Positive
+
+* Good, because **shared vocabulary** across ADR-0103 through ADR-0109. They're all describing different facets of the same swarm-substrate-with-presets model. Cross-ADR work doesn't have to re-establish the model each time.
+* Good, because the **marketplace coverage gap is no longer a separate concern.** `ruflo-swarm` plugin is correctly scoped — it just needs to expose hive-mind as a preset alongside topology selection. No `ruflo-hive-mind` plugin needed.
+* Good, because **code consolidation has a clear target.** The three-way consensus split (real classes vs inline reimpl vs orphan plugin) is reducible to one source: `@claude-flow/swarm/src/consensus/`. The CLI command `hive-mind spawn` decomposes into `swarm spawn` + agent-set selection.
+* Good, because **README marketing claim becomes true.** Currently `ruflo-swarm/README.md:18` mentions "Hive-Mind Consensus" but the plugin doesn't expose it. Under this model, hive-mind IS in the swarm plugin (as a preset), so the README is correct in advance of the code consolidation.
+* Good, because **init-installed `.claude/commands/hive-mind/` (11 commands) gets a clear path forward**: collapse to 2-3 (`hive-mind spawn|status|shutdown` as presets). The other 8 (`hive-mind-init`, `-consensus`, `-memory`, `-metrics`, `-resume`, `-sessions`, `-stop`, `-wizard`) become `swarm` operations parametrized by preset.
+
+#### Negative
+
+* Bad, because **existing CLI users have muscle-memory for `ruflo hive-mind spawn`** as a distinct command. Code consolidation must keep that command working as a thin alias for `ruflo swarm spawn --preset hive-mind`. Tests, acceptance checks, and docs all need to verify the alias.
+* Bad, because **three-way consensus split is well-entrenched.** ADR-0106 (Consensus algorithm enforcement) takes on the bulk of this. Until it lands, hive-mind's MCP-layer consensus accepts only 3 strategies while the CLI advertises 5 — that's a concrete user-facing inconsistency this ADR doesn't fix.
+* Bad, because **state-file divergence (`.swarm/swarm-state.json` vs `.claude-flow/hive-mind/state.json`) is a load-bearing wart.** Migration from two files to one is a breaking change for any consumer that reads either file directly. Migration plan needs to live in ADR-0110 (Memory backend reconciliation) or a follow-up.
+* Bad, because **the `HiveMindPlugin` class in `shared/src/plugins/official/hive-mind-plugin.ts`** (third orphan reimpl of consensus, in-memory only with `agent-0/1/2` dummy votes) needs explicit deletion or wiring. This ADR doesn't decide which.
+* Bad, because **ADR-004 is now formally superseded.** ADR-004 said `@claude-flow/hive-mind` should be a separate Official Plugin. This ADR says no separate plugin — hive-mind is a preset of `ruflo-swarm`. ADR-004 should be marked Superseded-by-0114.
+
+#### Neutral
+
+* Neutral, because **the init-vs-marketplace boundary stays as documented in ADR-0113 §Status note.** Init bootstraps `.claude/{commands,agents,skills}/hive-mind/` directly into the user's workspace. Marketplace plugins extend on top. Under this ADR's model, `ruflo-swarm` plugin's hive-mind preset commands would be ADDITIONAL coverage, not replacing the init-installed content.
+* Neutral, because **no urgent timeline.** The model exists; consolidation can happen incrementally as ADR-0103 through ADR-0109 ship. This ADR's status flips from Proposed → Implemented when those ADRs all reference it.
+
+### Confirmation
+
+This ADR is a documentation artifact — no code changes. The "implementation" is verified by the §Done checklist below: cross-references to ADR-0114 added to ADR-0103 through ADR-0109, README/marketplace clarifications landed, ADR-004 annotated as superseded, and the empirical init-delivery / regression items investigated. This ADR's Status flips to Implemented when all 7 cross-references are in place. ADR-0104 (Implemented 2026-04-28) verified queen-via-Task-tool end-to-end via live smoke tests, providing empirical evidence the hive orchestrates as documented.
+
 ## Adversarial review (2026-05-02)
 
 User pushback after the initial draft: "I am still sceptical that we need this massive revision of the hive feature - it's a core part of ruflo, and I refuse to believe that the hive does not work for the millions of installs of ruflo. Do an adversarial review of all these ADRs."
@@ -501,29 +537,6 @@ If the cross-ADR program had proceeded under the original "consolidate the paral
 - Burned engineering time on cleanup that doesn't ship user value
 
 Per `feedback-no-value-judgements-on-features`: WIRE both, don't replace one with the other. The original draft violated this by recommending replacement.
-
-## Consequences
-
-### Positive
-
-- **Shared vocabulary** across ADR-0103 through ADR-0109. They're all describing different facets of the same swarm-substrate-with-presets model. Cross-ADR work doesn't have to re-establish the model each time.
-- **Marketplace coverage gap is no longer a separate concern.** `ruflo-swarm` plugin is correctly scoped — it just needs to expose hive-mind as a preset alongside topology selection. No `ruflo-hive-mind` plugin needed.
-- **Code consolidation has a clear target.** The three-way consensus split (real classes vs inline reimpl vs orphan plugin) is reducible to one source: `@claude-flow/swarm/src/consensus/`. The CLI command `hive-mind spawn` decomposes into `swarm spawn` + agent-set selection.
-- **README marketing claim becomes true.** Currently `ruflo-swarm/README.md:18` mentions "Hive-Mind Consensus" but the plugin doesn't expose it. Under this model, hive-mind IS in the swarm plugin (as a preset), so the README is correct in advance of the code consolidation.
-- **Init-installed `.claude/commands/hive-mind/` (11 commands) gets a clear path forward**: collapse to 2-3 (`hive-mind spawn|status|shutdown` as presets). The other 8 (`hive-mind-init`, `-consensus`, `-memory`, `-metrics`, `-resume`, `-sessions`, `-stop`, `-wizard`) become `swarm` operations parametrized by preset.
-
-### Negative
-
-- **Existing CLI users have muscle-memory for `ruflo hive-mind spawn`** as a distinct command. Code consolidation must keep that command working as a thin alias for `ruflo swarm spawn --preset hive-mind`. Tests, acceptance checks, and docs all need to verify the alias.
-- **Three-way consensus split is well-entrenched.** ADR-0106 (Consensus algorithm enforcement) takes on the bulk of this. Until it lands, hive-mind's MCP-layer consensus accepts only 3 strategies while the CLI advertises 5 — that's a concrete user-facing inconsistency this ADR doesn't fix.
-- **State-file divergence (`.swarm/swarm-state.json` vs `.claude-flow/hive-mind/state.json`) is a load-bearing wart.** Migration from two files to one is a breaking change for any consumer that reads either file directly. Migration plan needs to live in ADR-0110 (Memory backend reconciliation) or a follow-up.
-- **The `HiveMindPlugin` class in `shared/src/plugins/official/hive-mind-plugin.ts`** (third orphan reimpl of consensus, in-memory only with `agent-0/1/2` dummy votes) needs explicit deletion or wiring. This ADR doesn't decide which.
-- **ADR-004 is now formally superseded.** ADR-004 said `@claude-flow/hive-mind` should be a separate Official Plugin. This ADR says no separate plugin — hive-mind is a preset of `ruflo-swarm`. ADR-004 should be marked Superseded-by-0114.
-
-### Neutral
-
-- **The init-vs-marketplace boundary stays as documented in ADR-0113 §Status note.** Init bootstraps `.claude/{commands,agents,skills}/hive-mind/` directly into the user's workspace. Marketplace plugins extend on top. Under this ADR's model, `ruflo-swarm` plugin's hive-mind preset commands would be ADDITIONAL coverage, not replacing the init-installed content.
-- **No urgent timeline.** The model exists; consolidation can happen incrementally as ADR-0103 through ADR-0109 ship. This ADR's status flips from Proposed → Implemented when those ADRs all reference it.
 
 ## Status note: relationship to ADR-0103/0104/0105/0106/0107/0108/0109
 
@@ -604,3 +617,11 @@ This ADR is a documentation artifact — no code changes. The "implementation" i
   - §"What this resolves" extended from 4 to 7 questions (added: consensus algorithm count + memory layering + init prerequisite).
   - §Done unchanged — cross-references and documentation updates still pending.
   - The hive's worker slots stored as historical record: 4 workers (researcher kphm, analyst ytqk, architect reop, documenter gztu); shutdown clean post-synthesis. Methodology proves the architectural model: a `hive-mind` invocation IS just a swarm with a queen-led agent configuration — exactly what this ADR claims.
+
+## More Information
+
+Original status: **[RECONCILED 2026-05-29 → FOLDED-COMPLETE; see ADR-0270]** The two code-bearing items shipped despite the still-unchecked `[ ]` §Done boxes: U4 (init delivery — `init/executor.ts` SKILLS_MAP `hiveMind: ['hive-mind-advanced']`, cites ADR-0140) and U5 (spawned ADR-0115, Regression-A fix live). Remaining items are doc back-reference chores with no forcing function. — Proposed (2026-05-02). Investigation; no code changes yet. Frames the model that ADR-0103/0104/0105/0106/0107/0108/0109 should consolidate around. Marketplace gap surfaced by user follow-up to ADR-0113. **Post-empirical-validation 2026-05-02**: substrate+preset model extended to 3 layers (Lens 10) — Layer 1 substrate (CLI, ships, works), Layer 2 protocol (council methodology, NOT shipped, project-specific), Layer 3 execution (Agent tool with personas). Most cross-ADR implementation work (0105/0106/0107/0109) is Layer 1 cleanup; doesn't deliver the hive's USERGUIDE promise. Layer 2 work would be a separate ADR.
+
+The decider was Henrik Pettersen. Methodology: 4-agent parallel research swarm covering ADRs (`v3/implementation/adrs/`), code (`v3/@claude-flow/cli/src/commands/{swarm,hive-mind}.ts`, `mcp-tools/`), plugins (`forks/ruflo/.claude-plugin/marketplace.json`, `plugins/ruflo-swarm/`), and user-facing docs (`docs/USERGUIDE.md`). User-corrected with the v3-canonical mental model after agents reported pre-v3 framing.
+
+This ADR depends on ADR-0111 (W4 merge brought in current upstream architecture) and ADR-0113 (marketplace coverage gap surfaced this question). It is related to ADR-0103, ADR-0104, ADR-0105, ADR-0106, ADR-0107, ADR-0108, ADR-0109 (all of these touch hive-mind/swarm/topology/consensus and need a shared mental model — this ADR documents that model). The reconciliation references ADR-0270; the regression follow-up could spawn ADR-0115; ADR-004 (upstream's v2-era plugin extraction proposal) is formally superseded by this model.

@@ -1,13 +1,15 @@
-# ADR-0133: RVF concurrent-write convergence regression — investigation + bisect
+---
+status: accepted
+date: 2026-05-03
+tags: [rvf, memory, concurrency, regression]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: **[RECONCILED 2026-05-29 → RESOLVED; see [[ADR-0270]]]** Regression fixed via stale-native-binary rebuild (`411cca1`/`bec5606`, the `napi-rebuild` pipeline phase); `t3-2-concurrent` passes "6/6 RVF concurrent writers persisted (header=NATIVE)" in current full acceptance. The "Blocks ADR-0094" dependency is void — ADR-0094 closed 2026-04-21, *before* this ADR was authored; the RVF-deadlock hypothesis was separately refuted (ADR-0140 §665 / ADR-0144). Original status preserved below. — **Proposed (2026-05-03)** — P0 regression. Investigation pending. Blocks ADR-0094 close-criterion (3 consecutive green acceptance runs).
-- **Date**: 2026-05-03
-- **Deciders**: Henrik Pettersen
-- **Depends on**: ADR-0095 (RVF inter-process write convergence — original Implemented 2026-04-20; **task #12 flock refcount in `crates/rvf/rvf-runtime/src/locking.rs` was a known open closure dependency per ADR-0111 §Status**), ADR-0079 (acceptance test completeness — owns `t3-2-concurrent`), ADR-0086 (Layer 1 storage abstraction RVF-first)
-- **Related**: ADR-0130 (T11 RVF WAL fsync — prime suspect commit `4bc336ad5`), ADR-0127 (T9 adaptive topology — bundled in same commit), ADR-0094 (acceptance coverage living tracker — gates close on 3 consecutive green runs)
-- **Scope**: Fork-side runtime in `forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts` and `forks/ruvector/crates/rvf/`. Closes the regression introduced after ADR-0095 originally landed. Does NOT redesign the dual-backend architecture — minimum-change to restore 6/6 convergence.
+# RVF concurrent-write convergence regression — investigation + bisect
 
-## Context
+## Context and Problem Statement
 
 `t3-2-concurrent` (canonical RVF inter-process write probe per ADR-0079, anchored by ADR-0095 Sprint 1) is failing on the published `@sparkleideas/cli@3.5.58-patch.334`. The failure surfaced in the post-ADR-cleanup release run on 2026-05-03 (acceptance run `accept-2026-05-03T172507Z`).
 
@@ -69,7 +71,15 @@ Successful writer's stderr (verbatim from `writer-1.stderr`): empty (clean exit)
 
 Plus the **open ADR-0095 task #12** (flock refcount in `forks/ruvector/crates/rvf/rvf-runtime/src/locking.rs`) — never landed per ADR-0111 §Status closure dependencies. May be the actual root.
 
-## Decision
+## Considered Options
+
+* **Bisect-driven investigation, no architectural change (chosen)** — revert suspect commits one at a time until the diag probe converges, then apply a targeted fix at the regression-introducing commit.
+
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "Bisect-driven investigation, no architectural change", because the dual-backend architecture exists for a reason and the goal is a minimum-change restoration of 6/6 convergence, not a redesign.
 
 **Bisect-driven investigation, no architectural change.** Steps:
 
@@ -96,19 +106,25 @@ Once Phase 1 identifies the offending commit, the fix path branches:
 2. Diag probe at higher concurrency: `node scripts/diag-rvf-interproc-race.mjs --trials 40` (full matrix N=2,4,6,8 × 10) — all combinations 100% convergence.
 3. Three consecutive green acceptance runs with ≥2h gaps for ADR-0094 close-criterion.
 
-## Out of scope
+### Consequences
 
-- Removing the dual-backend architecture (pure-TS + native Rust). The split exists for a reason (native binary not always available on user platforms); this ADR doesn't reopen the architecture decision.
-- Reverting ADR-0117 R1 (`mcpServers.ruflo` key flip) — unrelated.
-- Generalising RVF to multi-host distributed writes — out of scope for inter-process work on a single host.
+* Neutral, because the dual-backend architecture (pure-TS + native Rust) is preserved — the split exists for a reason (native binary not always available on user platforms) and this ADR doesn't reopen the architecture decision.
 
-## Acceptance criteria
+### Confirmation
+
+Acceptance criteria:
 
 - [ ] Phase 1: regression-introducing commit identified by bisect; recorded in §Bisect log with reproduction command + diag output before/after revert
 - [ ] Phase 2: targeted fix lands on appropriate fork (`forks/ruflo` and/or `forks/ruvector`) preserving the original ADR's durability/correctness invariants
 - [ ] Phase 3: `node scripts/diag-rvf-interproc-race.mjs --trials 40` reports 0 losses across all N values
 - [ ] Phase 3: `t3-2-concurrent` PASS in 3 consecutive `npm run release` runs with ≥2h gaps (ADR-0094 close-criterion)
 - [ ] No silent-loss path (trial t3 mode) ever observed again — every failure has explicit error signal to caller
+
+## Out of scope
+
+- Removing the dual-backend architecture (pure-TS + native Rust). The split exists for a reason (native binary not always available on user platforms); this ADR doesn't reopen the architecture decision.
+- Reverting ADR-0117 R1 (`mcpServers.ruflo` key flip) — unrelated.
+- Generalising RVF to multi-host distributed writes — out of scope for inter-process work on a single host.
 
 ## Bisect log
 
@@ -123,7 +139,17 @@ Once Phase 1 identifies the offending commit, the fix path branches:
 
 Per memory `feedback-no-history-squash.md`: clean history is not a project goal — preserve the original ADR-0095 decision record. A regression after the original work landed is a new finding warranting its own decision record. ADR-0095 marks "Implemented 2026-04-20"; this ADR captures that the implementation regressed and how it's being recovered, without rewriting the original.
 
-## References
+## More Information
+
+Original status: **[RECONCILED 2026-05-29 → RESOLVED; see [[ADR-0270]]]** Regression fixed via stale-native-binary rebuild (`411cca1`/`bec5606`, the `napi-rebuild` pipeline phase); `t3-2-concurrent` passes "6/6 RVF concurrent writers persisted (header=NATIVE)" in current full acceptance. The "Blocks ADR-0094" dependency is void — ADR-0094 closed 2026-04-21, *before* this ADR was authored; the RVF-deadlock hypothesis was separately refuted (ADR-0140 §665 / ADR-0144). Original status preserved below. — **Proposed (2026-05-03)** — P0 regression. Investigation pending. Blocks ADR-0094 close-criterion (3 consecutive green acceptance runs).
+
+This ADR depends on ADR-0095 (RVF inter-process write convergence — original Implemented 2026-04-20; task #12 flock refcount in `crates/rvf/rvf-runtime/src/locking.rs` was a known open closure dependency per ADR-0111 §Status), ADR-0079 (acceptance test completeness — owns `t3-2-concurrent`), and ADR-0086 (Layer 1 storage abstraction RVF-first).
+
+Related decisions recorded in the original: ADR-0130 (T11 RVF WAL fsync — prime suspect commit `4bc336ad5`), ADR-0127 (T9 adaptive topology — bundled in same commit), and ADR-0094 (acceptance coverage living tracker — gates close on 3 consecutive green runs).
+
+Scope: Fork-side runtime in `forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts` and `forks/ruvector/crates/rvf/`. Closes the regression introduced after ADR-0095 originally landed. Does NOT redesign the dual-backend architecture — minimum-change to restore 6/6 convergence.
+
+References:
 
 - Diag probe: `/Users/henrik/source/ruflo-patch/scripts/diag-rvf-interproc-race.mjs`
 - Diag artifact (t5 trial): `/var/folders/mc/84_j0pt91wg9c1yrc9b9sjtr0000gn/T/rvf-interproc-t5-ccyEjs.diag/`

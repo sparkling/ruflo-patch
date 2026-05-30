@@ -1,11 +1,9 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-24
-implemented-date: 2026-05-24
 tags: [learning, sona, ewc, micro-lora, lora, wasm, ruvector, ruvllm, catastrophic-forgetting, audit-followup]
 supersedes: []
-depends-on: [0220]
+depends-on: [ADR-0220]
 implements: []
 ---
 
@@ -463,6 +461,8 @@ size EWC for the micro tier), **escalate to Option D (defer)** rather than
 shipping a no-op.
 
 ## More Information
+
+This decision was completed; implemented on 2026-05-24.
 
 - **Parent ADR:** [ADR-0220](ADR-0220-learning-controllers-honesty-pass.md) —
   honesty half of F-05-007; this ADR is the split-out implementation half.

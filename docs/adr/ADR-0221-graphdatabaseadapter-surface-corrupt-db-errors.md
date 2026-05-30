@@ -1,11 +1,9 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-20
-implemented-date: 2026-05-22
 tags: [graphadapter, agentdb, data-integrity, fail-loud, no-fallbacks, audit-followup]
 supersedes: []
-depends-on: [0201]
+depends-on: [ADR-0201]
 implements: []
 ---
 
@@ -251,6 +249,8 @@ ADR); fixing the adapter side first surfaces it more visibly — the right
 sequencing.
 
 ## More Information
+
+This decision was completed; implemented on 2026-05-22.
 
 - **Audit source:**
   `docs/audits/2026-05-19-soundness-audit/06-controllers-graph-federation.md`

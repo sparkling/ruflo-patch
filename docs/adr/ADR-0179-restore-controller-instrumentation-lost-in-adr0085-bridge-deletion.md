@@ -1,6 +1,5 @@
 ---
 status: superseded
-superseded-by: [ADR-0180]
 date: 2026-05-13
 tags: [memory, controllers, instrumentation, audit-gap, post-mortem]
 supersedes: []

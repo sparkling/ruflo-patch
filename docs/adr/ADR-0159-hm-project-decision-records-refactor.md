@@ -1,10 +1,13 @@
-# ADR-0159: HM project decision-records refactor — migrate 217 ADRs to MADR+SPARC + add `methodology` to ~30 ODRs + index council sessions
+---
+status: proposed
+date: 2026-05-08
+tags: [adr, odr, migration, hm]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: **[RECONCILED 2026-05-29 → OBSOLETE/DORMANT; see [[ADR-0270]]]** The specified migration script (`.scripts/migrate-decision-records.mjs`) was never built; HM's decision-record corpus converged on the **DCAP** model (a fixed frontmatter subset with no `methodology:` field), which contradicts this ADR's ONT-0029-preserving plan. Nothing should be built as specced; any residual is governed by HM's own DCAP/Council process, outside this corpus. Original status preserved below. — Proposed 2026-05-08
-- **Date**: 2026-05-08
-- **Methodology**: SPARC + MADR
-- **Deciders**: Henrik Pettersen
-- **Related**: ADR-0157 (MADR+SPARC ADR template — defines the target format), ADR-0158 (ODR skill family in `~/.claude/skills/` + ONT-0029 bootstrap), HM ONT-0029 (ODR Format and Audience Separation, 9-expert council ratified)
+# HM project decision-records refactor — migrate 217 ADRs to MADR+SPARC + add `methodology` to ~30 ODRs + index council sessions
 
 ## Context and Problem Statement
 
@@ -225,6 +228,10 @@ Per `feedback-no-squelch-tests`, every criterion observable from a test, pipelin
 10. **README updates**: HM's `docs/adr/README.md` and any sibling docs reference ADR-0157 + ADR-0158 + ONT-0029 as authoritative format specs. Verified by grep.
 
 ## More Information
+
+Original status: "**[RECONCILED 2026-05-29 → OBSOLETE/DORMANT; see ADR-0270]** The specified migration script (`.scripts/migrate-decision-records.mjs`) was never built; HM's decision-record corpus converged on the **DCAP** model (a fixed frontmatter subset with no `methodology:` field), which contradicts this ADR's ONT-0029-preserving plan. Nothing should be built as specced; any residual is governed by HM's own DCAP/Council process, outside this corpus. Original status preserved below. — Proposed 2026-05-08." Methodology: SPARC + MADR.
+
+This decision relates to ADR-0157 (MADR+SPARC ADR template — defines the target format), ADR-0158 (ODR skill family in `~/.claude/skills/` + ONT-0029 bootstrap), HM ONT-0029 (ODR Format and Audience Separation, 9-expert council ratified), and the reconciliation reference ADR-0270.
 
 ### Out of scope (deferred)
 

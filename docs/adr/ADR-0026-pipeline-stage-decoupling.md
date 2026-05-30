@@ -1,17 +1,13 @@
-# ADR-0026: Pipeline Stage Decoupling
+---
+status: accepted
+date: 2026-03-08
+tags: [pipeline, build, testing, performance]
+supersedes: []
+depends-on: [ADR-0023, ADR-0024, ADR-0025]
+implements: []
+---
 
-- **Status**: Accepted
-- **Date**: 2026-03-08
-- **Deciders**: ruflo-patch maintainers
-- **Methodology**: SPARC + MADR
-
-## Decision Drivers
-
-- `npm run test:rq` rebuilds the entire pipeline (~123s) even when build artifacts already exist
-- `npm test` only runs unit tests, not the industry-standard "all feasible local tests"
-- Build artifacts are ephemeral (`mktemp -d`) and deleted on exit — no cross-run caching
-- No standalone `build` command — build logic is embedded inside `sync-and-build.sh`
-- Redundant/confusing script names: `test:fast` duplicates `test`, `build:sync` is misleading
+# Pipeline Stage Decoupling
 
 ## Context and Problem Statement
 
@@ -75,6 +71,14 @@ Total: <1s
 Total: ~17s
 ```
 
+## Decision Drivers
+
+- `npm run test:rq` rebuilds the entire pipeline (~123s) even when build artifacts already exist
+- `npm test` only runs unit tests, not the industry-standard "all feasible local tests"
+- Build artifacts are ephemeral (`mktemp -d`) and deleted on exit — no cross-run caching
+- No standalone `build` command — build logic is embedded inside `sync-and-build.sh`
+- Redundant/confusing script names: `test:fast` duplicates `test`, `build:sync` is misleading
+
 ## Considered Options
 
 **Option A: Split sync-and-build.sh into 8+ scripts**
@@ -97,7 +101,9 @@ Total: ~17s
 - Pro: Clean separation
 - Con: Splits tightly coupled code, risk of drift, more files to maintain
 
-## Decision
+## Decision Outcome
+
+Chosen option: "Option B: Add `--build-only` flag + stable build dir", because it requires minimal code change with zero duplication while keeping the full deploy pipeline on the same code path — at the cost of `sync-and-build.sh` growing slightly to hold the manifest logic.
 
 ### Architecture (SPARC-A)
 
@@ -206,29 +212,24 @@ Thin wrapper — all logic stays in sync-and-build.sh:
 exec bash "$(dirname "$0")/sync-and-build.sh" --build-only "$@"
 ```
 
-## Consequences
+### Consequences
 
-### Completion (SPARC-C)
+#### Completion (SPARC-C)
 
-**Positive**:
-- RQ test time drops from ~123s to ~17s (standalone against cached build)
-- Second build run skips entirely (<1s) when nothing changed
-- `npm test` answers "is my code safe to submit?" (industry standard)
-- Each test layer independently runnable — no forced coupling
-- Build artifacts persist across runs — no wasted recompilation
-- Clearer command names: `deploy` not `build:sync`, `test:unit` not `test:fast`
+* Good, because RQ test time drops from ~123s to ~17s (standalone against cached build)
+* Good, because second build run skips entirely (<1s) when nothing changed
+* Good, because `npm test` answers "is my code safe to submit?" (industry standard)
+* Good, because each test layer independently runnable — no forced coupling
+* Good, because build artifacts persist across runs — no wasted recompilation
+* Good, because clearer command names: `deploy` not `build:sync`, `test:unit` not `test:fast`
+* Bad, because `/tmp/ruflo-build` consumes ~200MB disk until reboot or manual cleanup
+* Bad, because `npm run test:rq` requires a prior `npm run build` (explicit dependency)
+* Bad, because first build after reboot is same speed as today
+* Neutral, because full deploy pipeline (`npm run deploy`) behavior unchanged — same code path
+* Neutral, because incremental per-package detection unchanged
+* Neutral, because ADR-0025 cache optimization continues to apply
 
-**Negative**:
-- `/tmp/ruflo-build` consumes ~200MB disk until reboot or manual cleanup
-- `npm run test:rq` requires a prior `npm run build` (explicit dependency)
-- First build after reboot is same speed as today
-
-**Neutral**:
-- Full deploy pipeline (`npm run deploy`) behavior unchanged — same code path
-- Incremental per-package detection unchanged
-- ADR-0025 cache optimization continues to apply
-
-### Files modified
+#### Files modified
 
 | File | Change |
 |------|--------|
@@ -243,7 +244,9 @@ exec bash "$(dirname "$0")/sync-and-build.sh" --build-only "$@"
 | `docs/testing.strategy.fixed.google.md` | Command tables, workflow examples |
 | `MEMORY.md` | Test matrix, deploy commands |
 
-### Verification
+### Confirmation
+
+#### Verification
 
 1. `npm run build` — first run builds (~34s), second run skips (<1s)
 2. `npm run test:rq` — standalone against cached build (14/14 pass, ~17s)
@@ -256,8 +259,8 @@ exec bash "$(dirname "$0")/sync-and-build.sh" --build-only "$@"
 9. Change a patch → `npm run build` detects staleness → rebuilds
 10. No change → `npm run build` skips → `test:rq` reuses cached artifacts
 
-## Relates To
+## More Information
 
-- **ADR-0023**: 6-layer testing model, incremental build detection
-- **ADR-0024**: Patch deployment model, `sync-and-build.sh` as pipeline orchestrator
-- **ADR-0025**: RQ cache optimization (persistent npx cache)
+This decision relates to ADR-0023 (6-layer testing model, incremental build detection), ADR-0024 (patch deployment model, `sync-and-build.sh` as pipeline orchestrator), and ADR-0025 (RQ cache optimization — persistent npx cache).
+
+This record originally used the SPARC + MADR methodology, with section headings (Specification / Pseudocode / Architecture / Refinement / Completion) remapped to the canonical MADR sections during the ADR-0271 migration, preserving all content. Original status: "Accepted".

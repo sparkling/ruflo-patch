@@ -1,16 +1,13 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-19
-methodology: [MADR]
-decision-makers: [Henrik Pettersen]
-tags: [autopilot, learning, gnn, federation, audit, side-effects, ADR-0193, ADR-0194, ADR-0195, ADR-0196]
-related: [0193, 0194, 0195, 0196]
-upstream-related: [agentic-flow/ADR-058, agentic-flow/ADR-059]
-audience: ai-executor
+tags: [autopilot, learning, audit, side-effects]
+supersedes: []
+depends-on: [ADR-0193]
+implements: []
 ---
 
-# ADR-0197: Three side-effect findings from ADR-0193 implementation
+# Three side-effect findings from ADR-0193 implementation
 
 ## Context and Problem Statement
 

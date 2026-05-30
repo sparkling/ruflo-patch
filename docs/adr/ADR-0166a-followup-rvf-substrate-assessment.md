@@ -1,13 +1,17 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-11
-tags: [agentdb, rvf, substrate, ruvector, assessment, adr0166-followup]
-relates-to: [ADR-0166, ADR-0170]
-type: research-assessment
+tags: [agentdb, rvf, substrate, assessment]
+supersedes: []
+depends-on: [ADR-0166, ADR-0170]
+implements: []
 ---
 
 # Assessment — Can RVF replace SQLite/PostgreSQL as the `agentdb_*` relational substrate?
+
+## Context and Problem Statement
+
+This is a research-assessment record evaluating whether RVF can serve as the relational substrate for the `agentdb_*` axis, as a follow-up to ADR-0166's substrate question and ADR-0170's PostgreSQL proposal.
 
 > **Verdict (TL;DR)**: **No.** Upstream `ruvnet/agentdb` ADR-003 ("RVF Format Integration for AgentDB", Proposed 2026-02-16) does **not** propose RVF as a relational substrate. It proposes RVF as a **drop-in `VectorBackend` replacement** for the vector-data sidecar only. RVF's actual API surface (`@ruvector/rvf` SDK + `rvf-runtime` Rust crate) has zero relational primitives — no `JOIN`, no `WITH RECURSIVE`, no `GROUP BY`, no multi-record transactions, no schema, no foreign keys. The 5 PERMANENT_SQLITE_CARVE_OUT controllers in ADR-0166 cannot run on RVF without writing a SQL engine on top of it. **The fork's substrate choice is between SQLite (ADR-0166) and PostgreSQL (ADR-0170); RVF is not a candidate.**
 

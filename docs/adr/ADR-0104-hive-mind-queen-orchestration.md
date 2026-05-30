@@ -1,19 +1,15 @@
-# ADR-0104: Hive-Mind Queen Orchestration
+---
+status: accepted
+date: 2026-04-28
+tags: [hive-mind, queen, orchestration, cli]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: Implemented (2026-04-28); Q1 + §4a-empirical resolved positive by live smoke (2026-04-29); **Q4 resolved positive by upstream `e50df6722` HIGH-02** (2026-04-29 redundancy audit — adopt on next upstream merge). All three open questions closed. Smoke-script authoring remains deferred.
-- **Date**: 2026-04-28
-- **Scope**:
-  - Fork (`forks/ruflo`):
-    - `v3/@claude-flow/cli/src/parser.ts`
-    - `v3/@claude-flow/cli/src/commands/hive-mind.ts`
-    - `v3/@claude-flow/cli/src/init/mcp-generator.ts`
-    - `v3/@claude-flow/cli/src/mcp-tools/hive-mind-tools.ts`
-  - ruflo-patch:
-    - `lib/acceptance-adr0104-checks.sh`
-    - `tests/unit/acceptance-adr0104-checks.test.mjs`
-    - `scripts/test-acceptance.sh` (wiring)
+# Hive-Mind Queen Orchestration
 
-## Context
+## Context and Problem Statement
 
 `hive-mind spawn --claude` was broken end-to-end. Architecturally, the Queen
 prompt forbade Task tool while pointing at a JSON-stub MCP path that couldn't
@@ -28,7 +24,15 @@ via `child_process.spawn('claude', ...)` against the developer's
 subscription, spawns workers via Task tool inside its session, workers
 coordinate via the existing functional `mcp__ruflo__hive-mind_*` MCP tools.
 
-## Decision
+## Considered Options
+
+* Apply six source-level fixes (parser flag scoping, hard-error on missing objective, honest output wording, `.mcp.json` direct path, hive state file lock, Queen prompt revert + worker coordination contract) (chosen).
+
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "Apply six source-level fixes so the Queen actually orchestrates as documented", because the hive was broken at both the architectural layer (prompt forbade the Task tool while pointing at a JSON-stub MCP path) and the operational layer (four CLI defects + an unlocked state file), and these six surgical fixes let the Queen launch via `child_process.spawn('claude', ...)`, spawn workers via the Task tool, and coordinate through the existing functional `mcp__ruflo__hive-mind_*` tools.
 
 Six source-level fixes:
 
@@ -72,7 +76,16 @@ Six source-level fixes:
      (queenType / topology / consensusAlgorithm / workerCount / workerTypes),
      queen leadership patterns, MCP tools list, memory namespace conventions.
 
-## Verification
+### Consequences
+
+* Good, because `hive-mind spawn --claude` now orchestrates end-to-end: the Queen launches, spawns Task-tool workers, and aggregates their results from shared memory (empirically verified by the 2026-04-29 smoke).
+* Good, because the file lock (lifted from ADR-0098) eliminates race-clobber when parallel Task workers write coordination state.
+* Good, because the output wording is now honest ("Registered N worker slot(s)" rather than the false "Spawned N agents").
+* Good, because all six fixes survive the upstream merge (redundancy audit 2026-04-29) — none are made redundant by upstream.
+* Bad, because §6 directly contradicts upstream `8c4cecfb1` (the commit that introduced the `#1422` "Do NOT use Task tool" block), so the revert must be re-asserted on every upstream merge (acceptance check `check_adr0104_section_6` guards it).
+* Neutral, because the behavioral differentiation of topology / consensus / queen-type remains prompt-string interpolation, explicitly out of scope (see Out of scope).
+
+### Confirmation
 
 **Regression** — `lib/acceptance-adr0104-checks.sh` (10 scenarios) wired into
 `scripts/test-acceptance.sh`; paired `tests/unit/acceptance-adr0104-checks.test.mjs`
@@ -261,3 +274,9 @@ Defaults match the fallback expressions inside `generateHiveMindPrompt`
 (lines 797-798), so user-visible behaviour is unchanged when flags are
 omitted. Acceptance result: `adr0104-meta-preserved` flips FAIL → PASS
 without other check regressions.
+
+## More Information
+
+Status: Implemented (2026-04-28); Q1 + §4a-empirical resolved positive by live smoke (2026-04-29); Q4 resolved positive by upstream `e50df6722` HIGH-02 (2026-04-29 redundancy audit — adopt on next upstream merge). All three open questions closed. Smoke-script authoring remains deferred. Dated 2026-04-28.
+
+Scope — Fork (`forks/ruflo`): `v3/@claude-flow/cli/src/parser.ts`, `v3/@claude-flow/cli/src/commands/hive-mind.ts`, `v3/@claude-flow/cli/src/init/mcp-generator.ts`, `v3/@claude-flow/cli/src/mcp-tools/hive-mind-tools.ts`. ruflo-patch: `lib/acceptance-adr0104-checks.sh`, `tests/unit/acceptance-adr0104-checks.test.mjs`, `scripts/test-acceptance.sh` (wiring).

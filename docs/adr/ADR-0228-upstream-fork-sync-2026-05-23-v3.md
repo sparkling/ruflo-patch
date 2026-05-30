@@ -1,17 +1,13 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-23
-methodology: [MADR, runbook, SPARC]
-decision-makers: [Henrik Pettersen]
 tags: [upstream-sync, fork-management, ruflo, agentic-flow, ruvector, ruv-FANN, agentdb, runbook, v3-of-0162-cycle, adr-128, security]
-depends-on: [0162, 0186, 0187, 0203, 0204]
-related: [0088, 0111, 0143, 0161, 0177, 0212, 0215, 0216, 0223, 0225, 0227]
-audience: ai-executor
-state_schema: 2
+supersedes: []
+depends-on: [ADR-0162, ADR-0186, ADR-0187, ADR-0203, ADR-0204]
+implements: []
 ---
 
-# ADR-0228: Upstream fork sync 2026-05-23 (v3 — takes over ADR-0186's close-out)
+# Upstream fork sync 2026-05-23 (v3 — takes over ADR-0186's close-out)
 
 > **AI executor**: this is the runbook for the *unlanded* portion of the
 > upstream delta accumulated since ADR-0186 closed on 2026-05-18. v3 does
@@ -510,6 +506,8 @@ This ADR is closed when ALL of the following hold:
    surface during Batch S triage.
 
 ## More information
+
+This decision was completed. Methodology: MADR, runbook, SPARC. Decision-maker: Henrik Pettersen. Audience: ai-executor. State schema version: 2. It also relates to ADR-0088, ADR-0111, ADR-0143, ADR-0161, ADR-0177, ADR-0212, ADR-0215, ADR-0216, ADR-0223, ADR-0225, and ADR-0227.
 
 * **ADR-0186** — predecessor (v2; landed 12 picks 2026-05-18)
 * **ADR-0162** — predecessor (v1; May 9-10 ~280-commit sync)

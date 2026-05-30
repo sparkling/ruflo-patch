@@ -1,12 +1,9 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-19
-accepted-on: 2026-05-20
-implemented-on: 2026-05-21
-tags: [hooks, dead-code, consolidation, parallel-implementations, dx, swarm-reviewed]
+tags: [hooks, dead-code, consolidation, parallel-implementations]
 supersedes: []
-depends-on: [0201]
+depends-on: [ADR-0201]
 implements: []
 ---
 
@@ -258,6 +255,8 @@ corrected.**
 - Bad, because deprecation defers the decision rather than making it; the consolidation will be needed eventually and Option D adds a transitional step that buys nothing.
 
 ## More Information
+
+Lifecycle dates from the original record: proposed 2026-05-19, accepted 2026-05-20, implemented 2026-05-21. This ADR was swarm-reviewed.
 
 - **Audit source documents:**
   - `docs/audits/2026-05-19-soundness-audit/01-hooks-pre-lifecycle.md` — F-01-001 (ESM `require` bomb in `addHook`), F-01-002 (two parallel pre-* impls; `hooks/src/mcp/index.ts` dead).

@@ -1,12 +1,15 @@
-# ADR-0147: Refine ADR-0094 Bug-1 / Bug-2 fixes — partial-mapped fall-through and key-format parser for cross-process AgentDB reads
+---
+status: accepted
+date: 2026-05-06
+tags: [agentdb, memory, rvf, causal]
+supersedes: []
+depends-on: [ADR-0094]
+implements: []
+---
 
-- **Status**: Implemented 2026-05-06 — original Bug 1+2 refinements verified live (HM probes confirmed memory_search returns 5 results, causal_query effect= returns 9). **Re-opened 2026-05-06 — Bug 4 (cause= asymmetry) and Bug 5 (adr-index skill fragile body extraction) discovered post-deploy; refinements pending.** **Re-opened again 2026-05-06 — Bug 6 (R6: read-arm fallback first-100-cap) and Bug 7 (R7: write-arm controller-mirror typo) discovered after wipe + reindex of 231 ADRs. R6 LANDED in `forks/ruflo` `main` (memory-router.ts:1929); R7 DEFERRED — initial deferral by patcher cited NodeIdMapper integration cost; ADR architect refuted citing string-tolerance at `CausalMemoryGraph.ts:233-239`; validation showed string-tolerance is conditional on GraphDatabaseAdapter being the wired runtime backend (the SQLite fallback path at lines 261-284 still uses raw `edge.fromMemoryId` against the `'episode'|'skill'|'note'|'fact'` enum). Even when R7 would succeed at the write side, the read-arm controller calls at lines 1871/1873 still use wrong arg shape, so R7-write without R7-read yields no observable improvement over R6-alone. R7 deferred until graph-adapter wiring is verified AND read-arm arg shape is also fixed (or until a runtime-tolerant best-effort R7 wrapper is designed).**
-- **Date**: 2026-05-06
-- **Deciders**: Henrik Pettersen
-- **Depends on**: ADR-0094 (acceptance coverage), forks/ruflo `71b2ad33e` (original three-bug fix shipped in `@sparkleideas/memory@3.0.0-alpha.13-patch.358` + `@sparkleideas/cli@3.5.58-patch.380`)
-- **Scope**: Two refinements to existing fixes in `forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts` and `forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts`. No upstream-API contract changes.
+# Refine ADR-0094 Bug-1 / Bug-2 fixes — partial-mapped fall-through and key-format parser for cross-process AgentDB reads
 
-## Context
+## Context and Problem Statement
 
 ADR-0094 acceptance surfaced three AgentDB bugs in the HM hejlsberg worktree (cross-process reads against a persisted SFVR file with hundreds of writes). Commit `71b2ad33e` shipped Bug-1 (HNSW orphan-numId drop), Bug-2 (causal_query asymmetry), and Bug-3 (error-laundering) fixes to `forks/ruflo` `main`, released as patch.358 (memory) + patch.380 (cli).
 
@@ -25,7 +28,7 @@ Direct probes pinpointed gaps:
 
 **Both gap-claims are diagnostic hypotheses, not yet validated against the user's actual stored data.** This ADR's Phase 0 ratifies them via reproduction tests and a record dump before implementing the fix.
 
-## Adversarial review (recorded for future readers)
+### Adversarial review (recorded for future readers)
 
 Both underlying bugs ARE in upstream `ruvnet/ruflo` pre-fix code (verified at `forks/ruflo` `71b2ad33e^`):
 
@@ -39,11 +42,11 @@ Both underlying bugs ARE in upstream `ruvnet/ruflo` pre-fix code (verified at `f
 
 **Verdict:** the bugs are real upstream gaps that rarely manifest in typical upstream usage. Our fork's ADR-indexing workload exposes them. We did NOT introduce these bugs; our `71b2ad33e` fixes have edge-case logic gaps that the live HM probe surfaces.
 
-## Critical review of the proposed fixes (added 2026-05-06)
+### Critical review of the proposed fixes (added 2026-05-06)
 
 The first draft proposed two refinements but skipped validation. Self-review surfaced multiple issues that must be addressed before implementing.
 
-### Soundness gaps
+#### Soundness gaps
 
 1. **Refinement 1 loses sort order on merge.** Original draft merged native + supplemental results then `slice(0, k)` without re-sorting. Native hits go first (HNSW distance order), supplementals append (pureTsSearch score order). Slicing the first k may drop the highest-quality supplementals. **Must `sort((a,b) => b.score - a.score)` before slice.**
 
@@ -51,7 +54,7 @@ The first draft proposed two refinements but skipped validation. Self-review sur
 
 3. **Refinement 2 `e.key` field name is unverified.** Code reads `(e as any).key`. `routeMemoryOp.list` returns entries via `storage.query({type:'prefix', ...})`. Whether those surface `key` as the property name is unverified. Could be `id`, `entryId`, or other. **Must inspect `IMemoryBackend.query` return type before writing the fix.**
 
-### Completeness gaps
+#### Completeness gaps
 
 4. **Stored-value shape unverified.** User probed `memory_list namespace=causal-edges` and saw 103 keys, but never dumped a full record. Both refinements assume the value-side is `{sourceId, targetId, relation, weight}` JSON. We don't actually know what's in `value` for those 103 entries.
 
@@ -61,11 +64,22 @@ The first draft proposed two refinements but skipped validation. Self-review sur
 
 7. **MCP-wrapper code path is unaddressed.** `memory_search` MCP handler does input validation, query-optimizer cache check, and may apply scope/namespace coercion before calling RvfBackend.search. If the wrapper coerces a user's `namespace='all'` to something the backend rejects, no backend fix helps.
 
-### Conclusion of critical review
+#### Conclusion of critical review
 
 **Direction is correct, but the diagnosis is at most 60% validated.** Refinements 1+2 address symptoms that are present in code but may not be the only — or even the actual — cause of the user's empirical 0-result observation. **Phase 0 (validation) is not optional.**
 
-## Decision
+## Considered Options
+
+* **Three-phase Phase-0-gated approach: validate the diagnosis first, then apply Refinement 1 (Bug 1 supplement) and Refinement 2 (Bug 2 key parser) (chosen).**
+* **Alternative A — Always run pureTsSearch first; use HNSW only for ranking (rejected)** — replace HNSW as the primary index entirely; iterate `entries` map every time. Rejected: defeats the 150x-12,500x HNSW speedup that motivates RvfBackend's design (USERGUIDE 5332-5644). Cost is O(N) on every query vs O(log N) with HNSW.
+* **Alternative B — Persist `nativeIdMap` in `.meta` (rejected for this ADR; in scope for a future ADR)** — eliminates the orphan scenario at root. Rejected for THIS ADR: requires a new file format field, migration handling for existing `.rvf` files in the wild, and write-amplification-budget review. Out of scope; existing field comments at `rvf-backend.ts:~1543` flag this future work.
+* **Alternative C — Filter-side: reject `entries.value` JSON-parse failures, surface `RvfMalformedEdge` error (rejected)** — the user's storage works; the writes succeed at routeMemoryOp.store. The user's HM data was likely written by a mix of pre-fix and post-fix code paths, leaving heterogeneous value layouts. Rejecting on parse-failure would make `causal_query` flaky against legitimate historical data.
+* **Alternative D — Auto-rebuild .rvf at MCP server start (rejected)** — run `ruflo memory rebuild` automatically on MCP server startup. Rejected: rebuild is currently a manual operation per design; auto-rebuild on start risks running on huge files and slowing MCP cold-start. Defer to user-initiated with a more visible warning.
+* **Alternative E — Skip Phase 0 and ship the refinements directly (rejected)** — considered and rejected during critical review. Three independent unverified assumptions (stored-value shape, embedding correctness, hierarchical_recall asymmetry) means there's a ~30-50% chance the proposed fixes don't address the user's actual root cause. Phase 0 cost is bounded (5 small probes), upside is correct diagnosis vs flailing.
+
+## Decision Outcome
+
+Chosen option: "Three phases, Phase-0-gated", because three independent unverified assumptions made it ~30-50% likely the proposed fixes wouldn't address the actual root cause — so validation gates must complete (and may force redesign) before any code change.
 
 Three phases. **Phase 0 must complete and produce a passing reproduction test before Phase 1 starts.** Phase 0's outputs may invalidate Phase 1's assumptions and force redesign.
 
@@ -201,9 +215,13 @@ const parsed = entries.map((e: any) => {
 - Embedding-pipeline fixes (would be a separate ADR if P0-3 fails).
 - MCP-wrapper coercion fixes (would be a separate ADR if P0-5 surfaces issues).
 
-## Acceptance criteria
+### Consequences
 
-### Phase 0 gates
+* Neutral, because the fix supplements (not replaces) the existing native path — native fast path still wins at ≤50% orphan rate; the supplement only fires when native is mostly broken.
+
+### Confirmation
+
+#### Phase 0 gates
 
 - [ ] **P0-1**: Cross-process reproduction test in `tests/unit/bug1-cross-process-search.test.mjs` FAILS against current patch.380 code. Test asserts `memory_search` returns >0 results after a process-restart write/read flow.
 - [ ] **P0-2**: One HM entry's full record (key + value + metadata) recorded in this ADR's Implementation log. Confirms field names and value shape.
@@ -211,18 +229,18 @@ const parsed = entries.map((e: any) => {
 - [ ] **P0-4**: hierarchical_recall trace findings documented in this ADR. Identifies which call path it uses and why memory_search differs.
 - [ ] **P0-5**: memory_search MCP-wrapper trace recorded in this ADR. Confirms whether any pre-RvfBackend layer can return 0 in the user's scenario.
 
-### Phase 1 (gated on P0 success)
+#### Phase 1 (gated on P0 success)
 
 - [ ] Refinement 1 lands in `forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts`.
 - [ ] Test in `tests/unit/bug1-memory-search-orphan-numid.test.mjs` extended with partial-mapped scenario (5 entries written, 2 native-mapped, 3 orphan-only) → asserts all 5 surface and are sorted by score-DESC.
 - [ ] P0-1 reproduction test now passes.
 
-### Phase 2 (gated on P0 success)
+#### Phase 2 (gated on P0 success)
 
 - [ ] Refinement 2 lands in `forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts` using the field name verified in P0-2.
 - [ ] Test in `tests/unit/bug2-causal-query-roundtrip.test.mjs` extended with key-only-parse scenario (write a causal edge with key `A→B` whose value has no JSON-parseable fields) → asserts query with `cause:A` returns 1 result.
 
-### Final
+#### Final
 
 - [ ] `npm run test:unit` green.
 - [ ] `npm run release` green (full pipeline + acceptance).
@@ -315,28 +333,6 @@ Sequence:
 2. **Key-parse false positives** if a future writer uses arrow-encoded keys without `sourceId`/`targetId` semantics. Mitigated: parser only triggers when value-side parse yields no fields. Document the arrow-key contract in `routeCausalOp` write path comment.
 3. **Test fragility.** Cross-process reproduction tests are inherently fragile (process spawning, FS sync). Existing `bug1-memory-search-orphan-numid.test.mjs` simulates orphan-only via in-process mock; extend to mixed-state without spawning real processes if possible.
 4. **P0 may invalidate the entire fix direction.** If P0-3 fails (embeddings broken) or P0-4 reveals hierarchical_recall doesn't use RvfBackend at all, the actual root cause lies elsewhere and this ADR is superseded.
-
-## Considered alternatives
-
-### Alternative A — Always run pureTsSearch first; use HNSW only for ranking
-
-Replace HNSW as the primary index entirely; iterate `entries` map every time. Rejected: defeats the 150x-12,500x HNSW speedup that motivates RvfBackend's design (USERGUIDE 5332-5644). Cost is O(N) on every query vs O(log N) with HNSW.
-
-### Alternative B — Persist `nativeIdMap` in `.meta`
-
-Eliminates the orphan scenario at root. Rejected for THIS ADR (in scope for a future ADR): requires a new file format field, migration handling for existing `.rvf` files in the wild, and write-amplification-budget review. Out of scope; existing field comments at `rvf-backend.ts:~1543` flag this future work.
-
-### Alternative C — Filter-side: reject `entries.value` JSON-parse failures, surface `RvfMalformedEdge` error
-
-Rejected: the user's storage works; the writes succeed at routeMemoryOp.store. The user's HM data was likely written by a mix of pre-fix and post-fix code paths, leaving heterogeneous value layouts. Rejecting on parse-failure would make `causal_query` flaky against legitimate historical data.
-
-### Alternative D — Auto-rebuild .rvf at MCP server start
-
-Run `ruflo memory rebuild` automatically on MCP server startup. Rejected: rebuild is currently a manual operation per design; auto-rebuild on start risks running on huge files and slowing MCP cold-start. Defer to user-initiated with a more visible warning.
-
-### Alternative E — Skip Phase 0 and ship the refinements directly
-
-Considered and rejected during critical review. Three independent unverified assumptions (stored-value shape, embedding correctness, hierarchical_recall asymmetry) means there's a ~30-50% chance the proposed fixes don't address the user's actual root cause. Phase 0 cost is bounded (5 small probes), upside is correct diagnosis vs flailing.
 
 ## Implementation log
 
@@ -785,7 +781,15 @@ R6's effect= path scans the entire namespace (O(N), bounded by `count('causal-ed
 | R7 | Bug 7 (write-arm `addEdge` → `addCausalEdge` typo) | **DEFERRED** — backend uncertainty + read-arm asymmetry (see R7 §Trade-off) | `memory-router.ts:1810` (TODO comment landed at 1818-1834) |
 | R8 candidate | Bug 8 (effect= reverse index) | DEFERRED — file separately if effect= scan becomes hot | new namespace `causal-edges-by-target` |
 
-## References
+## More Information
+
+Original status: Implemented 2026-05-06 — original Bug 1+2 refinements verified live (HM probes confirmed memory_search returns 5 results, causal_query effect= returns 9). Re-opened 2026-05-06 — Bug 4 (cause= asymmetry) and Bug 5 (adr-index skill fragile body extraction) discovered post-deploy; refinements pending. Re-opened again 2026-05-06 — Bug 6 (R6: read-arm fallback first-100-cap) and Bug 7 (R7: write-arm controller-mirror typo) discovered after wipe + reindex of 231 ADRs. R6 LANDED in `forks/ruflo` `main` (memory-router.ts:1929); R7 DEFERRED — initial deferral by patcher cited NodeIdMapper integration cost; ADR architect refuted citing string-tolerance at `CausalMemoryGraph.ts:233-239`; validation showed string-tolerance is conditional on GraphDatabaseAdapter being the wired runtime backend (the SQLite fallback path at lines 261-284 still uses raw `edge.fromMemoryId` against the `'episode'|'skill'|'note'|'fact'` enum). Even when R7 would succeed at the write side, the read-arm controller calls at lines 1871/1873 still use wrong arg shape, so R7-write without R7-read yields no observable improvement over R6-alone. R7 deferred until graph-adapter wiring is verified AND read-arm arg shape is also fixed (or until a runtime-tolerant best-effort R7 wrapper is designed).
+
+This ADR depends on ADR-0094 (acceptance coverage) and on forks/ruflo `71b2ad33e` (original three-bug fix shipped in `@sparkleideas/memory@3.0.0-alpha.13-patch.358` + `@sparkleideas/cli@3.5.58-patch.380`).
+
+Scope: Two refinements to existing fixes in `forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts` and `forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts`. No upstream-API contract changes.
+
+References:
 
 - `forks/ruflo` `71b2ad33e` (original three-bug fix)
 - `forks/agentic-flow/packages/agentdb/src/controllers/CausalMemoryGraph.ts:213` (`addCausalEdge` signature)

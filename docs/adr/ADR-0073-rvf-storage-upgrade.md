@@ -1,12 +1,15 @@
-# ADR-0073: RVF Storage Backend Upgrade — WAL Write Path, Rust HNSW, Native Activation
+---
+status: accepted
+date: 2026-04-06
+tags: [rvf, storage, hnsw, wal]
+supersedes: []
+depends-on: [ADR-0068, ADR-0069]
+implements: []
+---
 
-- **Status**: Implemented (Phases 1-3)
-- **Date**: 2026-04-06
-- **Extracted from**: ADR-0069 F2 (RVF as Single Storage Format)
-- **Depends on**: ADR-0068 (config chain), ADR-0069 F1 (AgentDBService delegation)
-- **Analysis**: 6-agent hive council (queen + 5 specialists), verified against source code
+# RVF Storage Backend Upgrade — WAL Write Path, Rust HNSW, Native Activation
 
-## Context
+## Context and Problem Statement
 
 ADR-0069 F2 envisioned "RVF as the single storage format" — replacing 6 storage formats with
 RuVector's binary format. Analysis by a 6-agent hive council (queen "Meridian" + specialists in
@@ -64,17 +67,24 @@ Phase 2 (Rust HNSW patch)  ──→  Phase 3 (tryNativeInit fix)
 
 Both classes are kept. Different interfaces, different purposes. This ADR targets the ruflo one.
 
-## Decision
+## Considered Options
+
+* **Implement F2 as three ordered phases targeting the ruflo `RvfBackend` only — WAL write path, rvf-index Rust patch, native RVF activation (chosen)** — over the full 6-format consolidation vision.
+* **Full single-format consolidation (6 formats → 1) — deferred** — would require SQLiteBackend deprecation, AgentDB core migration to RVF, in-memory Maps getting RVF-backed persistence, and graph adapter replacement; multi-month, multi-fork scope, deferred until user demand.
+
+## Decision Outcome
+
+Chosen option: "Implement F2 as three ordered phases targeting the ruflo `RvfBackend` only", because the full consolidation vision is multi-month scope, but three concrete, correctly-ordered improvements to the primary storage backend (WAL write path, Rust HNSW wiring, native activation) deliver most of the value without the full-rewrite risk.
 
 Implement F2 as three ordered phases targeting the ruflo `RvfBackend` only.
 
-## Phase 1: WAL Write Path (pure TS, 1-2 days)
+### Phase 1: WAL Write Path (pure TS, 1-2 days)
 
-### What
+#### What
 
 Replace `persistToDisk()`'s full-file rewrite with append-only WAL.
 
-### How
+#### How
 
 - New entries appended to `.wal` sidecar file (single-entry write, ~1ms)
 - Periodic compaction merges WAL into main `.rvf` file (uses existing `persistToDisk()`)
@@ -82,15 +92,15 @@ Replace `persistToDisk()`'s full-file rewrite with append-only WAL.
 - Atomic rename for crash safety (existing pattern)
 - Compaction trigger: entry count threshold or time interval (configurable)
 
-### Expected impact
+#### Expected impact
 
 At 500 entries: `memory store` goes from ~50ms (full rewrite) to ~1ms (append).
 
-### Dependencies
+#### Dependencies
 
 None. Pure TS, zero new packages.
 
-### Risks
+#### Risks
 
 | Risk | Severity | Mitigation |
 |------|----------|------------|
@@ -98,19 +108,19 @@ None. Pure TS, zero new packages.
 | Read-through complexity | LOW | In-memory `HnswLite` already indexes all entries regardless of on-disk layout |
 | Compaction timing | LOW | Configurable; default conservative (compact every N writes or M seconds) |
 
-### Tests required
+#### Tests required
 
 - **Unit**: WAL append, read-through merge, compaction trigger, crash recovery (partial WAL)
 - **Integration**: Store/search round-trip across WAL boundary, concurrent access
 - **Acceptance**: `memory store` latency at 500+ entries (must be <5ms)
 
-## Phase 2: rvf-index Rust Patch (fork patch in RuVector, 2-3 days)
+### Phase 2: rvf-index Rust Patch (fork patch in RuVector, 2-3 days)
 
-### What
+#### What
 
 Wire `rvf-index` into `rvf-runtime` so native RVF queries use HNSW instead of brute-force.
 
-### How
+#### How
 
 - Add `rvf-index` dependency to `rvf-runtime/Cargo.toml`
 - Wire `RvfStore.query()` → `HnswGraph` (~200 lines Rust)
@@ -118,16 +128,16 @@ Wire `rvf-index` into `rvf-runtime` so native RVF queries use HNSW instead of br
 - Queries go from O(n) brute-force to O(log n) HNSW (recall >= 0.95)
 - Track as GitHub issue on sparkleideas RuVector fork
 
-### Where
+#### Where
 
 Fork patch in `/Users/henrik/source/forks/ruvector`. Picked up by `copy-source.sh` → codemod →
 build → publish as `@sparkleideas/ruvector-rvf-node`.
 
-### Dependencies
+#### Dependencies
 
 RuVector fork source. Existing NAPI build pipeline.
 
-### Risks
+#### Risks
 
 | Risk | Severity | Mitigation |
 |------|----------|------------|
@@ -135,19 +145,19 @@ RuVector fork source. Existing NAPI build pipeline.
 | NAPI binary rebuild | LOW | Build pipeline already handles 5-platform prebuilt binaries |
 | rvf-index API surface | LOW | Crate exports are stable (`HnswGraph`, `HnswConfig`, `ProgressiveIndex`) |
 
-### Tests required
+#### Tests required
 
 - **Rust**: Unit tests for HNSW query integration in rvf-runtime
 - **NAPI**: Smoke test verifying HNSW params are no longer silently ignored
 - **Integration**: Query recall comparison (brute-force vs HNSW at 1K+ entries)
 
-## Phase 3: Activate Native RVF (TS, 1 day, depends on Phase 2)
+### Phase 3: Activate Native RVF (TS, 1 day, depends on Phase 2)
 
-### What
+#### What
 
 Fix the 4 `tryNativeInit()` bugs and install `@ruvector/rvf-node` in the ruflo fork.
 
-### How
+#### How
 
 - Fix package name: `@ruvector/rvf` → `@ruvector/rvf-node`
 - Fix constructor: `new RvfDatabase({...})` → `RvfDatabase.create(path, {...})`
@@ -157,7 +167,7 @@ Fix the 4 `tryNativeInit()` bugs and install `@ruvector/rvf-node` in the ruflo f
 - Pure-TS `HnswLite` becomes fallback (not primary)
 - Reference implementation: agentdb's `RvfBackend.ts` (lines 138-192) uses the correct API
 
-### Dependencies
+#### Dependencies
 
 Phase 2 must be complete. Without rvf-index wiring, native queries are O(n) brute-force —
 slower than pure-TS HnswLite O(log n).
@@ -165,7 +175,7 @@ slower than pure-TS HnswLite O(log n).
 `@ruvector/rvf-node` must be installed in ruflo fork. Both `@sparkleideas/ruvector-rvf` and
 `@sparkleideas/ruvector-rvf-node` are already in `publish-levels.json` Level 1 (foundational).
 
-### Risks
+#### Risks
 
 | Risk | Severity | Mitigation |
 |------|----------|------------|
@@ -173,11 +183,51 @@ slower than pure-TS HnswLite O(log n).
 | Format migration (old custom → native binary) | LOW | Version header in magic bytes allows format detection; old files readable via TS path |
 | API drift between @ruvector/rvf-node versions | LOW | Pin version in fork's package.json |
 
-### Tests required
+#### Tests required
 
 - **Unit**: Native init success, fallback chain (NAPI → TS), API bridge correctness
 - **Integration**: Store/search round-trip via native handle, format detection (old vs new files)
 - **Acceptance**: `memory search` returns correct results with native backend
+
+### Consequences
+
+The Pros of implementing (Good):
+
+| # | Pro | Magnitude | Conditions |
+|---|-----|-----------|------------|
+| 1 | Write path ~50x faster at 500+ entries | HIGH | Phase 1 (WAL) |
+| 2 | Native binary format — smaller files, faster load | MEDIUM | Phase 3 (native RVF) |
+| 3 | Future-proofs for 10K+ entry scale | MEDIUM | Phase 2 (rvf-index wiring) |
+| 4 | Shared format with agentdb — CLI/MCP interop possible | MEDIUM | Phase 3 (both use @ruvector/rvf) |
+| 5 | Unblocks RVF ecosystem (ADR-029 profiles) | LOW | Depends on upstream maturity |
+| 6 | Eliminates format fragmentation (long-term) | LOW | Only with full consolidation (OUT items) |
+
+The Cons of implementing (Bad):
+
+| # | Con | Severity | Mitigation |
+|---|-----|----------|------------|
+| 1 | No user complaints — current perf adequate at typical scale | HIGH | Pre-emptive; Phase 1 (WAL) cost is low |
+| 2 | Native binary dependency — platform-specific, CI complexity | HIGH | Prebuilt binaries for 5 platforms; existing build pipeline |
+| 3 | Rust patch maintenance across upstream syncs | MEDIUM | One more patch; 4 forks already maintained |
+| 4 | WAL crash recovery complexity | MEDIUM | Well-understood pattern; existing atomic rename is the compaction path |
+| 5 | rvf-runtime brute-force without rvf-index | HIGH | Strict phase ordering (Phase 3 depends on Phase 2) |
+| 6 | Old → new format migration | LOW | Version header detection; graceful TS fallback |
+| 7 | Upstream blocking bugs (#315, #316, #323) | MEDIUM | Workarounds exist; #315 is misattributed (rvf-index gap, not import bug) |
+
+* Neutral, because format consolidation is NOT achieved by this ADR — it upgrades the primary format only; the other 5 formats are unchanged (see the honest assessment below).
+
+### Confirmation
+
+All 3 phases implemented and validated by 2 review swarms (7 agents, 10 bugs found and fixed). Test coverage: 20 unit tests (`rvf-backend-wal.test.mjs`: 15 original + 5 gap-fill), 6 acceptance checks (`acceptance-adr0073-checks.sh`: 3 static grep + 3 runtime), and 6 Rust tests in `rvf-runtime/src/store.rs` (HNSW recall, reopen, deletions, filters, compaction, hash range). The Amendment (2026-05-22) adds the cosine-direct-scoring guard `tests/unit/adr0073-rvf-cosine-direct-scoring.test.mjs`.
+
+## Decision points
+
+1. **Is the write bottleneck hurting users?** Measure real-world entry counts. If most users
+   have <200 entries, even Phase 1 is premature. If 500+, Phase 1 is urgent.
+2. **Phase 2 upstream-first?** The rvf-index → rvf-runtime wiring could be offered as a PR to
+   ruvnet/RuVector. If accepted, we get it for free on sync. If rejected or slow, we maintain
+   the fork patch — that's what this repo exists to do.
+3. **Phase 3 timing**: Only after Phase 2 ships and NAPI binaries are rebuilt with HNSW support.
 
 ## What's OUT of scope (and why)
 
@@ -218,38 +268,6 @@ with full-file rewrite" to "native RVF with HNSW and WAL." The other 5 formats a
 True single-format consolidation would additionally require: SQLiteBackend deprecation, AgentDB
 core migration to RVF, in-memory Maps getting RVF-backed persistence, and graph adapter
 replacement. That is multi-month, multi-fork scope — deferred until user demand.
-
-## Pros of implementing
-
-| # | Pro | Magnitude | Conditions |
-|---|-----|-----------|------------|
-| 1 | Write path ~50x faster at 500+ entries | HIGH | Phase 1 (WAL) |
-| 2 | Native binary format — smaller files, faster load | MEDIUM | Phase 3 (native RVF) |
-| 3 | Future-proofs for 10K+ entry scale | MEDIUM | Phase 2 (rvf-index wiring) |
-| 4 | Shared format with agentdb — CLI/MCP interop possible | MEDIUM | Phase 3 (both use @ruvector/rvf) |
-| 5 | Unblocks RVF ecosystem (ADR-029 profiles) | LOW | Depends on upstream maturity |
-| 6 | Eliminates format fragmentation (long-term) | LOW | Only with full consolidation (OUT items) |
-
-## Cons of implementing
-
-| # | Con | Severity | Mitigation |
-|---|-----|----------|------------|
-| 1 | No user complaints — current perf adequate at typical scale | HIGH | Pre-emptive; Phase 1 (WAL) cost is low |
-| 2 | Native binary dependency — platform-specific, CI complexity | HIGH | Prebuilt binaries for 5 platforms; existing build pipeline |
-| 3 | Rust patch maintenance across upstream syncs | MEDIUM | One more patch; 4 forks already maintained |
-| 4 | WAL crash recovery complexity | MEDIUM | Well-understood pattern; existing atomic rename is the compaction path |
-| 5 | rvf-runtime brute-force without rvf-index | HIGH | Strict phase ordering (Phase 3 depends on Phase 2) |
-| 6 | Old → new format migration | LOW | Version header detection; graceful TS fallback |
-| 7 | Upstream blocking bugs (#315, #316, #323) | MEDIUM | Workarounds exist; #315 is misattributed (rvf-index gap, not import bug) |
-
-## Decision points
-
-1. **Is the write bottleneck hurting users?** Measure real-world entry counts. If most users
-   have <200 entries, even Phase 1 is premature. If 500+, Phase 1 is urgent.
-2. **Phase 2 upstream-first?** The rvf-index → rvf-runtime wiring could be offered as a PR to
-   ruvnet/RuVector. If accepted, we get it for free on sync. If rejected or slow, we maintain
-   the fork patch — that's what this repo exists to do.
-3. **Phase 3 timing**: Only after Phase 2 ships and NAPI binaries are rebuilt with HNSW support.
 
 ## Upstream context
 
@@ -372,3 +390,7 @@ All 3 phases implemented and validated by 2 review swarms (7 agents, 10 bugs fou
 **Follow-up (not on the observed path).** `agentdb/src/backends/rvf/RvfBackend.ts` `distanceToSimilarity()` carries the same `case 'cosine': return 1 - distance` pattern; it is not on the `memory_search` path (which uses `@claude-flow/memory` via `MemoryRvfAdapter`) but should get the same treatment if any agentdb-native search consumer thresholds on absolute cosine.
 
 **Verification.** Unit source-shape guard: `tests/unit/adr0073-rvf-cosine-direct-scoring.test.mjs` (asserts cosine-direct scoring present, the `1 − r.distance` conversion gone). Behavioural: a reopened (`l2`) handle that stores then searches an entry exercises the native path with a populated numId map — pre-fix `2cos−1`, post-fix true cosine.
+
+## More Information
+
+Original status: "Implemented (Phases 1-3)." Recorded 2026-04-06. This ADR was extracted from ADR-0069 F2 (RVF as Single Storage Format) and depends on ADR-0068 (config chain) and ADR-0069 F1 (AgentDBService delegation). The analysis was performed by a 6-agent hive council (queen + 5 specialists), verified against source code.

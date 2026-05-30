@@ -1,14 +1,13 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-14
-closed-on: 2026-05-18
-tags: [memory, architecture, mcp, substrate, runtime-activation]
+tags: [memory, architecture, mcp, substrate]
+supersedes: []
 depends-on: [ADR-0180]
 implements: []
 ---
 
-# ADR-0181: Archivist Runtime Activation (F4-2 / F4-3)
+# Archivist Runtime Activation (F4-2 / F4-3)
 
 ## Context and Problem Statement
 
@@ -491,6 +490,8 @@ Appending to the [acceptance-baseline trajectory amendment](#amendment-acceptanc
 | Post-Phase-7 b5 close-out (patch.143) | **669 / 0 / 9** | 13 b5/misc probes flipped `skip_accepted` → PASS via 6 impl items + 2 probe-update batches + #88 fix. Items 2-6 added capability surfaces: `GNNTelemetryReader`, `SemanticRouteReader`, `CausalGraphWriter`, `SonaTrajectoryReader`. LearningSystem fully migrated pglite→SQLite. **Strict exit criterion met:** every non-heavy `skip_accepted` resolved. The 9 remaining skips are exactly the documented `_HEAVY_CHECK_IDS` opt-out (`ACCEPTANCE_HEAVY=1` to re-include). Log: `logs/probe-debt15-r2.log`. |
 
 ## More Information
+
+Original status: accepted and completed, closed on 2026-05-18.
 
 * [ADR-0180](ADR-0180-adopt-thin-memory-coordinator-with-type-enforced-mutation-handlers.md) — the architecture this ADR activates. §Implementation Status records the scaffold-vs-live boundary; this ADR is the "live" half.
 * [docs/council/ADR-0180-f4-2-phase-a-report.md](../council/ADR-0180-f4-2-phase-a-report.md) / [-b](../council/ADR-0180-f4-2-phase-b-report.md) / [-c](../council/ADR-0180-f4-2-phase-c-report.md) — the F4-2 Phase A–C work that made the substrate seam live and surfaced the true ~88-stub scope.

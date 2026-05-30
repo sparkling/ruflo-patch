@@ -1,10 +1,9 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-24
-tags: [dead-code, parallel-implementations, fork-cleanup, lint-gate, cve, embedding, mcp, audit-followup]
+tags: [dead-code, parallel-implementations, fork-cleanup, lint-gate]
 supersedes: []
-depends-on: [0201, 0222, 0233]
+depends-on: [ADR-0201, ADR-0222, ADR-0233]
 implements: []
 ---
 
@@ -13,7 +12,7 @@ implements: []
 > Drafted from [[ADR-0233]] §CT-F (whole-tree dead-code scan, slice 11) — **~57 200 LOC unique TS source dead** across `forks/ruflo`, `forks/agentdb`, `forks/ruvector`, excluding the documented `archive/` (418 K LOC).
 > CT-F is heterogeneous: every cluster needs a separate delete-vs-wire-vs-merge call. A blanket sweep would orphan published plugins (gastown-bridge, agentic-qe), discard CVE-mitigated code (the dead embedding stack's `transformers-loader.ts`), and worsen upstream-merge tax. This ADR proposes per-cluster decisions plus a lint gate so the next 5 K-LOC accretion is caught at PR time.
 
-## Context
+## Context and Problem Statement
 
 The May-19 audit's §E item 1 was a hint ("whole-tree dead-code scan would surface more"). Slice 11 of the second-pass audit (`docs/audits/2026-05-24-second-pass-audit/11-dead-code-scan.md`) tallied **23 findings** across the 3 in-scope forks:
 
@@ -48,14 +47,16 @@ CT-F is not a single decision; it is **17 separate cluster decisions** (compress
 
 All four checks pass. Two carry-overs to record per cluster: (a) merge-tax per [[INTEGRATION-LEDGER]] for every deletion overlapping with upstream; (b) CT-A coordination on the embedding-stack work.
 
-## Considered options
+## Considered Options
 
 * **Option A — Per-cluster decision with explicit delete-vs-wire-vs-merge call (chosen).** 7 cluster decisions in the table below, each independently actionable. Includes the prerequisite CVE-loader relocation for the embedding-stack cluster. Adds an `acceptance/no-new-dead-code` release-gate check (the lint-gate half) so the next 5 K-LOC accretion is caught at PR time. Each delete carries an [[INTEGRATION-LEDGER]] row and a fork arch-test (per the [[ADR-0222]] amendment shape).
 * **Option B — Blanket "delete everything dead" sweep.** Rejected: would silently orphan the two published plugins (gastown-bridge `0.1.3-patch.822` + agentic-qe in featured/trending/official/newest), discard the CVE-mitigated `transformers-loader.ts` (F-08-002 worsens), and skip the (small) wire-vs-delete call on `cli/src/appliance/` (dynamic-only-live, F-11-014). One-decision-fits-all does not match CT-F's heterogeneity.
 * **Option C — Add `no-unused-exports` lint to the release gate; defer per-cluster decision until next sweep.** Rejected as standalone: a lint gate without the per-cluster cleanup just freezes today's ~57 K LOC in place (the gate would only catch *new* dead code, since existing dead code is grandfathered). Adopted as **part of Option A** — gate + cleanup together.
 * **Option D — Status quo + [[ADR-0215]]-style golden-master for new dead-code accretion.** Rejected as standalone: a golden-master records today's dead-LOC count and fails on growth. Doesn't address the existing 57 K LOC or the CVE-loader trap. Same gating effect as C but more brittle (the count fluctuates with refactors). Sub-component (a counter capped at today's value) is retained inside Option A's gate as a defence-in-depth detector.
 
-## Decision
+## Decision Outcome
+
+Chosen option: "Option A — per-cluster triage", because each cluster gets an independently-actionable delete-vs-wire-vs-merge call plus a release-gate check that catches future dead-code accretion at PR time.
 
 **Chosen: Option A — per-cluster triage with explicit delete-vs-wire-vs-merge per cluster, plus a `acceptance/no-new-dead-code` release-gate check.**
 

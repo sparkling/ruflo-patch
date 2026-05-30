@@ -1,12 +1,17 @@
-# ADR-0068: Implementation of Controller Configuration Unification
+---
+status: accepted
+date: 2026-04-05
+tags: [controller, config, implementation, embeddings]
+supersedes: []
+depends-on: [ADR-0065]
+implements: [ADR-0066]
+---
 
-- **Status**: Implemented
-- **Date**: 2026-04-05
-- **Implemented**: 2026-04-05 (W1-W5 complete; CLI flag defaults + registry HNSW plumbing deferred)
-- **Implements**: ADR-0066
-- **Builds on**: ADR-0065 (config centralization)
-- **Analysis**: ADR-0067 (original vision for controller wiring)
-- **Architecture**: [Controller Wiring Vision](../architecture/controller-wiring-vision.md)
+# Implementation of Controller Configuration Unification
+
+## Context and Problem Statement
+
+This record is the implementation plan and progress review for ADR-0066 (Controller Configuration Unification). It reviews what ADR-0065 completed, identifies remaining gaps, and lays out a wave-by-wave plan (W1–W5) across the agentic-flow, ruflo, ruvector forks and the ruflo-patch repo to complete the four-layer controller-wiring vision described in ADR-0067.
 
 ## Review of Work Completed (ADR-0065)
 
@@ -247,3 +252,7 @@ Upstream v3.5.52-v3.5.58 "honesty audit" merged. Impact: MINOR.
 - Config chain (getEmbeddingConfig, getProjectConfig, RuntimeConfig) survived merge intact
 - New `analyze` commands (v3.5.58) should be audited for config chain bypass (new code paths)
 - Upstream creator assessment: "config chain is more disciplined than anything I shipped upstream"
+
+## More Information
+
+Original status: "Implemented (2026-04-05; W1-W5 complete; CLI flag defaults + registry HNSW plumbing deferred)." Recorded 2026-04-05. This ADR implements ADR-0066 (Controller Configuration Unification) and builds on ADR-0065 (config centralization); the design analysis is ADR-0067 (original vision for controller wiring), and the accompanying architecture document is `../architecture/controller-wiring-vision.md` (Controller Wiring Vision).

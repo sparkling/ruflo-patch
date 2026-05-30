@@ -1,16 +1,13 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-08
-closed-on: 2026-05-08
-methodology: [SPARC, MADR]
-decision-makers: [Henrik Pettersen]
-tags: [agentdb, lift-and-shift, mcp-tool-prefix, plugin-adoption, agentdb-onnx, vendored-decommission]
-supersedes: 0160
-related: [0078, 0094, 0143, 0147, 0148, 0150, 0157]
+tags: [agentdb, lift-and-shift, mcp, plugins]
+supersedes: [ADR-0160]
+depends-on: []
+implements: []
 ---
 
-# ADR-0161: Lift-and-shift agentdb to `forks/agentdb`; decommission vendored copy
+# Lift-and-shift agentdb to `forks/agentdb`; decommission vendored copy
 
 ## Context and Problem Statement
 
@@ -111,6 +108,8 @@ Out-of-source concerns folded in: MCP tool prefix (`mcp__agentic-flow__agentdb_*
 - **Option 3** (drop patches): silently loses fork-only files; violates `feedback-data-loss-zero-tolerance`.
 
 ## More Information
+
+Original metadata: Methodology SPARC + MADR; marked `completed: true` with `closed-on: 2026-05-08`. This decision supersedes ADR-0160 and was recorded as related to ADR-0078, ADR-0094, ADR-0143, ADR-0147, ADR-0148, ADR-0150, and ADR-0157.
 
 ### User direction (2026-05-08)
 

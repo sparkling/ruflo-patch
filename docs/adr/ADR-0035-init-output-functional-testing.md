@@ -1,22 +1,15 @@
-# ADR-0035: Init Output Functional Testing Strategy
+---
+status: superseded
+date: 2026-03-15
+tags: [testing, init, generators]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-## Status
+# Init Output Functional Testing Strategy
 
-Superseded by ADR-0070
-
-## Date
-
-2026-03-15
-
-## Deciders
-
-sparkling team
-
-## Methodology
-
-SPARC (Specification, Pseudocode, Architecture, Refinement, Completion) + MADR
-
-## Context
+## Context and Problem Statement
 
 The `@sparkleideas/cli init` command (and `init --full`, `init --minimal`) scaffolds a complete project with 20+ files across multiple directories. Current acceptance tests (T04, T05, T06, T07, T08) only verify:
 
@@ -60,7 +53,7 @@ The init system produces:
 
 Each mode produces a different file set with different configuration values. No test validates that minimal is a strict subset of standard, or that full is a strict superset.
 
-### Decision Drivers
+## Decision Drivers
 
 1. 13 patches modify generators with zero downstream validation
 2. Generated helpers are real code (2,400+ lines of JS) that runs in user projects
@@ -69,13 +62,23 @@ Each mode produces a different file set with different configuration values. No 
 5. `config.json` values are consumed by controllers at runtime -- invalid values cause silent failures
 6. `.mcp.json` registers MCP servers that must resolve via npx
 
-## Decision: Specification (SPARC-S)
+## Considered Options
 
-### Test Categories
+* **A five-category, three-phase init-output test strategy with a shared per-mode fixture (chosen)** — structural, helper-script, functional, patch-regression, and cross-mode categories, totalling 61 tests across L1/L2.
+
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "A five-category, three-phase init-output test strategy with a shared per-mode fixture", because it gives every init generator patch regression coverage, validates mode parity, and keeps the L1 suite under 15 seconds via a shared fixture that runs init once per mode.
+
+### Specification (SPARC-S)
+
+#### Test Categories
 
 Five categories organized by validation depth, mapped to test levels (L1 = unit, L2 = acceptance).
 
-#### Category 1: Structural Validation (L1) -- P0
+##### Category 1: Structural Validation (L1) -- P0
 
 Validates that generated files exist, parse correctly, and contain expected values.
 
@@ -101,7 +104,7 @@ Validates that generated files exist, parse correctly, and contain expected valu
 
 **Estimated test count: 17 tests x 3 modes = 51 assertions (17 test functions)**
 
-#### Category 2: Helper Script Validation (L1) -- P0
+##### Category 2: Helper Script Validation (L1) -- P0
 
 Validates that generated helper scripts are syntactically valid and export expected interfaces.
 
@@ -124,7 +127,7 @@ Validates that generated helper scripts are syntactically valid and export expec
 
 **Estimated test count: 14 tests**
 
-#### Category 3: Functional Validation (L2) -- P1
+##### Category 3: Functional Validation (L2) -- P1
 
 End-to-end tests that run init in a temp directory and exercise the generated project.
 
@@ -140,7 +143,7 @@ End-to-end tests that run init in a temp directory and exercise the generated pr
 
 **Estimated test count: 7 tests**
 
-#### Category 4: Patch Regression Tests (L1) -- P1
+##### Category 4: Patch Regression Tests (L1) -- P1
 
 One test per patch verifying the specific fix holds. Each test runs init and checks the specific output change the patch introduced.
 
@@ -164,7 +167,7 @@ One test per patch verifying the specific fix holds. Each test runs init and che
 
 **Estimated test count: 15 tests**
 
-#### Category 5: Cross-Mode Comparison (L1) -- P2
+##### Category 5: Cross-Mode Comparison (L1) -- P2
 
 Validates relationships between the three init modes.
 
@@ -181,7 +184,7 @@ Validates relationships between the three init modes.
 
 **Estimated test count: 8 tests**
 
-### Total Test Matrix
+#### Total Test Matrix
 
 | Category | L1 | L2 | P0 | P1 | P2 | Total |
 |----------|----|----|----|----|----|----|
@@ -192,9 +195,9 @@ Validates relationships between the three init modes.
 | 5. Cross-Mode | 8 | -- | -- | -- | 8 | 8 |
 | **Total** | **54** | **7** | **31** | **22** | **8** | **61** |
 
-## Decision: Pseudocode (SPARC-P)
+### Pseudocode (SPARC-P)
 
-### Test Harness: Shared Fixture
+#### Test Harness: Shared Fixture
 
 All L1 tests share a fixture that runs init once per mode and caches the output directory, avoiding repeated 3-second init calls.
 
@@ -220,7 +223,7 @@ after(() => {
 })
 ```
 
-### Category 1: Structural Validation
+#### Category 1: Structural Validation
 
 ```
 test('S-03: config.json is valid JSON not YAML', () => {
@@ -272,7 +275,7 @@ test('S-11: topology defaults to hierarchical-mesh', () => {
 })
 ```
 
-### Category 2: Helper Script Validation
+#### Category 2: Helper Script Validation
 
 ```
 test('H-09: memory.js CRUD cycle', () => {
@@ -312,7 +315,7 @@ test('H-14: hook-handler.cjs logs errors to stderr (HK-006)', () => {
 })
 ```
 
-### Category 4: Patch Regression Tests
+#### Category 4: Patch Regression Tests
 
 ```
 test('R-SG007: deep-clone prevents cross-template mutation', () => {
@@ -340,7 +343,7 @@ test('R-SG004: wizard parity with flags', () => {
 })
 ```
 
-### Category 5: Cross-Mode Comparison
+#### Category 5: Cross-Mode Comparison
 
 ```
 test('X-01: minimal files are strict subset of standard', () => {
@@ -367,9 +370,9 @@ test('X-04: no dangling references in hook commands', () => {
 })
 ```
 
-## Decision: Architecture (SPARC-A)
+### Architecture (SPARC-A)
 
-### File Organization
+#### File Organization
 
 ```
 tests/
@@ -384,7 +387,7 @@ lib/
   acceptance-checks.sh           -- Category 3 (T25 through T31, appended)
 ```
 
-### Shared Fixture Design
+#### Shared Fixture Design
 
 The shared fixture (`tests/fixtures/init-fixture.mjs`) runs init once per mode at test suite startup and exports the cached directories. This avoids the 3-second-per-init overhead multiplied by 54 L1 tests.
 
@@ -405,7 +408,7 @@ S-tests   H-tests   R-tests   X-tests   (all read-only)
 
 Each test file imports the fixture and operates read-only on the cached directories. Tests that need to modify files (like H-09 memory CRUD) work on a copy.
 
-### Integration with Existing Test Infrastructure
+#### Integration with Existing Test Infrastructure
 
 - **L1 tests** run via `npm run test:unit` (node:test runner, glob `tests/*.test.mjs`)
 - **L2 tests** run via `npm run test:verify` (acceptance-checks.sh, already has T01-T24)
@@ -413,7 +416,7 @@ Each test file imports the fixture and operates read-only on the cached director
 - `npm test` runs L0 + L1 (includes new tests automatically via glob)
 - `npm run test:all` runs L0 + L1 + L2 (includes new acceptance tests)
 
-### Dependency Chain
+#### Dependency Chain
 
 ```
 Category 1 (Structural)       -- depends on: init command, file system
@@ -425,7 +428,7 @@ Category 5 (Cross-Mode)       -- depends on: Category 1 fixture (reuses cached d
 
 Categories 1, 2, 4, 5 run against the **built** CLI package (same as existing T04-T08). Category 3 additionally requires a running daemon for MCP/hooks tests.
 
-### Test Isolation
+#### Test Isolation
 
 - Each test suite creates its own temp directory tree via the shared fixture
 - Tests MUST NOT modify the cached fixture directories (copy-on-write for mutation tests)
@@ -433,11 +436,11 @@ Categories 1, 2, 4, 5 run against the **built** CLI package (same as existing T0
 - Tests MUST use `{ timeout: 10000 }` for any init invocations
 - Tests MUST NOT depend on network access (mock MCP resolution where needed)
 
-## Decision: Refinement (SPARC-R)
+### Refinement (SPARC-R)
 
-### Priority and Phasing
+#### Priority and Phasing
 
-#### Phase 1 (P0) -- Structural + Helper Scripts
+##### Phase 1 (P0) -- Structural + Helper Scripts
 
 **Scope**: Categories 1 and 2 (31 tests)
 **Rationale**: These catch the most common init regressions (broken JSON, missing files, invalid syntax) with the lowest implementation cost. They run in under 5 seconds total.
@@ -450,7 +453,7 @@ Recommended implementation order within Phase 1:
 4. S-09 through S-17 (patch-specific structural checks)
 5. H-13, H-14 (HK-001/HK-006 functional validation)
 
-#### Phase 2 (P1) -- Patch Regression + Functional
+##### Phase 2 (P1) -- Patch Regression + Functional
 
 **Scope**: Categories 3 and 4 (22 tests)
 **Rationale**: Patch regression tests formalize the 13 patch fixes as assertions. Functional tests validate end-to-end behavior. Both require more setup but cover critical user-facing scenarios.
@@ -463,13 +466,13 @@ Recommended implementation order within Phase 2:
 4. T28 (doctor passes -- validates overall health)
 5. Remaining R-tests and T-tests
 
-#### Phase 3 (P2) -- Cross-Mode Comparison
+##### Phase 3 (P2) -- Cross-Mode Comparison
 
 **Scope**: Category 5 (8 tests)
 **Rationale**: Subset/superset validation is valuable but lower risk -- mode differences are architectural decisions, not bug-prone areas.
 **Dependencies**: Phase 1 fixture (reuses cached directories).
 
-### Patch Coverage Matrix
+#### Patch Coverage Matrix
 
 Each patch should be covered by at least one Category 4 regression test AND one Category 1 structural test.
 
@@ -492,7 +495,7 @@ Each patch should be covered by at least one Category 4 regression test AND one 
 
 All 13 patches (14 counting SG-001 as two fixes) have at least 2 covering tests.
 
-### Performance Budget
+#### Performance Budget
 
 | Phase | Test Count | Target Duration | Mechanism |
 |-------|-----------|----------------|-----------|
@@ -504,9 +507,9 @@ All 13 patches (14 counting SG-001 as two fixes) have at least 2 covering tests.
 
 The shared fixture is the critical optimization. Without it, 54 L1 tests x 3 modes x 3s/init = 8+ minutes. With it, 3 init calls + fast assertions = under 15 seconds for all L1 tests.
 
-## Decision: Completion (SPARC-C)
+### Completion (SPARC-C)
 
-### Success Criteria
+#### Success Criteria
 
 1. **All 61 tests pass** against the current `@sparkleideas/cli` build
 2. **No existing test regresses** -- new tests are additive only
@@ -515,7 +518,7 @@ The shared fixture is the critical optimization. Without it, 54 L1 tests x 3 mod
 5. **L2 tests (T25-T31) integrate** into existing `npm run test:verify` pipeline
 6. **Tests are deterministic** -- no flaky tests from timing, ordering, or temp file collisions
 
-### Definition of Done per Phase
+#### Definition of Done per Phase
 
 **Phase 1 (P0)**:
 - `tests/fixtures/init-fixture.mjs` created and exports cached directories
@@ -535,7 +538,9 @@ The shared fixture is the critical optimization. Without it, 54 L1 tests x 3 mod
 - Subset/superset invariants documented as test names
 - All 8 tests pass in CI
 
-### Validation Approach
+### Confirmation
+
+#### Validation Approach
 
 After implementation, run this sequence to validate:
 
@@ -546,23 +551,18 @@ npm run test:verify            # L2: T25-T31 acceptance tests
 npm run test:all               # Full suite (existing + new)
 ```
 
-## Consequences
+### Consequences
 
-### Positive
+* Good, because **patch confidence**: every init generator patch gets regression coverage, reducing the risk of silent breakage in generated scaffolding
+* Good, because **mode parity validation**: cross-mode tests catch divergence bugs where minimal generates files it should not, or full omits files it should include
+* Good, because **helper script safety**: syntax and functional tests catch broken JS before users encounter runtime errors in generated projects
+* Good, because **fast feedback**: shared fixture keeps L1 suite under 15 seconds despite 54 tests across 3 modes
+* Good, because **incremental delivery**: 3 phases allow prioritizing P0 tests (structural + helpers) that catch the most regressions first
+* Bad, because **fixture coupling**: shared fixture means all L1 tests depend on a single init invocation per mode -- a bug in fixture setup fails all tests
+* Bad, because **maintenance cost**: 61 tests tracking 20+ generated files must be updated when init output intentionally changes
+* Bad, because **L2 test duration**: 7 acceptance tests at ~6s each add ~45s to the verify suite
 
-- **Patch confidence**: every init generator patch gets regression coverage, reducing the risk of silent breakage in generated scaffolding
-- **Mode parity validation**: cross-mode tests catch divergence bugs where minimal generates files it should not, or full omits files it should include
-- **Helper script safety**: syntax and functional tests catch broken JS before users encounter runtime errors in generated projects
-- **Fast feedback**: shared fixture keeps L1 suite under 15 seconds despite 54 tests across 3 modes
-- **Incremental delivery**: 3 phases allow prioritizing P0 tests (structural + helpers) that catch the most regressions first
-
-### Negative
-
-- **Fixture coupling**: shared fixture means all L1 tests depend on a single init invocation per mode -- a bug in fixture setup fails all tests
-- **Maintenance cost**: 61 tests tracking 20+ generated files must be updated when init output intentionally changes
-- **L2 test duration**: 7 acceptance tests at ~6s each add ~45s to the verify suite
-
-### Risks and Mitigations
+#### Risks and Mitigations
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|-----------|--------|------------|
@@ -578,11 +578,8 @@ npm run test:all               # Full suite (existing + new)
 - ADR-0027: Fork Migration -- established patch naming convention (SG-xxx, HK-xxx, CF-xxx, MM-xxx)
 - T04-T08: Existing init acceptance tests -- current baseline this ADR extends
 
-## Status Update 2026-04-21
+## More Information
 
-- **Old status**: Proposed (2026-03-15)
-- **New status**: Superseded by ADR-0070
-- **Evidence**: `docs/adr/ADR-0070-init-generated-config-acceptance.md` status line reads "Implemented (fully wired 2026-04-06)". The init-generated-output validation goal is met via `lib/acceptance-init-generated-checks.sh` (401 LOC, Phase 5 group in `scripts/test-acceptance.sh`) and paired unit test `tests/unit/adr0070-init-generated.test.mjs`. `lib/acceptance-init-checks.sh` (229 LOC) covers additional surface. None of the `S-xx / H-xx / R-xx / X-xx` test IDs from this ADR's matrix ever landed under those names — grep for `S-01|S-02|H-01|R-SG007|X-01` across `tests/` and `lib/` returns zero hits.
-- **Rationale**: ADR-0070 re-framed the problem (value assertions via `node -e` JSON parsing of init-generated config instead of a 61-test SPARC matrix across 3 modes) and shipped. The SPARC-style fixture/numbering scheme here is not going to be built; the goal is discharged.
-- **Remaining work**: None for this ADR. ADR-0094's 100% coverage program (closed 2026-04-21) absorbed any residual init-output gaps.
+This ADR is superseded by [ADR-0070](ADR-0070-init-generated-config-acceptance.md). The init-generated-output validation goal is met via `lib/acceptance-init-generated-checks.sh` (401 LOC, Phase 5 group in `scripts/test-acceptance.sh`) and paired unit test `tests/unit/adr0070-init-generated.test.mjs`; `lib/acceptance-init-checks.sh` (229 LOC) covers additional surface. None of the `S-xx / H-xx / R-xx / X-xx` test IDs from this ADR's matrix ever landed under those names — a grep for `S-01|S-02|H-01|R-SG007|X-01` across `tests/` and `lib/` returns zero hits. ADR-0070 re-framed the problem (value assertions via `node -e` JSON parsing of init-generated config instead of a 61-test SPARC matrix across 3 modes) and shipped; the SPARC-style fixture/numbering scheme here is not going to be built, and the goal is discharged. There is no remaining work for this ADR — ADR-0094's 100% coverage program (closed 2026-04-21) absorbed any residual init-output gaps.
 
+This record used the SPARC + MADR methodology, with section headings (Specification / Pseudocode / Architecture / Refinement / Completion) remapped to the canonical MADR sections during the ADR-0271 migration, preserving all content. The deciders were the sparkling team. Original status was "Proposed (2026-03-15)", updated 2026-04-21 to "Superseded by ADR-0070".

@@ -1,28 +1,15 @@
-# ADR-0052: Embedding Model Optimization — Dimension War Resolution
+---
+status: superseded
+date: 2026-03-18
+tags: [embeddings, dimensions, model, performance]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-## Status
+# Embedding Model Optimization — Dimension War Resolution
 
-**Superseded** by `ADR-0052a-config-driven-embedding-framework.md` (2026-03-19).
-
-This document overclaimed completion — the checklist was marked done prematurely.
-The replacement doc has an honest implementation status. This file is retained
-as a historical record per project ADR rules.
-
-Original claim: ~~Accepted — fully implemented (v3.5.15-patch.102, 2026-03-18). Config framework + 64 files migrated across both forks.~~
-
-## Date
-
-2026-03-18
-
-## Deciders
-
-sparkling team
-
-## Methodology
-
-SPARC + MADR
-
-## Context
+## Context and Problem Statement
 
 The embedding system has a "dimension war" -- AgentDB defaults to 384 dimensions (MiniLM), the ruflo fork defaults to 768 (mpnet), and 7+ files hardcode one or the other. The current default model `all-MiniLM-L6-v2` (published 2019) achieves only 56% retrieval accuracy on MTEB benchmarks. Multiple components silently disagree on embedding dimensionality, causing zero-dimension embeddings (ADR-0050 D4), failed attention operations, and incorrect similarity scores when vectors from different models are compared.
 
@@ -75,21 +62,31 @@ The current server config in controller-registry.ts was designed for a 16GB lapt
 | Batch concurrency | 10 | 24+ (32 threads) | 31% |
 | HNSW M parameter | 16 | 32 (more memory, better recall) | 50% |
 
-## Decision: Specification (SPARC-S)
+## Considered Options
 
-### 1. Standardize on 768 dimensions across the entire codebase
+* Standardize on 768 dimensions everywhere and switch the default model to `nomic-ai/nomic-embed-text-v1.5`, plus server-config optimization for the Ryzen 9 / 187GB host (chosen).
+
+(No alternatives were recorded. For the data-migration sub-decision, three options were weighed — see Architecture.)
+
+## Decision Outcome
+
+Chosen option: "Standardize on 768 dimensions and switch to nomic-embed-text-v1.5", because it ends the dimension war (one dimension, one model, everywhere), delivers a 30pp retrieval-accuracy jump (56% → 86%), provides a 16x context window, and the model is already faster and smaller than mpnet on this hardware.
+
+### Specification (SPARC-S)
+
+#### 1. Standardize on 768 dimensions across the entire codebase
 
 Every component that references an embedding dimension must use 768, either from a shared config constant or from model metadata. No file may hardcode 384.
 
-### 2. Switch default model to nomic-ai/nomic-embed-text-v1.5
+#### 2. Switch default model to nomic-ai/nomic-embed-text-v1.5
 
 Replace `all-MiniLM-L6-v2` (and `all-mpnet-base-v2`) as the default embedding model. The model is already cached at `~/.cache/agentdb-models/` from live testing.
 
-### 3. Fix ModelCacheLoader to support non-Xenova model IDs
+#### 3. Fix ModelCacheLoader to support non-Xenova model IDs
 
 The current `ModelCacheLoader` resolves cache paths using `Xenova/<model>/onnx/` prefix. nomic-embed-text-v1.5 uses the `nomic-ai/` org prefix, not `Xenova/`. The loader must handle arbitrary `org/model` patterns.
 
-### 4. Add task prefix support
+#### 4. Add task prefix support
 
 nomic-embed-text-v1.5 uses `search_query:` and `search_document:` prefixes to distinguish query-time and index-time embeddings. Add configurable prefix support:
 
@@ -102,15 +99,15 @@ nomic-embed-text-v1.5 uses `search_query:` and `search_document:` prefixes to di
 }
 ```
 
-### 5. Add nomic to MODEL_DIMENSIONS map
+#### 5. Add nomic to MODEL_DIMENSIONS map
 
 `enhanced-embeddings.ts` uses a `MODEL_DIMENSIONS` map to look up expected output dimensions. nomic-embed-text-v1.5 must be added with dimension 768, and the fallback default must change from 384 to 768.
 
-### 6. Fix all hardcoded dimension values
+#### 6. Fix all hardcoded dimension values
 
 Every `384` literal in the embedding/attention path must be replaced with a reference to the configured dimension.
 
-### 7. Optimize server config for Ryzen 9 / 187GB
+#### 7. Optimize server config for Ryzen 9 / 187GB
 
 Update controller-registry.ts to use the available hardware:
 
@@ -127,11 +124,11 @@ Update controller-registry.ts to use the available hardware:
 | HNSW efConstruction | 128 | 256 | Better index quality during build |
 | HNSW efSearch | 100 | 200 | Better recall at query time |
 
-## Decision: Pseudocode (SPARC-P)
+### Pseudocode (SPARC-P)
 
-### agentic-flow fork changes
+#### agentic-flow fork changes
 
-#### P1: ModelCacheLoader.ts -- support non-Xenova model IDs
+##### P1: ModelCacheLoader.ts -- support non-Xenova model IDs
 
 ```
 // Current: hardcoded Xenova/ prefix in cache path resolution
@@ -151,7 +148,7 @@ resolveModelPath(modelId):
   return path.join(cacheDir, org, model, 'onnx', 'model_quantized.onnx')
 ```
 
-#### P2: enhanced-embeddings.ts -- add nomic to MODEL_DIMENSIONS, fix fallback
+##### P2: enhanced-embeddings.ts -- add nomic to MODEL_DIMENSIONS, fix fallback
 
 ```
 // Current MODEL_DIMENSIONS:
@@ -176,7 +173,7 @@ embed(text, options):
   return pipeline(text)
 ```
 
-#### P3: AgentDB.ts:103 -- make model configurable
+##### P3: AgentDB.ts:103 -- make model configurable
 
 ```
 // Current:
@@ -186,7 +183,7 @@ embed(text, options):
 //   this.model = config.model ?? 'nomic-ai/nomic-embed-text-v1.5'
 ```
 
-#### P4: agentdb-mcp-server.ts:260-261 -- make dimension/model configurable
+##### P4: agentdb-mcp-server.ts:260-261 -- make dimension/model configurable
 
 ```
 // Current:
@@ -198,7 +195,7 @@ embed(text, options):
 //   model: config.model ?? 'nomic-ai/nomic-embed-text-v1.5',
 ```
 
-#### P5: LegacyAttentionAdapter.ts:273,332 -- use config dimension
+##### P5: LegacyAttentionAdapter.ts:273,332 -- use config dimension
 
 ```
 // Current:
@@ -210,7 +207,7 @@ embed(text, options):
 //   new Float32Array(this.config?.dimension ?? 768)
 ```
 
-#### P6: NightlyLearner.ts:253 -- use config dimension
+##### P6: NightlyLearner.ts:253 -- use config dimension
 
 ```
 // Current:
@@ -220,7 +217,7 @@ embed(text, options):
 //   dimension: this.config?.dimension ?? 768
 ```
 
-#### P7: LearningSystem.ts:102,135 -- use config dimension for GNN
+##### P7: LearningSystem.ts:102,135 -- use config dimension for GNN
 
 ```
 // Current:
@@ -232,9 +229,9 @@ embed(text, options):
 //   hiddenDim: this.config?.dimension ?? 768,
 ```
 
-### ruflo fork changes
+#### ruflo fork changes
 
-#### P8: controller-registry.ts:1404 -- memory ceiling
+##### P8: controller-registry.ts:1404 -- memory ceiling
 
 ```
 // Current:
@@ -244,7 +241,7 @@ embed(text, options):
 //   memoryCeilingBytes: 96 * 1024 * 1024 * 1024  // 96 GB
 ```
 
-#### P9: controller-registry.ts rate limiter
+##### P9: controller-registry.ts rate limiter
 
 ```
 // Current:
@@ -260,7 +257,7 @@ embed(text, options):
 //   batch:  { max: 100, window: 1000 },
 ```
 
-#### P10: controller-registry.ts:1795-1796 -- embedding cache and concurrency
+##### P10: controller-registry.ts:1795-1796 -- embedding cache and concurrency
 
 ```
 // Current:
@@ -272,7 +269,7 @@ embed(text, options):
 //   embeddingBatchConcurrency: 24,
 ```
 
-#### P11: controller-registry.ts HNSW parameters
+##### P11: controller-registry.ts HNSW parameters
 
 ```
 // Current:
@@ -282,7 +279,7 @@ embed(text, options):
 //   M: 32, efConstruction: 256, efSearch: 200
 ```
 
-#### P12: memory-initializer.ts -- default model and task prefixes
+##### P12: memory-initializer.ts -- default model and task prefixes
 
 ```
 // Current:
@@ -295,7 +292,7 @@ embed(text, options):
 //   taskPrefixQuery: 'search_query: '
 ```
 
-#### P13: memory-bridge.ts:1302 -- use actual dimension from model
+##### P13: memory-bridge.ts:1302 -- use actual dimension from model
 
 ```
 // Current:
@@ -305,7 +302,7 @@ embed(text, options):
 //   dimension: registry.getConfig()?.dimension ?? 768  // from config, 768 as safe default
 ```
 
-#### P14: sona-tools.ts -- use config dimension
+##### P14: sona-tools.ts -- use config dimension
 
 ```
 // Current:
@@ -315,7 +312,7 @@ embed(text, options):
 //   dimension from config or 768 default
 ```
 
-#### P15: attention-tools-handlers.ts -- replace 7+ hardcoded 384 values
+##### P15: attention-tools-handlers.ts -- replace 7+ hardcoded 384 values
 
 ```
 // Current:
@@ -329,11 +326,11 @@ embed(text, options):
 //   dimension: dim
 ```
 
-## Decision: Architecture (SPARC-A)
+### Architecture (SPARC-A)
 
-### Change categorization by fork and risk
+#### Change categorization by fork and risk
 
-#### agentic-flow fork -- HIGH risk (shared library, affects all consumers)
+##### agentic-flow fork -- HIGH risk (shared library, affects all consumers)
 
 | Change | Files | Risk | Rationale |
 |--------|:-----:|:----:|-----------|
@@ -345,7 +342,7 @@ embed(text, options):
 | P6: NightlyLearner dimension | 1 | LOW | Only affects offline learning batch jobs |
 | P7: LearningSystem GNN dimension | 1 | MEDIUM | GNN weight matrices must match input dimension; mismatch = silent bad gradients |
 
-#### ruflo fork -- MEDIUM risk (CLI layer, server-specific config)
+##### ruflo fork -- MEDIUM risk (CLI layer, server-specific config)
 
 | Change | Files | Risk | Rationale |
 |--------|:-----:|:----:|-----------|
@@ -358,7 +355,7 @@ embed(text, options):
 | P14: sona-tools dimension | 1 | LOW | Same pattern as P13 |
 | P15: attention-tools handlers | 1 | MEDIUM | 7+ replacements; must find all 384 literals without false positives |
 
-### Data migration concern
+#### Data migration concern
 
 Switching from 384-dim MiniLM to 768-dim nomic means existing stored embeddings are incompatible. Options:
 
@@ -368,7 +365,7 @@ Switching from 384-dim MiniLM to 768-dim nomic means existing stored embeddings 
 
 Option 1 is simplest and provides the best long-term quality. The memory.db files are small (CLI workloads, <1MB typical) and re-embedding is fast (5.3ms/entry).
 
-### Dependency graph
+#### Dependency graph
 
 ```
 P1 (ModelCacheLoader) ──> P3 (AgentDB model) ──> P4 (MCP server)
@@ -382,9 +379,9 @@ P8, P9, P10, P11 (server config) ── independent, can ship separately
 P13, P14 (bridge/sona dimension) ── depend on config plumbing from P12
 ```
 
-## Decision: Refinement (SPARC-R)
+### Refinement (SPARC-R)
 
-### Priority tiers
+#### Priority tiers
 
 **Tier 1 -- Dimension alignment + model switch (core functionality)**
 
@@ -426,7 +423,7 @@ These changes improve retrieval quality by 3-5pp but require plumbing prefix sup
 | -- | vector-db.ts: pass isQuery flag to embed calls | ~8 lines |
 | -- | memory-bridge.ts: thread isQuery through store vs search paths | ~12 lines |
 
-### Rollback plan
+#### Rollback plan
 
 If nomic-embed-text-v1.5 causes regressions:
 1. Revert P3 and P12 to restore previous model defaults
@@ -434,7 +431,7 @@ If nomic-embed-text-v1.5 causes regressions:
 3. P1 (ModelCacheLoader) is backward compatible -- Xenova/ models still resolve correctly
 4. P8-P11 (server config) are independent and do not need rollback
 
-### What we are NOT changing
+#### What we are NOT changing
 
 - `vector-db.ts:100,189,232,250` -- already defaults to 768, no change needed
 - The model cache chain from ADR-0048 (6-layer resolution) -- still valid for nomic
@@ -442,9 +439,9 @@ If nomic-embed-text-v1.5 causes regressions:
 - The deferred controller init levels from ADR-0048 -- not affected
 - The fail-loud error handling from ADR-0049 -- not affected
 
-## Decision: Completion (SPARC-C)
+### Completion (SPARC-C)
 
-### Checklist
+#### Checklist
 
 **agentic-flow fork** (`~/src/forks/agentic-flow`):
 
@@ -506,7 +503,7 @@ If nomic-embed-text-v1.5 causes regressions:
 - [x] Browser modules use lazy try/catch fallback (no fs access)
 - [x] Run `npm run deploy` -- 55/55 acceptance (v3.5.15-patch.99)
 
-### Actual total effort
+#### Actual total effort
 
 | Phase | Line changes | Files |
 |-------|:-----------:|:-----:|
@@ -517,7 +514,7 @@ If nomic-embed-text-v1.5 causes regressions:
 | Full dimension elimination | ~232 lines | 39 files |
 | **Total** | **~587 lines** | **43 unique files across 2 forks** |
 
-### Success criteria
+#### Success criteria
 
 - `agentdb_embed` returns a 768-dimensional vector with `provider: "transformers"`, `model: "nomic-embed-text-v1.5"`
 - `agentdb_attention_benchmark` generates synthetic entries with 768-dim vectors
@@ -526,35 +523,35 @@ If nomic-embed-text-v1.5 causes regressions:
 - Retrieval accuracy on MTEB benchmark: >80% (was 56% with MiniLM)
 - `npm run deploy` passes 55/55
 
-## Consequences
+### Consequences
 
-### Positive
+#### Positive
 
-- Resolves the dimension war: one dimension (768), one model (nomic), everywhere
-- 30pp retrieval accuracy improvement (56% to 86%) -- most impactful single change possible for memory quality
-- 16x context window (512 to 8192 tokens) -- can embed entire functions, not just snippets
-- Server utilization jumps from ~10% to ~50% on the available hardware
-- Matryoshka support enables future adaptive dimensionality without model change
-- Task prefix support improves query/document asymmetric retrieval by 3-5pp
+* Good, because it resolves the dimension war: one dimension (768), one model (nomic), everywhere.
+* Good, because of the 30pp retrieval accuracy improvement (56% to 86%) -- most impactful single change possible for memory quality.
+* Good, because of the 16x context window (512 to 8192 tokens) -- can embed entire functions, not just snippets.
+* Good, because server utilization jumps from ~10% to ~50% on the available hardware.
+* Good, because Matryoshka support enables future adaptive dimensionality without model change.
+* Good, because task prefix support improves query/document asymmetric retrieval by 3-5pp.
 
-### Negative
+#### Negative
 
-- Existing stored 384-dim embeddings become incompatible (must re-embed)
-- nomic model is 131MB quantized vs MiniLM 23MB -- larger cache footprint
-- HNSW M=32 doubles edge memory per node vs M=16 -- offset by ample RAM
-- 768-dim vectors use 2x memory vs 384-dim -- offset by ample RAM (500K * 768 * 4B = 1.5GB)
+* Bad, because existing stored 384-dim embeddings become incompatible (must re-embed).
+* Bad, because the nomic model is 131MB quantized vs MiniLM 23MB -- larger cache footprint.
+* Bad, because HNSW M=32 doubles edge memory per node vs M=16 -- offset by ample RAM.
+* Bad, because 768-dim vectors use 2x memory vs 384-dim -- offset by ample RAM (500K * 768 * 4B = 1.5GB).
 
-### Risks
+#### Risks
 
-- **ModelCacheLoader regression**: if the non-Xenova path resolution is wrong, cold start reverts to 30-60s download. Mitigated by testing with both `Xenova/all-MiniLM-L6-v2` and `nomic-ai/nomic-embed-text-v1.5` in the cache chain.
-- **Partial deploy**: if agentic-flow ships 768-dim but ruflo still hardcodes 384 in attention handlers, vectors will mismatch. Mitigated by Tier 1 shipping as an atomic deploy across both forks.
-- **HNSW index rebuild**: changing M/efConstruction does not retroactively rebuild existing indices. New data inserts use the new parameters; old index segments retain old parameters. This is acceptable -- CLI workloads are small and indices are rebuilt frequently.
-- **Downstream consumers**: any user code that assumes 384-dim embeddings will break. Mitigated by documenting the dimension change in release notes and providing the Matryoshka truncation path as a workaround.
+* Neutral, because of **ModelCacheLoader regression**: if the non-Xenova path resolution is wrong, cold start reverts to 30-60s download. Mitigated by testing with both `Xenova/all-MiniLM-L6-v2` and `nomic-ai/nomic-embed-text-v1.5` in the cache chain.
+* Neutral, because of **partial deploy**: if agentic-flow ships 768-dim but ruflo still hardcodes 384 in attention handlers, vectors will mismatch. Mitigated by Tier 1 shipping as an atomic deploy across both forks.
+* Neutral, because of **HNSW index rebuild**: changing M/efConstruction does not retroactively rebuild existing indices. New data inserts use the new parameters; old index segments retain old parameters. This is acceptable -- CLI workloads are small and indices are rebuilt frequently.
+* Neutral, because of **downstream consumers**: any user code that assumes 384-dim embeddings will break. Mitigated by documenting the dimension change in release notes and providing the Matryoshka truncation path as a workaround.
 
-## Related
+## More Information
 
-- **ADR-0048**: Lazy controller initialization -- established the ONNX model cache chain (6-layer resolution) that this ADR extends for nomic
-- **ADR-0050 D4**: `agentdb_embed` returning zero-dimension embeddings -- root cause is the dimension war this ADR resolves
-- **ADR-0050 D2**: `agentdb_attention_benchmark` hardcoded dim=64 -- same class of hardcoded dimension bug
-- **ADR-0045**: Embeddings compliance and observability -- established the EnhancedEmbeddingService architecture
-- **ADR-0044**: Attention suite integration -- established attention tools that hardcode 384
+This decision was recorded by the sparkling team using the SPARC + MADR methodology. It is superseded by `ADR-0052a-config-driven-embedding-framework.md` (2026-03-19).
+
+Original status note: this document overclaimed completion — the checklist was marked done prematurely. The replacement doc has an honest implementation status. This file is retained as a historical record per project ADR rules. The original status line claimed: "Accepted — fully implemented (v3.5.15-patch.102, 2026-03-18). Config framework + 64 files migrated across both forks." — that claim was struck through as overclaimed.
+
+The original record cross-referenced these related decisions: ADR-0048 (lazy controller initialization — established the ONNX model cache chain (6-layer resolution) that this ADR extends for nomic); ADR-0050 D4 (`agentdb_embed` returning zero-dimension embeddings — root cause is the dimension war this ADR resolves); ADR-0050 D2 (`agentdb_attention_benchmark` hardcoded dim=64 — same class of hardcoded dimension bug); ADR-0045 (embeddings compliance and observability — established the EnhancedEmbeddingService architecture); and ADR-0044 (attention suite integration — established attention tools that hardcode 384).

@@ -1,13 +1,15 @@
-# ADR-0084: Dead Code Cleanup — sql.js Ghost References + Bridge Caller Migration
+---
+status: accepted
+date: 2026-04-12
+tags: [cleanup, memory, bridge, sqlite]
+supersedes: []
+depends-on: [ADR-0083]
+implements: []
+---
 
-- **Status**: **Implemented (2026-05-03)** — Phase 4 single controller complete; Phase 5 by ADR-0083.
-- **Date**: 2026-04-12
-- **Deciders**: Henrik Pettersen
-- **Methodology**: 8-agent hive (storage architect, CJS analyst, performance engineer, merge-conflict strategist, user-impact analyst, 2 devil's advocates, queen synthesis)
-- **Depends on**: ADR-0083 (Phase 5 single data flow path)
-- **Supersedes**: None
+# Dead Code Cleanup — sql.js Ghost References + Bridge Caller Migration
 
-## Context
+## Context and Problem Statement
 
 ### Post-Phase 5 state
 
@@ -61,7 +63,15 @@ Each function header says `// Replicates: memory-bridge.ts bridgeXxx (lines N-M)
 These are not dead code — they are actively used — but they are a parallel path that
 duplicates memory-bridge logic through the router, creating maintenance burden.
 
-## Decision
+## Considered Options
+
+* **Three-phase cleanup: Phase 1 immediate dead-code removal + misleading-output fixes (zero risk), Phase 2 bridge-caller migration to the router, Phase 3 deferred evaluation of shadow-function consolidation and bridge removal (chosen).**
+
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "Three-phase cleanup (immediate dead-code removal, bridge-caller migration, deferred evaluation)", because the hive audit confirmed sql.js was already structurally dead (only stale strings remained) while memory-bridge.ts was still required by 45+ callers, so a staged approach lets zero-risk cleanup land immediately and defers higher-risk bridge removal until callers are migrated.
 
 ### Phase 1: Immediate cleanup (zero risk)
 
@@ -108,6 +118,20 @@ fallback paths become the only remaining dependency on memory-bridge.ts.
 - **intelligence.cjs ESM migration**: Evaluate whether the CJS hook runner contract
   allows ESM (depends on Claude Code hook runner constraints)
 - **memory-bridge.ts removal**: Only possible after Phases 2 and 3 complete
+
+### Consequences
+
+* Good, because users see accurate backend information ("SQLite + HNSW" not "sql.js + HNSW").
+* Good, because 50 lines of dead `.save()` code are removed.
+* Good, because the codebase is clearer — no false signals about sql.js being in use.
+* Good, because the Phase 2-4 migration collapses the dual controller path into a single router.
+* Good, because after completion, Layers 2-5 of the ADR-0075 ideal state are fully achieved.
+* Good, because the Layer 1 gap (storage backend consolidation) is subsequently closed by ADR-0086.
+* Neutral, because there are no runtime behavioral changes in Phase 1.
+
+### Confirmation
+
+Implemented 2026-05-03 (Phase 4 single controller complete; Phase 5 by ADR-0083). The Tasks checklist below tracks each task to completion: Phase 1 verified by `acceptance-adr0084-checks.sh` (backend output no longer says sql.js) and all 1738 unit tests passing; Phase 2 by 18 test groups / 52 unit tests plus export integration tests; Phase 3 by 46 unit/integration tests + 4 acceptance checks (1836 total tests pass); Phase 4 by 64 unit/integration tests + 4 acceptance checks (ADR-0084-9 through ADR-0084-12) and verification of zero external bridge imports.
 
 ## Implementation Notes
 
@@ -228,12 +252,6 @@ worker-daemon.ts: migrated to router (6 sites)
 Two of five ADR-0075 layers fully resolved. Three layers already done from prior ADRs.
 (Correction: Layer 1 gap closed by ADR-0086. All 5 layers now resolved.)
 
-## Consequences
+## More Information
 
-- Users see accurate backend information ("SQLite + HNSW" not "sql.js + HNSW")
-- 50 lines of dead `.save()` code removed
-- Clearer codebase — no false signals about sql.js being in use
-- Phase 2-4 migration collapses dual controller path into single router
-- After completion: Layers 2-5 of ADR-0075 ideal state fully achieved
-- Layer 1 gap (storage backend consolidation) subsequently closed by ADR-0086
-- No runtime behavioral changes in Phase 1
+Original status: "**Implemented (2026-05-03)** — Phase 4 single controller complete; Phase 5 by ADR-0083." The recorded Date was 2026-04-12. The methodology recorded was an 8-agent hive (storage architect, CJS analyst, performance engineer, merge-conflict strategist, user-impact analyst, 2 devil's advocates, queen synthesis). This ADR depends on ADR-0083 (Phase 5 single data flow path) and supersedes nothing.

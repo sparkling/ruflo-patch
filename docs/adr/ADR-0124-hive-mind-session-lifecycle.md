@@ -1,13 +1,15 @@
-# ADR-0124: Hive-mind session lifecycle (checkpoint / resume / export / import)
+---
+status: accepted
+date: 2026-05-02
+tags: [hive-mind, session, checkpoint, resume]
+supersedes: []
+depends-on: [ADR-0116, ADR-0118, ADR-0122, ADR-0123]
+implements: []
+---
 
-- **Status**: **Implemented (2026-05-03)** per ADR-0118 §Status (T6 complete; fork 42d7ad606). Implementation per §Implementation plan: new `commands/hive-mind-session.ts` with five subcommand handlers, archive read/write helpers, `queenType` capture/restore wired into checkpoint/resume.
-- **Date**: 2026-05-02
-- **Deciders**: Henrik Pettersen
-- **Depends on**: ADR-0116 (hive-mind marketplace plugin — verification matrix), ADR-0118 (runtime gaps tracker — owns task T6), ADR-0122 (T4 typed memory shape), ADR-0123 (T5 typed memory backend) — session state should use the typed memory backend for portability
-- **Related**: ADR-0104 (queen orchestration — re-spawn semantics), ADR-0114 (architectural model — substrate/protocol/execution layering)
-- **Scope**: Fork-side runtime work in `v3/@claude-flow/cli/src/commands/`. Closes ADR-0118 §T6. Per `feedback-patches-in-fork.md`, USERGUIDE-promised features that don't work are bugs and bugs are fixed in fork.
+# Hive-mind session lifecycle (checkpoint / resume / export / import)
 
-## Context
+## Context and Problem Statement
 
 ADR-0116's verification matrix flagged the `Session management` row as ✗: the USERGUIDE advertises checkpoint, resume, export, and import for hive sessions, but the runtime ships none of it.
 
@@ -42,39 +44,6 @@ Both files exist today as auto-generated stubs with no frontmatter. ADR-0116's a
 - **(b) SQLite snapshots** — copy the live SQLite-backed memory database (post ADR-0123) into a per-checkpoint file
 - **(c) Incremental delta snapshots with periodic full snapshots** — log-structured: deltas between checkpoints + periodic compactions
 
-## Pros and Cons of the Options
-
-**(a) Versioned gzipped JSON archives**
-
-- Pro: portable across machines and fork upgrades; human-debuggable on decompress (`zcat archive.json.gz | jq`)
-- Pro: simple resume sequence — read, ungzip, parse, validate version, restore, re-spawn
-- Pro: aligns with ADR-0122 typed memory shape — the `hiveState` payload is already JSON-serializable
-- Pro: no DB engine coupling — works whether T5 backend is RVF, SQLite, or future
-- Con: full snapshot per checkpoint — archive grows linearly with state size; per-snapshot bandwidth is `O(state)`
-- Con: no compaction story — long-lived hives with frequent checkpoints accumulate disk usage linearly
-- Con: opaque to text tools without decompress — `grep`/`rg` over a sessions/ directory needs `zcat | grep` or equivalent; CI greppability requires tooling adjustment
-- Con: gzip CRC catches transport bit-flips, but a corrupted JSON payload that round-trips through `JSON.parse` without throwing (e.g., a numeric field tampered to a still-valid value) is undetected — corruption beyond gzip's CRC scope is out of band
-- Con: not atomic on write — large `state` requires careful write-then-rename to avoid torn checkpoints
-- Con: `schemaVersion` is forwards-compat only — schema-version mismatch on resume is hard-fail (no migration tool ships); user-facing UX is "export, upgrade, re-import on a compatible build"
-
-**(b) SQLite snapshots**
-
-- Pro: atomic via `VACUUM INTO` or file copy with WAL checkpoint
-- Pro: incremental backup primitives available (rsync deltas, page-level diffs)
-- Con: couples archive format to T5's specific SQLite backend — breaks if T5 evolves to RVF-only or hybrid
-- Con: not human-debuggable without sqlite3 toolchain
-- Con: cross-machine portability fragile — version-specific page formats, ICU collation, FTS extensions
-
-**(c) Incremental delta snapshots**
-
-- Pro: archive size scales with delta volume, not absolute state size — efficient for long-lived hives where (a)'s linear growth becomes painful
-- Pro: per-checkpoint cost is small (delta encoding only)
-- Pro: directly addresses (a)'s linear-archive-growth con; the right answer if/when current scale shows pain
-- Con: resume sequence non-trivial — must replay deltas in order, handle missing baselines
-- Con: corruption in any delta breaks the chain; recovery semantics are subtle
-- Con: significantly more code than (a) — premature optimisation given current scale (no benchmark shows full snapshots are a bottleneck)
-- Con: deferral is conditional, not permanent — if a real hive surfaces archives > 50 MB or checkpoint frequency > 1/min sustained, (c) becomes the correct answer and this ADR escalates per ADR-0118 §T6
-
 ## Decision Outcome
 
 **Chosen option: (a) versioned gzipped JSON archives**, traceable to drivers as follows:
@@ -88,40 +57,6 @@ Both files exist today as auto-generated stubs with no frontmatter. ADR-0116's a
 (c)'s complexity is rejected as speculative for now — no measured pain from full snapshots today. The deferral is conditional: archive size > 50 MB or sustained checkpoint frequency > 1/min triggers escalation per ADR-0118 §T6 ("Promote to its own ADR if the session-archive format becomes a versioned artifact other tools consume") to revisit (c).
 
 **Trade-offs accepted**: archive grows linearly with state size; no compaction; sessions/ greppability requires `zcat | grep`; corruption beyond gzip CRC scope (e.g., post-decompress JSON tampering with type-valid mutations) is undetected — a future iteration can add `payloadHash` if needed (see §Specification).
-
-## Consequences
-
-**Positive**
-
-- Portable archives — copy the file, restore on any machine running a compatible fork build
-- Human-debuggable — `zcat archive.json.gz | jq` reveals the full hive snapshot with no proprietary tooling
-- Simple resume sequence — read, ungzip, version-check, restore typed memory, re-spawn queen
-- Decoupled from T5 backend choice — works whether memory lives in RVF, SQLite, or hybrid
-- `schemaVersion` header allows internal evolution without breaking own-tool round-trips
-
-**Negative**
-
-- Full snapshot per checkpoint — archive size is `O(state)` per file; no compression-across-checkpoints
-- No compaction — long-lived hives with frequent checkpoints accumulate disk usage linearly
-- Archive grows linearly with state size — large worker manifests + large typed-memory state inflate every snapshot
-- Opaque to plain-text tools — `grep`/`rg` over `sessions/` requires `zcat | grep`; CI scripts that scan sessions/ need adjusted tooling
-- No external schema commitment — third-party tooling that parses archives risks breakage on `schemaVersion` bumps
-- **Schema-version mismatch on resume is hard-fail** — `resume <id>` against an archive with `schemaVersion ≠ 1` exits non-zero with `[ERROR] Archive schemaVersion <n> not supported by this build (expected 1). Export and re-import on a compatible build.` No migration tool ships with this ADR; user must export pre-upgrade and re-import post-upgrade if the format ever bumps. Recommended user workflow documented under §Refinement edge cases
-
-## Validation
-
-- **Unit**: archive serialize/deserialize round-trip; `schemaVersion` mismatch produces explicit error (no silent fallback per `feedback-no-fallbacks.md`); typed-memory shape preservation per ADR-0122; structural validation rejects missing `queenPrompt` / malformed `workerManifest`; gzip round-trip
-- **Integration**: round-trip checkpoint→resume; corrupted archive (truncated gzip, bad JSON, missing required fields) produces explicit failure; legacy untyped entries from pre-T4 sessions migrate on import per T4 migration policy; multi-session enumeration ordering
-- **Acceptance**: five named checks in `lib/acceptance-adr0124-hive-session-checks.sh` (matching the ADR-0123 naming convention) wired into `scripts/test-acceptance.sh`:
-  - `check_hive_mind_sessions_list` — exercises `sessions list` against multi-session and zero-session states
-  - `check_hive_mind_sessions_checkpoint` — exercises `sessions checkpoint <id>` and asserts archive shape on disk
-  - `check_hive_mind_resume` — round-trip checkpoint → kill → resume; verifies queen re-spawn produces continuation marker
-  - `check_hive_mind_sessions_export` — exercises `sessions export <id> --output <path>` and asserts archive parses cleanly
-  - `check_hive_mind_sessions_import` — exercises `sessions import <path>` against an exported archive
-
-  Tests run in an init'd project per `feedback-test-in-init-projects.md`; parallel-safe invocations use `$(_cli_cmd)` per `reference-cli-cmd-helper`. Resume-after-crash is sequential (kills processes, must not race other parallel checks).
-
-## Decision
 
 **Implement five session subcommands backed by gzipped JSON archives, and wire resume to re-spawn the queen with the restored prompt + worker manifest.** The archive format is internal-only — versioned for forwards-compat but not promised to external tooling.
 
@@ -138,6 +73,79 @@ Subcommands (all under `ruflo hive-mind`):
 Per ADR-0122 + ADR-0123, the in-memory `state` carried in archives uses the typed memory shape (`{ value, type, ttlMs, expiresAt, ... }`). Checkpoints round-trip through the typed backend; legacy untyped entries from pre-T4 sessions migrate on import per the T4 migration policy.
 
 **Archive format is internal-only.** Per ADR-0118 §T6 escalation criterion ("Promote to its own ADR if the session-archive format becomes a versioned artifact other tools consume"), the format stays a fork-internal contract for now. Versioning header is included so we can evolve without breaking own-tool round-trips, but no external consumer is promised.
+
+### Consequences
+
+* Good, because of portable archives — copy the file, restore on any machine running a compatible fork build.
+* Good, because they are human-debuggable — `zcat archive.json.gz | jq` reveals the full hive snapshot with no proprietary tooling.
+* Good, because of a simple resume sequence — read, ungzip, version-check, restore typed memory, re-spawn queen.
+* Good, because it is decoupled from T5 backend choice — works whether memory lives in RVF, SQLite, or hybrid.
+* Good, because the `schemaVersion` header allows internal evolution without breaking own-tool round-trips.
+* Bad, because of full snapshot per checkpoint — archive size is `O(state)` per file; no compression-across-checkpoints.
+* Bad, because of no compaction — long-lived hives with frequent checkpoints accumulate disk usage linearly.
+* Bad, because the archive grows linearly with state size — large worker manifests + large typed-memory state inflate every snapshot.
+* Bad, because it is opaque to plain-text tools — `grep`/`rg` over `sessions/` requires `zcat | grep`; CI scripts that scan sessions/ need adjusted tooling.
+* Bad, because of no external schema commitment — third-party tooling that parses archives risks breakage on `schemaVersion` bumps.
+* Bad, because schema-version mismatch on resume is hard-fail — `resume <id>` against an archive with `schemaVersion ≠ 1` exits non-zero with `[ERROR] Archive schemaVersion <n> not supported by this build (expected 1). Export and re-import on a compatible build.` No migration tool ships with this ADR; user must export pre-upgrade and re-import post-upgrade if the format ever bumps. Recommended user workflow documented under §Refinement edge cases.
+
+### Confirmation
+
+- **Unit**: archive serialize/deserialize round-trip; `schemaVersion` mismatch produces explicit error (no silent fallback per `feedback-no-fallbacks.md`); typed-memory shape preservation per ADR-0122; structural validation rejects missing `queenPrompt` / malformed `workerManifest`; gzip round-trip
+- **Integration**: round-trip checkpoint→resume; corrupted archive (truncated gzip, bad JSON, missing required fields) produces explicit failure; legacy untyped entries from pre-T4 sessions migrate on import per T4 migration policy; multi-session enumeration ordering
+- **Acceptance**: five named checks in `lib/acceptance-adr0124-hive-session-checks.sh` (matching the ADR-0123 naming convention) wired into `scripts/test-acceptance.sh`:
+  - `check_hive_mind_sessions_list` — exercises `sessions list` against multi-session and zero-session states
+  - `check_hive_mind_sessions_checkpoint` — exercises `sessions checkpoint <id>` and asserts archive shape on disk
+  - `check_hive_mind_resume` — round-trip checkpoint → kill → resume; verifies queen re-spawn produces continuation marker
+  - `check_hive_mind_sessions_export` — exercises `sessions export <id> --output <path>` and asserts archive parses cleanly
+  - `check_hive_mind_sessions_import` — exercises `sessions import <path>` against an exported archive
+
+  Tests run in an init'd project per `feedback-test-in-init-projects.md`; parallel-safe invocations use `$(_cli_cmd)` per `reference-cli-cmd-helper`. Resume-after-crash is sequential (kills processes, must not race other parallel checks).
+
+## Pros and Cons of the Options
+
+**(a) Versioned gzipped JSON archives**
+
+- Good, because it is portable across machines and fork upgrades; human-debuggable on decompress (`zcat archive.json.gz | jq`)
+- Good, because of a simple resume sequence — read, ungzip, parse, validate version, restore, re-spawn
+- Good, because it aligns with ADR-0122 typed memory shape — the `hiveState` payload is already JSON-serializable
+- Good, because of no DB engine coupling — works whether T5 backend is RVF, SQLite, or future
+- Bad, because of full snapshot per checkpoint — archive grows linearly with state size; per-snapshot bandwidth is `O(state)`
+- Bad, because of no compaction story — long-lived hives with frequent checkpoints accumulate disk usage linearly
+- Bad, because it is opaque to text tools without decompress — `grep`/`rg` over a sessions/ directory needs `zcat | grep` or equivalent; CI greppability requires tooling adjustment
+- Bad, because gzip CRC catches transport bit-flips, but a corrupted JSON payload that round-trips through `JSON.parse` without throwing (e.g., a numeric field tampered to a still-valid value) is undetected — corruption beyond gzip's CRC scope is out of band
+- Bad, because it is not atomic on write — large `state` requires careful write-then-rename to avoid torn checkpoints
+- Bad, because `schemaVersion` is forwards-compat only — schema-version mismatch on resume is hard-fail (no migration tool ships); user-facing UX is "export, upgrade, re-import on a compatible build"
+
+**(b) SQLite snapshots**
+
+- Good, because it is atomic via `VACUUM INTO` or file copy with WAL checkpoint
+- Good, because of incremental backup primitives available (rsync deltas, page-level diffs)
+- Bad, because it couples archive format to T5's specific SQLite backend — breaks if T5 evolves to RVF-only or hybrid
+- Bad, because it is not human-debuggable without sqlite3 toolchain
+- Bad, because of fragile cross-machine portability — version-specific page formats, ICU collation, FTS extensions
+
+**(c) Incremental delta snapshots**
+
+- Good, because archive size scales with delta volume, not absolute state size — efficient for long-lived hives where (a)'s linear growth becomes painful
+- Good, because of small per-checkpoint cost (delta encoding only)
+- Good, because it directly addresses (a)'s linear-archive-growth con; the right answer if/when current scale shows pain
+- Bad, because of a non-trivial resume sequence — must replay deltas in order, handle missing baselines
+- Bad, because corruption in any delta breaks the chain; recovery semantics are subtle
+- Bad, because it is significantly more code than (a) — premature optimisation given current scale (no benchmark shows full snapshots are a bottleneck)
+- Bad, because the deferral is conditional, not permanent — if a real hive surfaces archives > 50 MB or checkpoint frequency > 1/min sustained, (c) becomes the correct answer and this ADR escalates per ADR-0118 §T6
+
+## Validation
+
+- **Unit**: archive serialize/deserialize round-trip; `schemaVersion` mismatch produces explicit error (no silent fallback per `feedback-no-fallbacks.md`); typed-memory shape preservation per ADR-0122; structural validation rejects missing `queenPrompt` / malformed `workerManifest`; gzip round-trip
+- **Integration**: round-trip checkpoint→resume; corrupted archive (truncated gzip, bad JSON, missing required fields) produces explicit failure; legacy untyped entries from pre-T4 sessions migrate on import per T4 migration policy; multi-session enumeration ordering
+- **Acceptance**: five named checks in `lib/acceptance-adr0124-hive-session-checks.sh` (matching the ADR-0123 naming convention) wired into `scripts/test-acceptance.sh`:
+  - `check_hive_mind_sessions_list` — exercises `sessions list` against multi-session and zero-session states
+  - `check_hive_mind_sessions_checkpoint` — exercises `sessions checkpoint <id>` and asserts archive shape on disk
+  - `check_hive_mind_resume` — round-trip checkpoint → kill → resume; verifies queen re-spawn produces continuation marker
+  - `check_hive_mind_sessions_export` — exercises `sessions export <id> --output <path>` and asserts archive parses cleanly
+  - `check_hive_mind_sessions_import` — exercises `sessions import <path>` against an exported archive
+
+  Tests run in an init'd project per `feedback-test-in-init-projects.md`; parallel-safe invocations use `$(_cli_cmd)` per `reference-cli-cmd-helper`. Resume-after-crash is sequential (kills processes, must not race other parallel checks).
 
 ## Implementation plan
 
@@ -328,8 +336,15 @@ Resume contract: re-spawn the queen via `child_process.spawn('claude', …)` per
 
 Per ADR-0118 §T6 escalation criterion: **promote to its own ADR if the session-archive format becomes a versioned artifact other tools consume.** For this ADR, the format is internal-only — no external schema commitment, no published JSON Schema, no SemVer guarantees on the archive shape.
 
-## References
+## More Information
 
+Original status: **Implemented (2026-05-03)** per ADR-0118 §Status (T6 complete; fork 42d7ad606). Implementation per §Implementation plan: new `commands/hive-mind-session.ts` with five subcommand handlers, archive read/write helpers, `queenType` capture/restore wired into checkpoint/resume.
+
+This ADR depends on ADR-0116 (hive-mind marketplace plugin — verification matrix), ADR-0118 (runtime gaps tracker — owns task T6), ADR-0122 (T4 typed memory shape), and ADR-0123 (T5 typed memory backend) — session state should use the typed memory backend for portability. It is related to ADR-0104 (queen orchestration — re-spawn semantics) and ADR-0114 (architectural model — substrate/protocol/execution layering).
+
+Scope: Fork-side runtime work in `v3/@claude-flow/cli/src/commands/`. Closes ADR-0118 §T6. Per `feedback-patches-in-fork.md`, USERGUIDE-promised features that don't work are bugs and bugs are fixed in fork.
+
+References:
 - ADR-0116 — hive-mind marketplace plugin (verification matrix that flagged the gap)
 - ADR-0118 — hive-mind runtime gaps tracker (owns task T6, defines the bullets implemented here; §Open questions item 3 default rule is the basis for folding ADR-0107 step 3 into this ADR)
 - ADR-0122 — typed memory shape (T4) — archive payload shape
@@ -339,7 +354,7 @@ Per ADR-0118 §T6 escalation criterion: **promote to its own ADR if the session-
 - ADR-0125 — queen-type runtime (T7) — confirms `commands/hive-mind.ts` stays a single flat file (no `commands/hive-mind/` subdirectory); previously declared ADR-0107 Option D step 3 out of scope, now superseded by the fold-in here
 - ADR-0089 / `project-adr0094-living-tracker` — upstream-files-exception for `hive-mind.ts` 500-line limit; ADR-0094 acceptance-coverage tracker
 
-## Review notes
+### Review notes
 
 Open questions surfaced during the 2026-05-02 review pass — recorded here, not blocking the ADR's `Proposed` status:
 

@@ -1,10 +1,9 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-24
-tags: [audit-followup, stub-honesty, wire-or-remove, aidefence, claims, telemetry, consensus, ct-e]
+tags: [audit-followup, stub-honesty, wire-or-remove, aidefence]
 supersedes: []
-depends-on: [0201, 0210, 0233]
+depends-on: [ADR-0201, ADR-0210, ADR-0233]
 implements: []
 ---
 
@@ -293,7 +292,9 @@ Applied per surface ([[feedback-remediation-adr-preflight]]).
 | 7 | `weighted` mode CLI/MCP alignment | **Align enums (add to CLI)** | Add `'weighted'` to `cli/src/mcp-tools/hive-mind-tools.ts:73` `ConsensusStrategyName` enum and to the `hive-mind --consensus` CLI flag enum at `commands/hive-mind.ts`. Update help text + skill doc count from 5 to 6 modes (or 7 if `crdt` is counted separately). The 277-LOC `weighted.ts` handler already works; this is enum-only. | The capability is implemented and tested; only the user-facing parser blocks it. Cheapest reachable fix; surfaces a working feature ADR-0119 already shipped. |
 | 8 | 5 consensus agent-type Markdown | **Frontmatter honesty + advisory note** | Add to each of `cli/.claude/agents/consensus/{byzantine-coordinator,raft-manager,gossip-coordinator,crdt-synchronizer,quorum-manager}.md` frontmatter: `advisory: true` AND a leading body paragraph "**Advisory roleplay only.** This agent's prompt describes distributed-consensus mechanisms (PBFT, Raft, gossip, CRDT, quorum) but spawning it does NOT enforce them. Real consensus dispatch goes through `hive-mind --consensus <mode>` → `agentdb/archivist/handlers/hive-mind/consensus/*` (single-process state-merge with per-strategy threshold arithmetic). The byzantine-coordinator name does not connect to PBFT three-phase protocol implementation." Same edit to `consensus-builder.md` + `security-manager.md` (referenced in F-09-010). | Consistent with [[ADR-0210]] description-honesty principle applied to the agent-prompt layer. Avoids deletion (the prompts have value as cognitive scaffolds for the LLM) while preventing operator over-trust. |
 
-### Cross-cutting consequences
+### Consequences
+
+These cross-cutting consequences apply across all eight surface dispositions.
 
 * **Good**, because each surface gets its honesty story straight without
   forcing wire-or-delete asymmetry where it doesn't fit.

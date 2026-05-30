@@ -1,30 +1,13 @@
-# ADR-0157: Adopt canonical MADR + SPARC methodology + first-class multi-file ADRs via YAML `amends:` relationships
+---
+status: accepted
+date: 2026-05-08
+tags: [adr, madr, sparc, tooling]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: Accepted 2026-05-28 (completed)
-- **Date**: 2026-05-08
-- **Accepted**: 2026-05-28
-- **Implemented**: 2026-05-28
-- **Deciders**: Henrik Pettersen
-- **Methodology**: SPARC + MADR
-
-> **Status note (2026-05-28)**: All in-scope acceptance criteria satisfied.
-> - **AC #1 (adr-create template)**: SKILL.md at `forks/ruflo/plugins/
->   ruflo-adr/skills/adr-create/SKILL.md` documents MADR canonical 4.x +
->   YAML frontmatter + required status/date fields + supports relationship
->   fields (amends/supersedes/superseded-by/depends-on).
-> - **AC #2 (adr-index)**: SKILL.md + `scripts/import.mjs` parse YAML
->   frontmatter, read amends/supersedes/superseded-by/depends-on, emit
->   matching causal edges, surface dangling refs. The `superseded-by`
->   handling was caught missing by AC#4 regression test 2026-05-28 and
->   landed in the fix that closed this ADR.
-> - **AC #3 (HM refactor)**: OUT OF SCOPE per ADR §"Out of scope".
-> - **AC #4 (regression guard)**: `tests/unit/adr0157-template-skill-
->   alignment.test.mjs` — 6/6 pass; asserts template + importer agree on
->   YAML field names. Detected the `superseded-by` drift on its first
->   run.
-> - **AC #5 (pipeline acceptance ≥ 675/675)**: most recent release
->   ran 713/722 passed — well above the 675 threshold.
-- **Related**: ADR-0143 (user-facing brand), ADR-0148 (skill-mcp-tool-surface-audit), upstream `ruflo-adr` plugin (current ad-hoc template), HM `docs/adr/README.md` (project-level MADR declaration), https://adr.github.io/madr/ (MADR canonical spec), https://github.com/ruvnet/sparc (SPARC methodology)
+# Adopt canonical MADR + SPARC methodology + first-class multi-file ADRs via YAML `amends:` relationships
 
 ## Context and Problem Statement
 
@@ -230,6 +213,29 @@ The `adr-index` skill reads `amends:` at Step 4 and emits a causal edge `from: <
 | Companion with NO `amends:` field | Treated as canonical (no parent assumed); legacy files use filename-inference fallback until migrated |
 | Self-amendment (`amends: <self>`) | Aborted at Step 2.5 — sentinel for typos; never silently accepted |
 
+### Consequences
+
+The full per-option pros/cons appear in §Pros and Cons of the Options below. The chosen option (Option 5) carries these consequences:
+
+* Good, because the explicit, machine-parseable parent-child relationship is rename-safe, copy-safe, and human-verifiable.
+* Good, because multi-parent and dangling-reference edge cases are handled cleanly, and the scheme composes with `supersedes:` and `related:` for richer graph semantics.
+* Good, because it is MADR-aligned (uses YAML frontmatter; non-canonical fields are still valid YAML).
+* Bad, because it requires 13+ HM companion files to add the `amends:` field (mechanical, scriptable).
+* Bad, because the adr-index skill needs a YAML parser (small addition; standard library).
+* Neutral, because the filename convention becomes documentation, not load-bearing structure.
+
+### Confirmation
+
+<!-- SPARC: C — Completion -->
+
+This decision is implemented when:
+
+1. The upstream `ruflo-adr` plugin's `adr-create` SKILL.md template emits canonical MADR + SPARC shape with the methodology field, SPARC phase markers, and optional `amends:` field. (Acceptance Criterion #1 below.)
+2. The `adr-index` skill parses YAML frontmatter, reads `amends:` (and other relationship fields), validates `methodology: [SPARC, MADR]` declaration, emits matching causal edges, and aborts at Step 2.5 on dangling references. (Acceptance Criterion #2.)
+3. HM's 217 ADRs are refactored to MADR+SPARC shape (script + manual review report) with companion files declaring `amends:` correctly and SPARC phase markers in place. (Acceptance Criterion #3.)
+4. A regression unit test in `ruflo-patch/tests/unit/` enforces the template + skill alignment so future drift surfaces at unit-test time. (Acceptance Criterion #4.)
+5. ruflo-patch's own `docs/adr/` is migrated to canonical MADR+SPARC shape (separate effort; tracked but not blocking this ADR).
+
 ## Pros and Cons of the Options
 
 ### Option 1 (stay ad-hoc; document)
@@ -271,18 +277,6 @@ The `adr-index` skill reads `amends:` at Step 4 and emits a causal edge `from: <
 - Bad — adr-index skill needs YAML parser (small addition; standard library).
 - Neutral — filename convention becomes documentation, not load-bearing structure.
 
-### Confirmation
-
-<!-- SPARC: C — Completion -->
-
-This decision is implemented when:
-
-1. The upstream `ruflo-adr` plugin's `adr-create` SKILL.md template emits canonical MADR + SPARC shape with the methodology field, SPARC phase markers, and optional `amends:` field. (Acceptance Criterion #1 below.)
-2. The `adr-index` skill parses YAML frontmatter, reads `amends:` (and other relationship fields), validates `methodology: [SPARC, MADR]` declaration, emits matching causal edges, and aborts at Step 2.5 on dangling references. (Acceptance Criterion #2.)
-3. HM's 217 ADRs are refactored to MADR+SPARC shape (script + manual review report) with companion files declaring `amends:` correctly and SPARC phase markers in place. (Acceptance Criterion #3.)
-4. A regression unit test in `ruflo-patch/tests/unit/` enforces the template + skill alignment so future drift surfaces at unit-test time. (Acceptance Criterion #4.)
-5. ruflo-patch's own `docs/adr/` is migrated to canonical MADR+SPARC shape (separate effort; tracked but not blocking this ADR).
-
 ## Acceptance criteria
 
 Every criterion must be observable from a test, pipeline output, or graph query — never code-review-only (per `feedback-no-squelch-tests`).
@@ -303,6 +297,17 @@ Every criterion must be observable from a test, pipeline output, or graph query 
 5. **Pipeline acceptance suite** continues to pass at ≥ 675/675.
 
 ## More Information
+
+Original status: "Accepted 2026-05-28 (completed)" — Date 2026-05-08, Accepted 2026-05-28, Implemented 2026-05-28, Methodology SPARC + MADR.
+
+Status note (2026-05-28): All in-scope acceptance criteria satisfied.
+- **AC #1 (adr-create template)**: SKILL.md at `forks/ruflo/plugins/ruflo-adr/skills/adr-create/SKILL.md` documents MADR canonical 4.x + YAML frontmatter + required status/date fields + supports relationship fields (amends/supersedes/superseded-by/depends-on).
+- **AC #2 (adr-index)**: SKILL.md + `scripts/import.mjs` parse YAML frontmatter, read amends/supersedes/superseded-by/depends-on, emit matching causal edges, surface dangling refs. The `superseded-by` handling was caught missing by AC#4 regression test 2026-05-28 and landed in the fix that closed this ADR.
+- **AC #3 (HM refactor)**: OUT OF SCOPE per ADR §"Out of scope".
+- **AC #4 (regression guard)**: `tests/unit/adr0157-template-skill-alignment.test.mjs` — 6/6 pass; asserts template + importer agree on YAML field names. Detected the `superseded-by` drift on its first run.
+- **AC #5 (pipeline acceptance ≥ 675/675)**: most recent release ran 713/722 passed — well above the 675 threshold.
+
+This decision relates to ADR-0143 (user-facing brand), ADR-0148 (skill-mcp-tool-surface-audit), the upstream `ruflo-adr` plugin (current ad-hoc template), HM `docs/adr/README.md` (project-level MADR declaration), the MADR canonical spec at https://adr.github.io/madr/, and the SPARC methodology at https://github.com/ruvnet/sparc.
 
 ### Out of scope (deferred to follow-up ADRs)
 

@@ -1,10 +1,15 @@
-# ADR-0016: Dynamic Import Handling
+---
+status: accepted
+date: 2026-03-05
+tags: [codemod, imports, build]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-## Status
+# Dynamic Import Handling
 
-Implemented
-
-## Context
+## Context and Problem Statement
 
 ### Specification (SPARC-S)
 
@@ -43,7 +48,17 @@ PHASE 3 — Targeted patches for remaining cases:
     #   that maps old names to new names
 ```
 
-## Decision
+## Considered Options
+
+* **Handle dynamic imports with a three-layer strategy: codemod catches literal prefixes, an audit produces a complete inventory, and targeted patches cover edge cases (chosen).**
+* **Publish shim packages under the original `@claude-flow/*` names** -- Rejected. We do not own the `@claude-flow` npm scope and cannot publish there. Attempting to shadow them with npm `overrides` in the consumer's `package.json` would require every user to add configuration, defeating the drop-in replacement goal.
+* **Use npm `overrides` in the top-level `package.json` to alias `@claude-flow/*` to `@sparkleideas/*`** -- Rejected. npm `overrides` affect dependency resolution, not runtime `require()` calls. A dynamic `require('@claude-flow/memory')` still looks for that exact package in `node_modules`. Overrides do not create filesystem aliases.
+* **Bundle all packages into a single fat bundle to eliminate cross-package imports** -- Rejected. Already evaluated and rejected in ADR-0005 (Approach 6). Dynamic imports in `memory-bridge.js` and native addons (`better-sqlite3`, ruvector napi-rs) break bundling.
+* **Ignore dynamic imports and fix runtime errors as they surface** -- Rejected. `MODULE_NOT_FOUND` errors would occur in production use, creating a poor first impression and eroding trust. The audit is a one-time cost that prevents an entire class of runtime failures.
+
+## Decision Outcome
+
+Chosen option: "Handle dynamic imports with a three-layer strategy", because Layer 1 (codemod catches literal prefixes) covers the common case automatically, the audit catches everything else, and targeted patches surgically fix the rare fully-indirect references — defense in depth against runtime `MODULE_NOT_FOUND`.
 
 ### Architecture (SPARC-A)
 
@@ -57,41 +72,24 @@ Handle dynamic imports with a three-layer strategy, ordered from broadest covera
 
 The key insight is that Layer 1 covers the common case (literal prefix concatenation) automatically. Layer 3 is only needed for truly indirect references, which are rare in practice because most codebases use a recognizable prefix string even in dynamic imports.
 
-### Considered Alternatives
+### Consequences
 
-1. **Publish shim packages under the original `@claude-flow/*` names** -- Rejected. We do not own the `@claude-flow` npm scope and cannot publish there. Attempting to shadow them with npm `overrides` in the consumer's `package.json` would require every user to add configuration, defeating the drop-in replacement goal.
-
-2. **Use npm `overrides` in the top-level `package.json` to alias `@claude-flow/*` to `@sparkleideas/*`** -- Rejected. npm `overrides` affect dependency resolution, not runtime `require()` calls. A dynamic `require('@claude-flow/memory')` still looks for that exact package in `node_modules`. Overrides do not create filesystem aliases.
-
-3. **Bundle all packages into a single fat bundle to eliminate cross-package imports** -- Rejected. Already evaluated and rejected in ADR-0005 (Approach 6). Dynamic imports in `memory-bridge.js` and native addons (`better-sqlite3`, ruvector napi-rs) break bundling.
-
-4. **Ignore dynamic imports and fix runtime errors as they surface** -- Rejected. `MODULE_NOT_FOUND` errors would occur in production use, creating a poor first impression and eroding trust. The audit is a one-time cost that prevents an entire class of runtime failures.
-
-## Consequences
-
-### Refinement (SPARC-R)
-
-**Positive:**
-
-- The three-layer strategy provides defense in depth -- most cases are handled automatically, edge cases are caught by the audit, and remaining cases get targeted patches
-- The audit script is reusable across upstream updates -- run it to detect new dynamic import patterns introduced by upstream
-- Layer 1 (codemod catches literal prefixes) requires no additional maintenance -- it falls out naturally from the existing string replacement logic
-- Targeted patches (Layer 3) follow the established patch infrastructure, so no new tooling is needed
-
-**Negative:**
-
-- The audit must be re-run when upstream changes significantly, adding a manual step to the sync process
-- Targeted patches for dynamic imports are fragile -- if upstream refactors the import site, the patch breaks (same limitation as all existing patches, mitigated by sentinel verification)
-- If upstream introduces a new dynamic import pattern that Layer 1 does not catch and the audit is not re-run, the failure will surface at runtime
+* Good, because the three-layer strategy provides defense in depth -- most cases are handled automatically, edge cases are caught by the audit, and remaining cases get targeted patches.
+* Good, because the audit script is reusable across upstream updates -- run it to detect new dynamic import patterns introduced by upstream.
+* Good, because Layer 1 (codemod catches literal prefixes) requires no additional maintenance -- it falls out naturally from the existing string replacement logic.
+* Good, because targeted patches (Layer 3) follow the established patch infrastructure, so no new tooling is needed.
+* Bad, because the audit must be re-run when upstream changes significantly, adding a manual step to the sync process.
+* Bad, because targeted patches for dynamic imports are fragile -- if upstream refactors the import site, the patch breaks (same limitation as all existing patches, mitigated by sentinel verification).
+* Bad, because if upstream introduces a new dynamic import pattern that Layer 1 does not catch and the audit is not re-run, the failure will surface at runtime.
 
 **Edge cases:**
 
 - If upstream moves to a fully dynamic plugin loading system (e.g., reading package names from a config file at runtime), Layer 1 and Layer 3 cannot help. This would require a different approach such as a runtime module resolution hook. This scenario is unlikely given current upstream architecture
 - Template literals with nested expressions (`` `@claude-flow/${getScope(config)}` ``) are handled by Layer 1 as long as the `@claude-flow/` prefix is a literal portion of the template
 
-### Completion (SPARC-C)
+### Confirmation
 
-Acceptance criteria:
+Completion (SPARC-C) — acceptance criteria:
 
 - [ ] `scripts/audit-dynamic-imports.sh` exists and produces a manifest of all dynamic import sites referencing `@claude-flow`
 - [ ] The audit manifest documents each site as "handled by codemod" or "requires targeted patch"

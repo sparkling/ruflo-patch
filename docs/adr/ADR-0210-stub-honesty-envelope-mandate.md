@@ -1,11 +1,9 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-19
-implemented-date: 2026-05-23
-tags: [mcp, honesty, stubs, policy, swarm-reviewed]
+tags: [mcp, honesty, stubs, policy]
 supersedes: []
-depends-on: [0201]
+depends-on: [ADR-0201]
 implements: []
 ---
 
@@ -163,6 +161,8 @@ A fresh 6-expert council re-verified ADR-0210 against fork HEAD + upstream. **Op
 **Minority / queen recommendations (for batch ratification):** (1) **Split the delivery** — ship now the decidable subset (descriptions + the 3 fabrication deletes + the 2 fork-original implements + pretrain's one-line re-target + F-03-007's self-contained "delete the fake `setTimeout` flip" fallback); track separately the items coupled to still-`proposed` siblings (F-03-007's *preferred* route through ADR-0218's queue producer). (2) Acknowledge the **descriptions merge-tax** (upstream advertises full capability; an honest-limitation description re-flags every sync) — prefer **delete** over **describe** for caller-less tools. (3) The strongest form of the rejected Option D — a **protocol-level `isError`/`structuredContent`** signal at the `mcp-server.ts:695` wrap that *does* reach the LLM at call-time — was not considered by the original draft; if pursued it belongs in its **own micro-ADR**, not a revival of the in-process `_stub` field. B′'s direction stands.
 
 ## More Information
+
+Lifecycle dates from the original record: accepted 2026-05-19, implemented 2026-05-23. This ADR was swarm-reviewed.
 
 * **Upstream precedent:** `forks/ruflo/v3/implementation/adrs/ADR-073-stub-tool-honesty-real-predictions.md` (accepted; removed fabrication + wired real). Upstream commits `a2e2def04` (added `_stub`), `5d40236b1` ("Zero `_stub:true` remaining"), `04d6a9a0a` (perf-tools real metrics).
 * **Fork regression:** `c2c083331` (real fixes, 2026-05-09 21:59) → `815615b47` (revert, ~2h later); recover via `git show c2c083331:…hooks-tools.ts` or upstream HEAD.

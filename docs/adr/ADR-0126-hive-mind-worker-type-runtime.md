@@ -1,13 +1,15 @@
-# ADR-0126: Hive-mind worker-type runtime differentiation (T8)
+---
+status: accepted
+date: 2026-05-02
+tags: [hive-mind, worker, prompt, routing]
+supersedes: []
+depends-on: [ADR-0116, ADR-0118, ADR-0125]
+implements: []
+---
 
-- **Status**: **Implemented (2026-05-03)** per ADR-0118 §Status (T8 complete).
-- **Date**: 2026-05-02
-- **Deciders**: Henrik Pettersen
-- **Depends on**: ADR-0116 (hive-mind marketplace plugin — verification matrix supplies the gap row this ADR closes), ADR-0118 (runtime gaps tracker — task definition and escalation criteria), ADR-0125 (T7 queen-type prompts — queen prompts and worker prompts must reference each other consistently)
-- **Related**: ADR-0114 (substrate/protocol/execution layering — worker behaviour lives in execution layer)
-- **Scope**: Fork-side runtime work in `forks/ruflo/v3/@claude-flow/cli/src/commands/hive-mind.ts` (queen-prompt prose blocks) and `forks/ruflo/v3/@claude-flow/swarm/src/queen-coordinator.ts` (`typeMatches` rows + capability-score nudges). Per `feedback-patches-in-fork.md`, USERGUIDE-promised features that don't work are bugs and bugs are fixed in fork. Out of scope: per-worker subagent prompt template (no such template exists in fork source — the queen-LLM holds the Task-tool spawn site).
+# Hive-mind worker-type runtime differentiation (T8)
 
-## Context
+## Context and Problem Statement
 
 ADR-0116's verification matrix flagged "8 Worker types" as ⚠ partial: the documented catalog ships in the `AgentType` union (`forks/ruflo/v3/@claude-flow/swarm/src/types.ts:78-91` carries all 8) and 6 of 8 types appear in the in-process `QueenCoordinator` task-routing table, but only 4 types receive capability-score nudges and the queen's spawn prompt addresses the worker pool only as a count summary, not by type-specific role. Per `reference-ruflo-architecture` memory, ruflo orchestrates and the local `claude` CLI executes — so "differentiation" lives in the prose the queen prompt feeds the LLM about each worker type, plus the scoring inside `QueenCoordinator` that picks workers for in-process tasks.
 
@@ -44,49 +46,9 @@ T8 in ADR-0118 closes this row. T8 depends on T7 (ADR-0125) because ADR-0125 int
 - **(a) Per-worker inline branches + per-worker prose blocks in the queen prompt** — chosen. Extend `typeMatches` to cover all 8 types, add 4 missing capability-score nudges in `QueenCoordinator`, and emit one prose block per worker type in `generateHiveMindPrompt`.
 - **(b) Scoring matrix in config table loaded at startup** — externalise the type→task-type and type→nudge-keyword mappings into a TOML/JSON loaded by `queen-coordinator`; queen-prompt prose still inline.
 
-## Pros and Cons of the Options
-
-### (a) Per-worker inline branches + per-worker prose blocks
-
-- Pros: deterministic and debuggable (every change is grep-able source); mirrors USERGUIDE catalog 1:1; matches existing inline-branch pattern at `queen-coordinator.ts:1234-1256`; matches T7 (ADR-0125) inline strategy, keeping queen-side and worker-side surfaces symmetric; tests can iterate the existing `AgentType` union parametrically; fails loudly on unknown types via `default:` throw per `feedback-no-fallbacks.md`
-- Cons: changing any worker's role prose, task-type mapping, or `task.type` literal requires a code edit and re-publish through the cascade — no operator-facing tunability; eight prose blocks plus eight nudge branches plus eight `typeMatches` rows is a coupled set with no central spec, so blocks can drift apart structurally (mitigated by the structural-contract test in §Validation, not eliminated); routing correctness depends entirely on callers passing the right `task.type` literal — there is no description-classifier in fork source, so a miscategorising caller silently routes to the wrong worker until the literal is corrected; no learning loop — if routing is wrong in practice the system does not self-correct; multi-match (option-b co-placement) requires the explicit highest-score-wins + tiebreak rule documented in §Refinement
-
-### (b) Scoring matrix in config table
-
-- Pros: behaviour edits don't require a code change or cascade re-publish — operators can re-tune trigger keywords or task-type bindings by editing one file; worker→keyword and worker→task-type mapping is visible in one place; supports designer/non-engineer iteration on routing without touching TypeScript; queen-prompt prose can stay inline so the queen-LLM still gets stable anchor text
-- Cons: adds a config surface that must be init-template-generated, schema-validated, and version-pinned alongside fork releases; missing or malformed rows must fail loudly per `feedback-no-fallbacks.md` (no silent default-routing fallback), which converts "edit a file" simplicity into "edit a file and re-validate the schema"; asymmetric with T7's inline strategy — splitting routing data across two surfaces (config table for workers, inline switch for queen) widens the cross-reference contract; init template must learn how to render the config and acceptance must verify it
-
 ## Decision Outcome
 
 **Chosen option: (a) per-worker inline branches + per-worker prose blocks**, because it is the minimum change that closes the matrix row, mirrors the existing inline-table pattern at `queen-coordinator.ts:1234-1256` (additive only), keeps debuggability at grep-distance, fails loudly on unknown types per `feedback-no-fallbacks.md`, and matches the inline-branch strategy chosen by T7 (ADR-0125) so worker-side and queen-side surfaces stay symmetric. Option (b) is genuinely cheaper to *re-tune* but pays its price up front in init-template work, schema validation, and cross-surface asymmetry — re-tuning is not a workload we have evidence of needing, so the up-front tax buys an option we may never exercise. Option (b) remains an annotated follow-up in §Refinement; if operator-facing routing changes become a recurring ask, escalate then.
-
-## Consequences
-
-### Positive
-
-- 8 differentiable behaviours visible to the queen-LLM (one prose block per type) and reachable in `QueenCoordinator` (full `typeMatches` coverage + nudges); ADR-0116 matrix row "8 Worker types" closes
-- Deterministic capability-score output — given a task definition and an agent pool, the worker selected by `QueenCoordinator` is reproducible across runs
-- Debuggable at source — every prose block, `typeMatches` row, and nudge branch is a discrete grep target
-- Symmetric with T7 (ADR-0125) queen-type branching strategy; the queen-prompt sentinel surface is uniform across both ADRs
-- Tests can iterate the existing `AgentType` union parametrically — adding a 9th worker type later requires updating one union, three sites in this ADR's surface, and the cross-reference in T7's queen prompt, then re-running the same parametric tests
-
-### Negative
-
-- Three coupled surfaces per type (queen-prompt prose block, `typeMatches` row, capability-score nudge) plus the cross-reference into T7's queen prompt — every behaviour change is a multi-site edit
-- No central structural spec for the 8 prose blocks — drift between them (one type loses its sentinel, another grows an extra section) is detectable only by the structural-contract test in §Validation, not by the type system
-- No learning from outcomes — `task.type` → worker mappings are static; if `architect` consistently gets routed wrong in practice the system does not self-correct
-- Routing depends entirely on the caller passing the correct `task.type` literal (set at `task-orchestrator.ts:125` or hardcoded inside `queen-coordinator.ts:711-814`); a miscategorised caller is a fork patch and cascade re-publish to fix
-- Adding a 9th worker type requires touching the `AgentType` union, this ADR's three coupled surfaces, T7's queen prompt cross-reference, and the parametric tests — coupling tax scales linearly with type count
-- Multi-match disposition (when `typeMatches[task.type]` carries multiple worker types via option-b co-placement) is resolved by highest-score-wins with enum-order tiebreak per §Refinement; this is deterministic but loses information when a task is genuinely two-typed (e.g. "design and implement" — architect vs. coder)
-
-## Validation
-
-- Unit: enum-coverage test asserts all 8 USERGUIDE types have a `typeMatches` row in `queen-coordinator.ts`; capability-score-nudge presence test asserts each of the 8 types has at least one nudge that fires for its matching `task.type` literal; queen-prompt-prose presence test asserts `generateHiveMindPrompt` emits 8 pairwise-distinct prose blocks; structural-contract test asserts every prose block carries the same three required sections (role-description sentinel, MCP-tool list sentinel, queen-type cross-reference sentinel) so blocks cannot drift apart silently; default-case throw tests assert unknown worker type throws in both routing and prompt-emission paths; **`t8_empty_pool_throws`** (unit) feeds a `TaskDefinition` whose `typeMatches` row has zero matching agents in the pool and asserts `calculateCapabilityScore` throws `Error('No agent of matching type for task.type=X available in pool')` per §Specification empty-pool contract
-- Integration: end-to-end queen-prompt emission test invokes the prompt-substitution path through the CLI command layer for a worker pool covering all 8 types; asserts each type's prose block, MCP-tool sentinel, and T7 cross-reference substring survive substitution; `QueenCoordinator.calculateCapabilityScore` test feeds a parametric set of `(TaskDefinition, AgentState)` pairs and asserts the matching worker's score is strictly highest; multi-match tiebreak test feeds a `TaskDefinition` whose `typeMatches` row carries multiple worker types and asserts highest-score wins with enum-order tiebreak
-- Acceptance: `lib/acceptance-adr0126-checks.sh` (new) runs in an init'd project against published packages, invokes `hive-mind spawn` with worker pools covering all 8 types, captures the emitted prompt, and asserts (i) every type's role-description sentinel is present and pairwise distinct, (ii) every type's MCP-tool sentinel is present, (iii) the active queen-type body sentinel from ADR-0125 appears in each prose block, (iv) the structural-contract sections all appear in the same order across the 8 blocks, (v) **`acc_t8_empty_pool_rejected`** drives a `task.type` whose worker is absent from the pool and asserts the queen surfaces the empty-pool error rather than silently selecting a non-matching agent, (vi) wired alongside per-ADR check suites with `$(_cli_cmd)` per `reference-cli-cmd-helper.md`. Per `feedback-all-test-levels.md`, all three levels ship in the same commit as the implementation
-- Annotation lift: ADR-0118 §Status row T8 marked `complete`, with Owner/Commit naming the green-CI commit; lift fires on the next materialise run per §Completion
-
-## Decision
 
 **Emit per-worker-type prose blocks in the queen prompt; extend `typeMatches` to cover all 8 USERGUIDE worker types; add the 4 missing capability-score nudges in `QueenCoordinator`.** This brings the queen-LLM's anchor text in line with the USERGUIDE catalog and makes every USERGUIDE type reachable through `QueenCoordinator` task routing.
 
@@ -95,6 +57,46 @@ After this ADR lands:
 - `typeMatches` at `queen-coordinator.ts:1234-1244` gains rows for the missing task-type → worker-type mappings so `architect` and `optimizer` are reachable (see §Specification for the new `TaskType` values and how they are introduced)
 - `calculateCapabilityScore` at `queen-coordinator.ts:1253-1256` gains 4 additional nudges so all 8 USERGUIDE worker types receive a capability bump on their matching task type, not just `coder`/`reviewer`/`tester`/`coordinator`
 - No per-worker subagent prompt template is added to fork source — workers are spawned by the queen-LLM through Claude Code's Task tool, and the prose blocks above are the surface the queen-LLM reads when constructing those Task-tool prompts
+
+### Consequences
+
+* Good, because of 8 differentiable behaviours visible to the queen-LLM (one prose block per type) and reachable in `QueenCoordinator` (full `typeMatches` coverage + nudges); ADR-0116 matrix row "8 Worker types" closes.
+* Good, because of deterministic capability-score output — given a task definition and an agent pool, the worker selected by `QueenCoordinator` is reproducible across runs.
+* Good, because it is debuggable at source — every prose block, `typeMatches` row, and nudge branch is a discrete grep target.
+* Good, because it is symmetric with T7 (ADR-0125) queen-type branching strategy; the queen-prompt sentinel surface is uniform across both ADRs.
+* Good, because tests can iterate the existing `AgentType` union parametrically — adding a 9th worker type later requires updating one union, three sites in this ADR's surface, and the cross-reference in T7's queen prompt, then re-running the same parametric tests.
+* Bad, because of three coupled surfaces per type (queen-prompt prose block, `typeMatches` row, capability-score nudge) plus the cross-reference into T7's queen prompt — every behaviour change is a multi-site edit.
+* Bad, because of no central structural spec for the 8 prose blocks — drift between them (one type loses its sentinel, another grows an extra section) is detectable only by the structural-contract test in §Validation, not by the type system.
+* Bad, because of no learning from outcomes — `task.type` → worker mappings are static; if `architect` consistently gets routed wrong in practice the system does not self-correct.
+* Bad, because routing depends entirely on the caller passing the correct `task.type` literal (set at `task-orchestrator.ts:125` or hardcoded inside `queen-coordinator.ts:711-814`); a miscategorised caller is a fork patch and cascade re-publish to fix.
+* Bad, because adding a 9th worker type requires touching the `AgentType` union, this ADR's three coupled surfaces, T7's queen prompt cross-reference, and the parametric tests — coupling tax scales linearly with type count.
+* Bad, because multi-match disposition (when `typeMatches[task.type]` carries multiple worker types via option-b co-placement) is resolved by highest-score-wins with enum-order tiebreak per §Refinement; this is deterministic but loses information when a task is genuinely two-typed (e.g. "design and implement" — architect vs. coder).
+
+### Confirmation
+
+- Unit: enum-coverage test asserts all 8 USERGUIDE types have a `typeMatches` row in `queen-coordinator.ts`; capability-score-nudge presence test asserts each of the 8 types has at least one nudge that fires for its matching `task.type` literal; queen-prompt-prose presence test asserts `generateHiveMindPrompt` emits 8 pairwise-distinct prose blocks; structural-contract test asserts every prose block carries the same three required sections (role-description sentinel, MCP-tool list sentinel, queen-type cross-reference sentinel) so blocks cannot drift apart silently; default-case throw tests assert unknown worker type throws in both routing and prompt-emission paths; **`t8_empty_pool_throws`** (unit) feeds a `TaskDefinition` whose `typeMatches` row has zero matching agents in the pool and asserts `calculateCapabilityScore` throws `Error('No agent of matching type for task.type=X available in pool')` per §Specification empty-pool contract
+- Integration: end-to-end queen-prompt emission test invokes the prompt-substitution path through the CLI command layer for a worker pool covering all 8 types; asserts each type's prose block, MCP-tool sentinel, and T7 cross-reference substring survive substitution; `QueenCoordinator.calculateCapabilityScore` test feeds a parametric set of `(TaskDefinition, AgentState)` pairs and asserts the matching worker's score is strictly highest; multi-match tiebreak test feeds a `TaskDefinition` whose `typeMatches` row carries multiple worker types and asserts highest-score wins with enum-order tiebreak
+- Acceptance: `lib/acceptance-adr0126-checks.sh` (new) runs in an init'd project against published packages, invokes `hive-mind spawn` with worker pools covering all 8 types, captures the emitted prompt, and asserts (i) every type's role-description sentinel is present and pairwise distinct, (ii) every type's MCP-tool sentinel is present, (iii) the active queen-type body sentinel from ADR-0125 appears in each prose block, (iv) the structural-contract sections all appear in the same order across the 8 blocks, (v) **`acc_t8_empty_pool_rejected`** drives a `task.type` whose worker is absent from the pool and asserts the queen surfaces the empty-pool error rather than silently selecting a non-matching agent, (vi) wired alongside per-ADR check suites with `$(_cli_cmd)` per `reference-cli-cmd-helper.md`. Per `feedback-all-test-levels.md`, all three levels ship in the same commit as the implementation
+- Annotation lift: ADR-0118 §Status row T8 marked `complete`, with Owner/Commit naming the green-CI commit; lift fires on the next materialise run per §Completion
+
+## Pros and Cons of the Options
+
+### (a) Per-worker inline branches + per-worker prose blocks
+
+- Good, because it is deterministic and debuggable (every change is grep-able source); mirrors USERGUIDE catalog 1:1; matches existing inline-branch pattern at `queen-coordinator.ts:1234-1256`; matches T7 (ADR-0125) inline strategy, keeping queen-side and worker-side surfaces symmetric; tests can iterate the existing `AgentType` union parametrically; fails loudly on unknown types via `default:` throw per `feedback-no-fallbacks.md`
+- Bad, because changing any worker's role prose, task-type mapping, or `task.type` literal requires a code edit and re-publish through the cascade — no operator-facing tunability; eight prose blocks plus eight nudge branches plus eight `typeMatches` rows is a coupled set with no central spec, so blocks can drift apart structurally (mitigated by the structural-contract test in §Validation, not eliminated); routing correctness depends entirely on callers passing the right `task.type` literal — there is no description-classifier in fork source, so a miscategorising caller silently routes to the wrong worker until the literal is corrected; no learning loop — if routing is wrong in practice the system does not self-correct; multi-match (option-b co-placement) requires the explicit highest-score-wins + tiebreak rule documented in §Refinement
+
+### (b) Scoring matrix in config table
+
+- Good, because behaviour edits don't require a code change or cascade re-publish — operators can re-tune trigger keywords or task-type bindings by editing one file; worker→keyword and worker→task-type mapping is visible in one place; supports designer/non-engineer iteration on routing without touching TypeScript; queen-prompt prose can stay inline so the queen-LLM still gets stable anchor text
+- Bad, because it adds a config surface that must be init-template-generated, schema-validated, and version-pinned alongside fork releases; missing or malformed rows must fail loudly per `feedback-no-fallbacks.md` (no silent default-routing fallback), which converts "edit a file" simplicity into "edit a file and re-validate the schema"; asymmetric with T7's inline strategy — splitting routing data across two surfaces (config table for workers, inline switch for queen) widens the cross-reference contract; init template must learn how to render the config and acceptance must verify it
+
+## Validation
+
+- Unit: enum-coverage test asserts all 8 USERGUIDE types have a `typeMatches` row in `queen-coordinator.ts`; capability-score-nudge presence test asserts each of the 8 types has at least one nudge that fires for its matching `task.type` literal; queen-prompt-prose presence test asserts `generateHiveMindPrompt` emits 8 pairwise-distinct prose blocks; structural-contract test asserts every prose block carries the same three required sections (role-description sentinel, MCP-tool list sentinel, queen-type cross-reference sentinel) so blocks cannot drift apart silently; default-case throw tests assert unknown worker type throws in both routing and prompt-emission paths; **`t8_empty_pool_throws`** (unit) feeds a `TaskDefinition` whose `typeMatches` row has zero matching agents in the pool and asserts `calculateCapabilityScore` throws `Error('No agent of matching type for task.type=X available in pool')` per §Specification empty-pool contract
+- Integration: end-to-end queen-prompt emission test invokes the prompt-substitution path through the CLI command layer for a worker pool covering all 8 types; asserts each type's prose block, MCP-tool sentinel, and T7 cross-reference substring survive substitution; `QueenCoordinator.calculateCapabilityScore` test feeds a parametric set of `(TaskDefinition, AgentState)` pairs and asserts the matching worker's score is strictly highest; multi-match tiebreak test feeds a `TaskDefinition` whose `typeMatches` row carries multiple worker types and asserts highest-score wins with enum-order tiebreak
+- Acceptance: `lib/acceptance-adr0126-checks.sh` (new) runs in an init'd project against published packages, invokes `hive-mind spawn` with worker pools covering all 8 types, captures the emitted prompt, and asserts (i) every type's role-description sentinel is present and pairwise distinct, (ii) every type's MCP-tool sentinel is present, (iii) the active queen-type body sentinel from ADR-0125 appears in each prose block, (iv) the structural-contract sections all appear in the same order across the 8 blocks, (v) **`acc_t8_empty_pool_rejected`** drives a `task.type` whose worker is absent from the pool and asserts the queen surfaces the empty-pool error rather than silently selecting a non-matching agent, (vi) wired alongside per-ADR check suites with `$(_cli_cmd)` per `reference-cli-cmd-helper.md`. Per `feedback-all-test-levels.md`, all three levels ship in the same commit as the implementation
+- Annotation lift: ADR-0118 §Status row T8 marked `complete`, with Owner/Commit naming the green-CI commit; lift fires on the next materialise run per §Completion
 
 ## Implementation plan
 
@@ -201,8 +203,15 @@ Per `feedback-all-test-levels.md`, all three levels ship in the same commit:
 5. **Per ADR-0118 §T8 escalation criterion**: "Promote to own ADR if the worker-type catalog diverges from USERGUIDE's 8 (e.g. user requests a `security-auditor` worker)." This ADR closes the existing 8 only; any 9th type is a new ADR.
 6. **Existing call sites relying on the `score = 0.5` baseline for empty-pool inputs must be audited.** The throw added by this ADR changes the empty-pool disposition from "silent low-score selection" to "queen-visible exception". Any caller of `calculateCapabilityScore` that expects a numeric return for empty-pool inputs (e.g. probing routines, telemetry samplers, multi-task batch schedulers) will now see a thrown error. Mitigation: grep `calculateCapabilityScore` consumers in the swarm package before landing; document the call-sites list in the implementation PR; if any consumer deliberately probes empty pools, wrap that consumer's call in a try-block that surfaces the error to the queen rather than swallowing it (no try/catch at the dispatch layer per `feedback-best-effort-must-rethrow-fatals.md`).
 
-## References
+## More Information
 
+Original status: **Implemented (2026-05-03)** per ADR-0118 §Status (T8 complete).
+
+This ADR depends on ADR-0116 (hive-mind marketplace plugin — verification matrix supplies the gap row this ADR closes), ADR-0118 (runtime gaps tracker — task definition and escalation criteria), and ADR-0125 (T7 queen-type prompts — queen prompts and worker prompts must reference each other consistently). It is related to ADR-0114 (substrate/protocol/execution layering — worker behaviour lives in execution layer).
+
+Scope: Fork-side runtime work in `forks/ruflo/v3/@claude-flow/cli/src/commands/hive-mind.ts` (queen-prompt prose blocks) and `forks/ruflo/v3/@claude-flow/swarm/src/queen-coordinator.ts` (`typeMatches` rows + capability-score nudges). Per `feedback-patches-in-fork.md`, USERGUIDE-promised features that don't work are bugs and bugs are fixed in fork. Out of scope: per-worker subagent prompt template (no such template exists in fork source — the queen-LLM holds the Task-tool spawn site).
+
+References:
 - ADR-0116 — verification matrix audit ("8 Worker types" row)
 - ADR-0118 §T8 — task definition and dependency on T7
 - ADR-0125 — T7 queen-type prompts (must land first; provides the sentinel substrings cited by per-worker prose blocks)
@@ -220,7 +229,7 @@ Per `feedback-all-test-levels.md`, all three levels ship in the same commit:
 - `forks/ruflo/v3/@claude-flow/cli/src/commands/hive-mind.ts:65-190` — `generateHiveMindPrompt` body
 - `forks/ruflo/v3/@claude-flow/cli/src/commands/hive-mind.ts:94-95` — `WORKER DISTRIBUTION:` block to replace with prose loop
 
-## Review notes
+### Review notes
 
 Open questions for the implementer to resolve before code lands:
 

@@ -1,10 +1,15 @@
-# ADR-0011: Dual build trigger (upstream + local patches)
+---
+status: accepted
+date: 2026-03-05
+tags: [pipeline, build, automation]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-## Status
+# Dual build trigger (upstream + local patches)
 
-Implemented
-
-## Context
+## Context and Problem Statement
 
 ### Specification (SPARC-S)
 
@@ -47,7 +52,17 @@ IF not changed:
 SAVE state to scripts/.last-build-state
 ```
 
-## Decision
+## Considered Options
+
+* **Check both upstream and local sources in `scripts/sync-and-build.sh` before deciding whether to build, using a `scripts/.last-build-state` state file (chosen).**
+* **Only watch upstream, require manual trigger for patch changes** — Rejected. Easy to forget after pushing a patch. Creates drift between pushed patches and published packages. Defeats the automation goal — you'd need to remember to SSH in after every `git push`.
+* **Separate pipelines for upstream vs local** — Rejected. Unnecessary complexity. Both trigger sources result in the same build steps (codemod, patch, build, test, publish). Two pipelines means two sets of failure modes, two notification paths, and potential race conditions if both trigger simultaneously.
+* **File watcher (inotify) on patch/ directory** — Rejected. Does not work reliably for `git push` — files change atomically during merge operations. More fragile than `git log`. Also requires a long-running daemon, unlike the timer-based approach.
+* **Webhook from GitHub on push to ruflo** — Rejected. Adds external dependency (GitHub must be able to reach our server). Requires exposing an HTTP endpoint. Solves only the local trigger — still need polling for upstream repos we don't control.
+
+## Decision Outcome
+
+Chosen option: "Check both upstream and local sources in `scripts/sync-and-build.sh` before deciding whether to build", because a single pipeline driven by a cheap `git ls-remote` + path-filtered `git log` check handles both trigger sources identically with minimal failure modes.
 
 ### Architecture (SPARC-A)
 
@@ -73,31 +88,17 @@ BUILD_TIMESTAMP=2026-03-05T00:00:00Z
 
 The state file is updated only after a successful publish. If the build fails, the state is not updated, ensuring the next timer run retries the same changes.
 
-### Considered Alternatives
+### Consequences
 
-1. **Only watch upstream, require manual trigger for patch changes** — Rejected. Easy to forget after pushing a patch. Creates drift between pushed patches and published packages. Defeats the automation goal — you'd need to remember to SSH in after every `git push`.
-2. **Separate pipelines for upstream vs local** — Rejected. Unnecessary complexity. Both trigger sources result in the same build steps (codemod, patch, build, test, publish). Two pipelines means two sets of failure modes, two notification paths, and potential race conditions if both trigger simultaneously.
-3. **File watcher (inotify) on patch/ directory** — Rejected. Does not work reliably for `git push` — files change atomically during merge operations. More fragile than `git log`. Also requires a long-running daemon, unlike the timer-based approach.
-4. **Webhook from GitHub on push to ruflo** — Rejected. Adds external dependency (GitHub must be able to reach our server). Requires exposing an HTTP endpoint. Solves only the local trigger — still need polling for upstream repos we don't control.
-
-## Consequences
-
-### Refinement (SPARC-R)
-
-**Positive:**
-
-- Pushing a new patch to this repo automatically triggers a rebuild within 6 hours (or immediately via manual `./scripts/sync-and-build.sh`)
-- No additional steps required beyond `git push` — the pipeline discovers the change
-- The same pipeline handles both trigger sources identically, reducing code and failure modes
-- `git ls-remote` is lightweight — a single HTTP request per repo, no data transfer
-- `git log` with path filtering is fast even on large repos
-- State file persists across reboots (plain text on disk)
-
-**Negative:**
-
-- Up to 6 hours latency between pushing a patch and the automated build picking it up. Mitigation: run the script manually for immediate builds
-- If `git ls-remote` fails (network down, GitHub outage), the check reports "no changes" — a false negative. Mitigation: the script should treat network errors as "unknown" and either retry or proceed with a build
-- The state file must be kept in sync with actual published versions. If manually deleted, the next run rebuilds everything (safe but wasteful)
+* Good, because pushing a new patch to this repo automatically triggers a rebuild within 6 hours (or immediately via manual `./scripts/sync-and-build.sh`).
+* Good, because no additional steps required beyond `git push` — the pipeline discovers the change.
+* Good, because the same pipeline handles both trigger sources identically, reducing code and failure modes.
+* Good, because `git ls-remote` is lightweight — a single HTTP request per repo, no data transfer.
+* Good, because `git log` with path filtering is fast even on large repos.
+* Good, because the state file persists across reboots (plain text on disk).
+* Bad, because there is up to 6 hours latency between pushing a patch and the automated build picking it up. Mitigation: run the script manually for immediate builds.
+* Bad, because if `git ls-remote` fails (network down, GitHub outage), the check reports "no changes" — a false negative. Mitigation: the script should treat network errors as "unknown" and either retry or proceed with a build.
+* Bad, because the state file must be kept in sync with actual published versions. If manually deleted, the next run rebuilds everything (safe but wasteful).
 
 **Edge cases:**
 
@@ -106,9 +107,9 @@ The state file is updated only after a successful publish. If the build fails, t
 - If someone force-pushes upstream (changes HEAD to a different commit with the same tree), `git ls-remote` detects it as a change even though the content is identical. The rebuild is redundant but harmless
 - Monitoring `ruvnet/ruvector` is intentionally excluded — we use published `@ruvector/*` packages from public npm as-is
 
-### Completion (SPARC-C)
+### Confirmation
 
-Acceptance criteria:
+Completion (SPARC-C) — acceptance criteria:
 
 - [x] `scripts/.last-build-state` is created after the first successful build
 - [x] Upstream change detection works: manually advancing a stored HEAD hash triggers a rebuild

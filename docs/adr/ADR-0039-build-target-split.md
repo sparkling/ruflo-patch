@@ -1,22 +1,15 @@
-# ADR-0039: Build Target Split and Pipeline Decomposition
+---
+status: accepted
+date: 2026-03-15
+tags: [pipeline, build, wasm, decomposition]
+supersedes: []
+depends-on: [ADR-0038]
+implements: []
+---
 
-## Status
+# Build Target Split and Pipeline Decomposition
 
-Accepted (extends ADR-0038)
-
-## Date
-
-2026-03-15
-
-## Deciders
-
-sparkling team
-
-## Methodology
-
-SPARC + MADR
-
-## Context
+## Context and Problem Statement
 
 After ADR-0038 reduced sync-and-build.sh from 2,569 to 1,231 lines and added
 cascading npm targets, two structural problems remain:
@@ -36,7 +29,7 @@ cascading npm targets, two structural problems remain:
    paths and 4 upstream URLs appear verbatim in sync-and-build.sh,
    copy-source.sh, and deploy-finalize.sh.
 
-### Decision Drivers
+## Decision Drivers
 
 1. Single responsibility: each script file should have one clear purpose
 2. Files under 500 lines (CLAUDE.md guideline)
@@ -45,9 +38,19 @@ cascading npm targets, two structural problems remain:
 5. TSC and WASM should be independently invocable build targets
 6. Backward-compatible: systemd timer and npm scripts continue to work
 
-## Decision: Specification (SPARC-S)
+## Considered Options
 
-### Build target split
+* **Split the build target into build:tsc / build:wasm and decompose sync-and-build.sh into stage scripts plus shared libraries (chosen)**.
+
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "Split the build target into build:tsc / build:wasm and decompose sync-and-build.sh into stage scripts plus shared libraries", because it gives each script a single responsibility under 500 lines with no function over 100 lines, makes TSC and WASM independently invocable, and centralizes fork-path constants while keeping the systemd timer and npm scripts working.
+
+### Specification (SPARC-S)
+
+#### Build target split
 
 Split the `build` npm script into `build:tsc` and `build:wasm`:
 - `build:tsc` cascades through codemod, compiles ~30 TypeScript packages
@@ -59,7 +62,7 @@ Extract from build-packages.sh:
 - tsconfig generator to `scripts/gen-tsconfig.mjs` (testable ESM script)
 - WASM section to `scripts/build-wasm.sh` (standalone)
 
-### Pipeline decomposition
+#### Pipeline decomposition
 
 Split sync-and-build.sh into:
 - `scripts/ruflo-publish.sh` — publish stage (detect merges, bump, build, publish)
@@ -68,7 +71,7 @@ Split sync-and-build.sh into:
 - `lib/pipeline-helpers.sh` — shared build/test wrappers (DRY)
 - `lib/fork-paths.sh` — centralized fork directory constants (DRY)
 
-### Updated cascade
+#### Updated cascade
 
 | # | npm script | Includes | What it does |
 |---|---|---|---|
@@ -86,7 +89,7 @@ Split sync-and-build.sh into:
 | 10 | `finalize` | — | Save state, push forks |
 | 11 | `deploy` | 1-10 | Full pipeline |
 
-## Pseudocode (SPARC-P)
+### Pseudocode (SPARC-P)
 
 Build decomposition:
 ```
@@ -116,9 +119,9 @@ ruflo-sync.sh (~480 lines):
   flow: sync → build (or reuse) → test (or skip) → create PRs → save state
 ```
 
-## Architecture (SPARC-A)
+### Architecture (SPARC-A)
 
-### New files
+#### New files
 
 | File | Lines | Purpose |
 |------|-------|---------|
@@ -130,7 +133,7 @@ ruflo-sync.sh (~480 lines):
 | `scripts/ruflo-sync.sh` | ~480 | Sync stage (self-contained) |
 | `config/tsc-stubs/*.d.ts` | ~160 | 16 static type stub files |
 
-### Modified files
+#### Modified files
 
 | File | Before | After | Change |
 |------|--------|-------|--------|
@@ -139,7 +142,7 @@ ruflo-sync.sh (~480 lines):
 | `scripts/copy-source.sh` | 124 | ~115 | Source fork-paths.sh |
 | `scripts/deploy-finalize.sh` | 142 | ~130 | Source fork-paths.sh |
 
-## Refinement (SPARC-R)
+### Refinement (SPARC-R)
 
 - `sync_upstream()` (277 lines) is decomposed into 4 subfunctions within ruflo-sync.sh:
   `_add_upstream_remotes()`, `_fetch_upstream_parallel()`, `_create_sync_branch()`,
@@ -154,7 +157,23 @@ ruflo-sync.sh (~480 lines):
 - `config/tsc-stubs/` is committed to the repo and copied to the toolchain dir at
   build time. Stubs are version-controlled and diffable.
 
-## Completion (SPARC-C)
+### Consequences
+
+#### Completion (SPARC-C)
+
+* Good, because each script has one responsibility and one operating mode
+* Good, because sync-and-build.sh drops from 1,231 to ~150 lines (88% reduction)
+* Good, because build-packages.sh drops from 692 to ~355 lines (49% reduction)
+* Good, because TSC and WASM are independently invocable targets
+* Good, because fork paths defined once, sourced everywhere
+* Good, because tsconfig generator is a proper ESM script (testable, lintable)
+* Good, because type stubs are committed static files (diffable, reviewable)
+* Good, because no function exceeds 100 lines
+* Bad, because more script files (7 new) — mitigated by clear naming and single responsibility
+* Bad, because shared state (NEW_*_HEAD vars) must be initialized in each entry-point script
+* Bad, because dispatcher adds one level of indirection for systemd timer invocations
+
+### Confirmation
 
 1. `bash -n` all shell scripts
 2. `npm run test:unit` — pipeline + unit tests pass
@@ -169,21 +188,8 @@ ruflo-sync.sh (~480 lines):
 11. `grep -rn FORK_DIR_RUFLO scripts/ lib/` — only in lib/fork-paths.sh
 12. No timing regression vs 58s baseline
 
-## Consequences
+## More Information
 
-### Positive
+This ADR extends ADR-0038 (cascading pipeline decomposition).
 
-- Each script has one responsibility and one operating mode
-- sync-and-build.sh drops from 1,231 to ~150 lines (88% reduction)
-- build-packages.sh drops from 692 to ~355 lines (49% reduction)
-- TSC and WASM are independently invocable targets
-- Fork paths defined once, sourced everywhere
-- tsconfig generator is a proper ESM script (testable, lintable)
-- Type stubs are committed static files (diffable, reviewable)
-- No function exceeds 100 lines
-
-### Negative
-
-- More script files (7 new) — mitigated by clear naming and single responsibility
-- Shared state (NEW_*_HEAD vars) must be initialized in each entry-point script
-- Dispatcher adds one level of indirection for systemd timer invocations
+This record used the SPARC + MADR methodology, with section headings (Specification / Pseudocode / Architecture / Refinement / Completion) remapped to the canonical MADR sections during the ADR-0271 migration, preserving all content. The deciders were the sparkling team. Original status: "Accepted (extends ADR-0038)".

@@ -1,11 +1,15 @@
-# ADR-0022: Full Ecosystem Repackaging
+---
+status: accepted
+date: 2026-03-07
+tags: [packaging, plugins, npm, pipeline]
+supersedes: []
+depends-on: [ADR-0014]
+implements: []
+---
 
-- **Status**: Accepted
-- **Date**: 2026-03-07
-- **Deciders**: ruflo-patch maintainers
-- **Methodology**: SPARC + MADR
+# Full Ecosystem Repackaging
 
-## Context
+## Context and Problem Statement
 
 ### Specification (SPARC-S)
 
@@ -62,7 +66,35 @@ All 18 upstream source paths have been verified to exist with valid `package.jso
 4. No existing `@sparkleideas/*` package breaks
 5. Total publish time remains under 5 minutes
 
-## Decision
+## Considered Options
+
+### Option A: Full Ecosystem Repackaging (chosen)
+
+Integrate all 18 remaining npm-publishable packages. Users get a complete, consistent `@sparkleideas/*` ecosystem.
+
+**Pros**: Eliminates scope fragmentation. All plugins work. Every documented feature becomes accessible.
+
+**Cons**: 18 more packages to maintain. teammate-plugin needs a TypeScript build step. agentdb-onnx and embeddings have large deps (~200MB).
+
+### Option B: Incremental Per-Package ADRs
+
+One ADR per package, integrated when demand arises.
+
+**Pros**: Minimal complexity at any time.
+
+**Cons**: 18 separate ADRs. Plugins can't ship until Plugin SDK ships, creating hidden ordering. Users wait indefinitely.
+
+### Option C: Publish Plugin SDK Only
+
+Publish `@sparkleideas/plugins` so upstream `@claude-flow/plugin-*` can be installed alongside.
+
+**Pros**: Unblocks plugins without repackaging each one.
+
+**Cons**: Users still mix scopes. Codemod-renamed imports in `@sparkleideas/cli` may not match `@claude-flow/*` scope that upstream plugins expect.
+
+## Decision Outcome
+
+Chosen option: "Option A -- Full Ecosystem Repackaging", because 15 of 18 packages require zero pipeline changes (the codemod already handles `@claude-flow/*`→`@sparkleideas/*`), only 3 need codemod changes and 1 a build step, and the plugin ecosystem is all-or-nothing — so the marginal integration cost per package is near-zero while it eliminates scope fragmentation entirely.
 
 ### Architecture (SPARC-A)
 
@@ -216,36 +248,6 @@ Run `scripts/test-acceptance.sh`. Tests A13-A16 validate agent-booster import, p
 | analysis | Example application |
 | agentic-jujutsu | Git tooling, not a user-facing package |
 
-### Considered Alternatives
-
-#### Option A: Full Ecosystem Repackaging (chosen)
-
-Integrate all 18 remaining npm-publishable packages. Users get a complete, consistent `@sparkleideas/*` ecosystem.
-
-**Pros**: Eliminates scope fragmentation. All plugins work. Every documented feature becomes accessible.
-
-**Cons**: 18 more packages to maintain. teammate-plugin needs a TypeScript build step. agentdb-onnx and embeddings have large deps (~200MB).
-
-#### Option B: Incremental Per-Package ADRs
-
-One ADR per package, integrated when demand arises.
-
-**Pros**: Minimal complexity at any time.
-
-**Cons**: 18 separate ADRs. Plugins can't ship until Plugin SDK ships, creating hidden ordering. Users wait indefinitely.
-
-#### Option C: Publish Plugin SDK Only
-
-Publish `@sparkleideas/plugins` so upstream `@claude-flow/plugin-*` can be installed alongside.
-
-**Pros**: Unblocks plugins without repackaging each one.
-
-**Cons**: Users still mix scopes. Codemod-renamed imports in `@sparkleideas/cli` may not match `@claude-flow/*` scope that upstream plugins expect.
-
-## Decision Outcome
-
-**Chosen option: Option A -- Full Ecosystem Repackaging**
-
 ### Rationale
 
 1. **15 of 18 packages require zero pipeline changes** beyond adding LEVELS entries. The codemod already handles `@claude-flow/*` → `@sparkleideas/*` for the plugin directory. The marginal cost per package is near-zero.
@@ -256,7 +258,22 @@ Publish `@sparkleideas/plugins` so upstream `@claude-flow/plugin-*` can be insta
 
 4. **The plugin ecosystem is all-or-nothing.** Plugins depend on `@sparkleideas/plugins` (already published). Once the plugin directories flow through the pipeline, all 13 plugins publish automatically.
 
-### Implementation Checklist
+### Consequences
+
+* Good, because of a complete Claude Flow ecosystem under one npm scope (`@sparkleideas/*`).
+* Good, because all 14 plugins are installable via `npx @sparkleideas/cli plugins install`.
+* Good, because Tier 1 model routing works end-to-end ($0, <1ms for simple edits).
+* Good, because custom plugin development is enabled via the published Plugin SDK.
+* Bad, because users who install agentdb-onnx or embeddings add ~200MB to node_modules.
+* Bad, because the security module requires node-gyp for bcrypt native compilation.
+* Bad, because the package count increases from 24 to 42.
+* Neutral, because users who do not install new packages see no change.
+* Neutral, because upstream `@claude-flow/*` packages remain available independently.
+* Neutral, because the codemod handles all scope renaming automatically.
+
+### Confirmation
+
+Implementation checklist:
 
 **Step 1 — Codemod (3 lines):**
 
@@ -325,32 +342,11 @@ Publish `@sparkleideas/plugins` so upstream `@claude-flow/plugin-*` can be insta
 - [ ] Update `docs/plugin-catalog.md` — change install commands to `@sparkleideas/plugin-*`
 - [ ] Update `README.md` — package count 24→42
 
-## Consequences
+## More Information
 
-**Good (user-facing):**
+The original record documented its methodology as SPARC + MADR. Related decisions and references:
 
-- Complete Claude Flow ecosystem under one npm scope (`@sparkleideas/*`)
-- All 14 plugins installable via `npx @sparkleideas/cli plugins install`
-- Tier 1 model routing works end-to-end ($0, <1ms for simple edits)
-- Custom plugin development enabled via published Plugin SDK
-
-**Bad (user-facing):**
-
-- Users who install agentdb-onnx or embeddings add ~200MB to node_modules
-- Security module requires node-gyp for bcrypt native compilation
-- Package count increases from 24 to 42
-
-**Neutral:**
-
-- Users who do not install new packages see no change
-- Upstream `@claude-flow/*` packages remain available independently
-- The codemod handles all scope renaming automatically
-
----
-
-## References
-
-- [ADR-0014: Topological Publish Order](ADR-0014-topological-publish-order.md) -- existing 5-level publish order
-- [ADR-0021: Agent Booster Integration](ADR-0021-agent-booster-integration.md) -- Tier 1 routing details
-- [Unpublished Sources Audit](../unpublished-sources.md) -- package catalog
-- [Plugin Catalog](../plugin-catalog.md) -- plugin descriptions
+- ADR-0014 (topological publish order) defines the existing 5-level publish order that this ADR extends.
+- ADR-0021 (agent booster integration) covers the Tier 1 routing details for one of the standalone packages.
+- [Unpublished Sources Audit](../unpublished-sources.md) -- package catalog.
+- [Plugin Catalog](../plugin-catalog.md) -- plugin descriptions.

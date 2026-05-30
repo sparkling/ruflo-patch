@@ -1,14 +1,13 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-18
-closed-on: 2026-05-18
-tags: [hive-mind, consensus, archivist, runtime-activation, multi-strategy]
+tags: [hive-mind, consensus, archivist]
+supersedes: []
 depends-on: [ADR-0180, ADR-0181]
 implements: []
 ---
 
-# ADR-0184: Hive-Mind Consensus Handler Port — Multi-Strategy Fan-Out Activation
+# Hive-Mind Consensus Handler Port — Multi-Strategy Fan-Out Activation
 
 ## Context and Problem Statement
 
@@ -152,6 +151,8 @@ Per-wave commit trail (`forks/agentdb` main):
 Close-out report: [docs/council/ADR-0184-close-out-report.md](../council/ADR-0184-close-out-report.md).
 
 ## More Information
+
+Original status: accepted and completed, closed on 2026-05-18.
 
 - [ADR-0181: Archivist Runtime Activation](ADR-0181-archivist-runtime-activation.md) — the parent activation program; §Closure plan amendment Phase D is the scope this ADR inherits.
 - [ADR-0185: Hive-Mind Consensus Cli Retirement](ADR-0185-hive-mind-consensus-cli-retirement.md) — the cli-flip program spun out from this ADR's Wave 6.

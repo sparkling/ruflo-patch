@@ -1,11 +1,9 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-20
-implemented-date: 2026-05-22
 tags: [learning, controllers, fail-loud, no-fallbacks, stub-honesty, ewc, sona, audit-followup]
 supersedes: []
-depends-on: [0201]
+depends-on: [ADR-0201]
 implements: []
 ---
 
@@ -313,6 +311,8 @@ out-of-scope items (F-05-007 impl, F-05-008 naming, F-05-012 wire-up, F-05-021
 deep audit) are appropriately bounded.
 
 ## More Information
+
+This decision was completed; implemented on 2026-05-22.
 
 - **Audit source:** `docs/audits/2026-05-19-soundness-audit/05-controllers-learning.md`
   findings F-05-001 through F-05-026; README `00-README.md` HIGH H2 + H3.

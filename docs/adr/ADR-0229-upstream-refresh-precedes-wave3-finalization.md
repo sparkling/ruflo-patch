@@ -1,16 +1,13 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-23
-methodology: [MADR, retrospective, decision-narrative]
-decision-makers: [Henrik Pettersen]
 tags: [wave-3, sequencing, upstream-sync, adr-128, retrospective, no-fallbacks, misdiagnosis-correction]
-depends-on: [0095, 0186, 0228]
-related: [0088, 0143, 0162, 0187, 0203, 0204, 0207, 0208, 0209, 0210, 0211, 0212, 0213, 0214, 0215, 0216, 0217, 0218, 0219, 0220, 0221, 0222, 0223, 0224]
-audience: ai-executor
+supersedes: []
+depends-on: [ADR-0095, ADR-0186, ADR-0228]
+implements: []
 ---
 
-# ADR-0229: Upstream refresh precedes Wave 3 finalization (catch-discrimination cascade close-out)
+# Upstream refresh precedes Wave 3 finalization (catch-discrimination cascade close-out)
 
 > **Decision narrative**: a chain of work starting with `feedback-no-fallbacks`
 > driven catch-discrimination changes surfaced 9 acceptance failures, one
@@ -360,6 +357,8 @@ This ADR is closed when:
    issue. Defer to a separate ADR after ADR-0228 closes.
 
 ## Cross-references
+
+This decision was completed. Methodology: MADR, retrospective, decision-narrative. Decision-maker: Henrik Pettersen. Audience: ai-executor. It also relates to ADR-0088, ADR-0143, ADR-0162, ADR-0187, ADR-0203, ADR-0204, ADR-0207, ADR-0208, ADR-0209, ADR-0210, ADR-0211, ADR-0212, ADR-0213, ADR-0214, ADR-0215, ADR-0216, ADR-0217, ADR-0218, ADR-0219, ADR-0220, ADR-0221, ADR-0222, ADR-0223, and ADR-0224.
 
 - **ADR-0228** — the upstream sync runbook (Move B)
 - **ADR-0095 amendment 2026-05-23** — fail-loud `tryNativeInit` policy

@@ -1,12 +1,15 @@
-# ADR-0150: Generalise napi-rebuild + bundle-native-binaries to support agentic-jujutsu (and other napi packages)
+---
+status: accepted
+date: 2026-05-06
+tags: [napi, native, build, pipeline]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: Implemented
-- **Date**: 2026-05-06
-- **Deciders**: Henrik Pettersen
-- **Related**: ADR-0133 (napi-rebuild for ruvector), ADR-0071 (RuVector native binary management), ADR-0148 §"Findings — Category C" (ships agentic-jujutsu skill)
-- **Scope**: `scripts/napi-rebuild.sh`, `scripts/bundle-native-binaries.sh`, `scripts/copy-source.sh`
+# Generalise napi-rebuild + bundle-native-binaries to support agentic-jujutsu (and other napi packages)
 
-## Context
+## Context and Problem Statement
 
 The fork's pipeline has napi-binary infrastructure in two scripts:
 
@@ -28,7 +31,17 @@ Verified causes:
 
 So all three pipeline scripts conspire to leave agentic-jujutsu without a working darwin-arm64 binary.
 
-## Decision
+## Considered Options
+
+* **Generalise the napi infrastructure to support multiple packages via a config-driven approach (chosen).**
+* **Alternative A — Just exclude agentic-jujutsu from the codepath that triggers the error (rejected)** — replace the error-throwing `index.js` with a wrapper that returns "not available on this platform" gracefully. Rejected: hides the real problem, breaks the skill semantically (it shouldn't claim to work when it doesn't), and any user calling its API gets surprised.
+* **Alternative B — Patch the loader to find a fork-published binary (rejected)** — override `index.js` in our codemod to first check Verdaccio for `@sparkleideas/agentic-jujutsu-darwin-arm64`. Rejected: doesn't solve the build problem (we still need to build the binary somewhere); just shifts the resolution.
+* **Alternative C — Use a pre-built Jujutsu binary directly, skip napi-rs (rejected)** — replace the napi-rs binding with shell-out to a `jj` CLI installed via brew. Rejected: drops the Rust API surface that agentic-jujutsu provides (QuantumDAG consensus, AgentDB integration, signing). The skill's value is the Rust integration, not just `jj` access.
+* **Alternative D — File upstream issue and wait (rejected)** — ask `ruvnet/agentic-flow` to ship darwin-arm64 in the next release. Rejected: per memory `feedback-no-upstream-donate-backs.md`, fork-side fixes stay on `sparkling/ruflo`. ALSO upstream cycle is unpredictable; user wants this working now.
+
+## Decision Outcome
+
+Chosen option: "Generalise the napi infrastructure to support multiple packages via a config-driven approach", because the three pipeline scripts are each hardcoded to ruvector, and a shared config that all three iterate is the durable way to add agentic-jujutsu (and future napi packages) without re-hardcoding.
 
 Generalise the napi infrastructure to support multiple packages via a config-driven approach.
 
@@ -84,7 +97,11 @@ After release with all 4 phase changes:
 3. `npx @sparkleideas/agentic-jujutsu --version` succeeds on darwin-arm64
 4. The HM `/agentic-jujutsu` skill works end-to-end
 
-## Acceptance criteria
+### Consequences
+
+* Neutral, because cross-platform shipping is unchanged — our pipeline only builds darwin-arm64; Linux/Windows users still hit the upstream gap (out of scope for this ADR).
+
+### Confirmation
 
 - [ ] `scripts/napi-config.sh` (or `.json`) created with at least 9 entries (8 ruvector + 1 agentic-jujutsu)
 - [ ] `napi-rebuild.sh` iterates the config; produces `forks/agentic-flow/packages/agentic-jujutsu/*.darwin-arm64.node` when Rust source changes
@@ -102,30 +119,20 @@ After release with all 4 phase changes:
 3. **Cargo.toml dependencies** — agentic-jujutsu may pull in Rust crates that need build-time tooling not present in the pipeline (cmake, openssl headers, etc.). Mitigation: do a dry-run `napi build` in `/tmp/agentic-jujutsu-build-test/` before committing the pipeline change to surface this.
 4. **Quantum / cryptography native deps** — package description mentions ml-dsa, qudag, ML-DSA cryptography. These may need extra build flags. Mitigation: same as #3.
 
-## Considered alternatives
-
-### Alternative A — Just exclude agentic-jujutsu from the codepath that triggers the error
-
-Replace the error-throwing `index.js` with a wrapper that returns "not available on this platform" gracefully. Rejected: hides the real problem, breaks the skill semantically (it shouldn't claim to work when it doesn't), and any user calling its API gets surprised.
-
-### Alternative B — Patch the loader to find a fork-published binary
-
-Override `index.js` in our codemod to first check Verdaccio for `@sparkleideas/agentic-jujutsu-darwin-arm64`. Rejected: doesn't solve the build problem (we still need to build the binary somewhere); just shifts the resolution.
-
-### Alternative C — Use a pre-built Jujutsu binary directly, skip napi-rs
-
-Replace the napi-rs binding with shell-out to a `jj` CLI installed via brew. Rejected: drops the Rust API surface that agentic-jujutsu provides (QuantumDAG consensus, AgentDB integration, signing). The skill's value is the Rust integration, not just `jj` access.
-
-### Alternative D — File upstream issue and wait
-
-Ask `ruvnet/agentic-flow` to ship darwin-arm64 in the next release. Rejected: per memory `feedback-no-upstream-donate-backs.md`, fork-side fixes stay on `sparkling/ruflo`. ALSO upstream cycle is unpredictable; user wants this working now.
-
 ## Implementation log
 
 - **2026-05-18** — Config-driven generalization landed: `lib/napi-config.sh` (`NAPI_PACKAGES` + `napi_parse_entry`/`napi_unique_forks` helpers); `napi-rebuild.sh` + `bundle-native-binaries.sh` source it; `copy-source.sh` narrowed the agentic-jujutsu `*.node` exclude to non-darwin-arm64; regression test `tests/unit/adr0150-napi-config.test.mjs`. agentic-jujutsu darwin-arm64 binary ships.
 - **2026-05-21** — Extended to `@ruvector/gnn` + `@ruvector/attention`. Their darwin-arm64 `.node` already existed prebuilt in `crates/ruvector-gnn-node` / `ruvector-attention-node` and the loaders local-check correctly, but the binaries never shipped: gnn was a stale publish, and attention's `.npmignore` had a blanket `*.node` that excluded the binary entirely (→ empty `@ruvector/attention` → "Cannot find module @ruvector/attention-darwin-arm64", silent JS fallback). Fix: added both crates to `NAPI_PACKAGES` (single-binary — crate == publish dir) and narrowed attention's `.npmignore` to non-darwin-arm64 arches. Republished via release; the gnn/attention native paths now load.
 
-## References
+## More Information
+
+Original status: Implemented.
+
+This ADR relates to ADR-0133 (napi-rebuild for ruvector; the origin), ADR-0071 (RuVector native binary management), and ADR-0148 §"Findings — Category C" (parent — wires the agentic-jujutsu skill but the runtime is broken).
+
+Scope: `scripts/napi-rebuild.sh`, `scripts/bundle-native-binaries.sh`, `scripts/copy-source.sh`.
+
+References:
 
 - ADR-0133 (napi-rebuild origin)
 - ADR-0071 (RuVector native binary mgmt)

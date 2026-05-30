@@ -1,68 +1,61 @@
-# ADR-0051 Queen Ruling: The True Microkernel Boundary
+---
+status: accepted
+date: 2026-03-17
+tags: [microkernel, plugins, architecture, boundary]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-## Status
+# Queen Ruling: The True Microkernel Boundary
 
-**FINAL RULING** -- 2026-03-17
-
-## Authority
+## Context and Problem Statement
 
 This ruling resolves the debate between the 6-agent swarm analysis (which concluded upstream ADRs mandate core integrations) and the project owner's position ("we got it wrong -- these should have been plugins"). Five specialist debaters submitted position papers. The queen architect has read all primary source ADRs (004, 015, 017, 045, 048, 049, 050, 056), examined the fork codebase, and renders a binding verdict.
 
----
+This ruling resolves where the microkernel boundary truly lies: which modules belong in core and which should have been plugins.
 
-## Specialist Position Summaries
+## Considered Options
 
-### Debater 1: Plugin Purist
+The five specialist debaters submitted competing positions on the boundary:
 
-ADR-004 drew a 5-item core boundary and the project immediately violated it. The revised ADR-0051 is too conservative -- marking `cli/src/ruvector/` as "DO NOT REMOVE" contradicts ADR-004's own list, because intelligence features are not lifecycle mechanisms. These should be a `@claude-flow/intelligence` plugin. ADR-0050's defect list proves that tight coupling between core and integrations produces wiring bugs; clean plugin interfaces would prevent them. The correct extraction scope is approximately 45,000 lines, not the 28,607 in the current proposal.
+* **Debater 1: Plugin Purist** — ADR-004 drew a 5-item core boundary and the project immediately violated it. The revised ADR-0051 is too conservative -- marking `cli/src/ruvector/` as "DO NOT REMOVE" contradicts ADR-004's own list, because intelligence features are not lifecycle mechanisms. These should be a `@claude-flow/intelligence` plugin. ADR-0050's defect list proves that tight coupling between core and integrations produces wiring bugs; clean plugin interfaces would prevent them. The correct extraction scope is approximately 45,000 lines, not the 28,607 in the current proposal.
+* **Debater 2: Core Defender** — Model routing is analogous to an OS scheduler -- the CLI cannot dispatch a single task without it. `defaultEnabled` is a leaky abstraction: if a plugin must always be enabled, it is core wearing a costume. The ADR-0050 bugs were 2-line wiring fixes, not evidence of architectural failure. Concedes that HiveMind, Maestro, RuVector PostgreSQL bridge, and SONA are properly plugins. Draws the line at routing, guidance, and memory bridges, arguing these are operational necessities that belong in core.
+* **Debater 3: Pragmatist** — The principle of extraction is correct, but the scope is 50,000+ lines of churn. Plugin-based CLI command loading has never been tested in production in this codebase. Proposes a 5-rung migration ladder with deploy gates between each rung. Estimates 10-14 working days. Demands feature flags during transition so each extraction can be individually reverted. Each rung must pass `npm run deploy` 55/55 before the next one proceeds.
+* **Debater 4: User Advocate** — Users care about four things: it works, it is fast, errors are clear, and it is customizable. Plugin extraction serves all four -- ruflo-patch can ship working features enabled and broken ones disabled. Demands lazy plugin initialization (do not load HiveMind if the user only runs a memory search). Error messages when a plugin is absent must be actionable ("install X to enable Y"), not merely clean ("plugin not found"). Progressive disclosure through plugins is better product design than a monolithic binary.
+* **Debater 5: Microkernel Theorist** — ADR-004 already decided this debate. Quotes the specification verbatim: core = 5 items (agent lifecycle, task execution, memory management, basic coordination, MCP server). Applies the mechanism-vs-policy distinction from operating systems theory. "Tasks are routed to models" is mechanism and belongs in core. "Tasks are routed via Q-learning with flash attention" is policy and belongs in a plugin. ADRs 045/048/049/056 violated ADR-004 by hardwiring policy into the kernel. The plugin SDK (ADR-015) was built precisely to solve this problem but was then bypassed by every subsequent feature ADR.
 
-### Debater 2: Core Defender
+## Decision Outcome
 
-Model routing is analogous to an OS scheduler -- the CLI cannot dispatch a single task without it. `defaultEnabled` is a leaky abstraction: if a plugin must always be enabled, it is core wearing a costume. The ADR-0050 bugs were 2-line wiring fixes, not evidence of architectural failure. Concedes that HiveMind, Maestro, RuVector PostgreSQL bridge, and SONA are properly plugins. Draws the line at routing, guidance, and memory bridges, arguing these are operational necessities that belong in core.
+Chosen option: "Take ADR-004 literally — core is mechanism, everything intelligent is a defaultEnabled plugin — and extract per Debater 3's 9-rung deploy-gated migration ladder", because the mechanism-vs-policy test resolves the apparent paradox that model routing "feels essential" while belonging outside the kernel, and a deploy-gated ladder with fallback implementations addresses the Core Defender's degradation concern.
 
-### Debater 3: Pragmatist
+### Assessment of Arguments
 
-The principle of extraction is correct, but the scope is 50,000+ lines of churn. Plugin-based CLI command loading has never been tested in production in this codebase. Proposes a 5-rung migration ladder with deploy gates between each rung. Estimates 10-14 working days. Demands feature flags during transition so each extraction can be individually reverted. Each rung must pass `npm run deploy` 55/55 before the next one proceeds.
-
-### Debater 4: User Advocate
-
-Users care about four things: it works, it is fast, errors are clear, and it is customizable. Plugin extraction serves all four -- ruflo-patch can ship working features enabled and broken ones disabled. Demands lazy plugin initialization (do not load HiveMind if the user only runs a memory search). Error messages when a plugin is absent must be actionable ("install X to enable Y"), not merely clean ("plugin not found"). Progressive disclosure through plugins is better product design than a monolithic binary.
-
-### Debater 5: Microkernel Theorist
-
-ADR-004 already decided this debate. Quotes the specification verbatim: core = 5 items (agent lifecycle, task execution, memory management, basic coordination, MCP server). Applies the mechanism-vs-policy distinction from operating systems theory. "Tasks are routed to models" is mechanism and belongs in core. "Tasks are routed via Q-learning with flash attention" is policy and belongs in a plugin. ADRs 045/048/049/056 violated ADR-004 by hardwiring policy into the kernel. The plugin SDK (ADR-015) was built precisely to solve this problem but was then bypassed by every subsequent feature ADR.
-
----
-
-## Assessment of Arguments
-
-### Where the Purist (D1) and Theorist (D5) are right
+#### Where the Purist (D1) and Theorist (D5) are right
 
 D5's mechanism-vs-policy distinction is the intellectual backbone of this ruling. It resolves the apparent paradox that model routing "feels essential" while also belonging outside the kernel. The core needs a mechanism: "given a task, select a model." The core does not need a policy: "select a model using Q-learning reinforcement, AST complexity scoring, flash attention similarity, and mixture-of-experts load balancing." The mechanism is a 20-line interface. The policy is 8,385 lines of intelligence code.
 
 D1 is correct that ADR-0050's defect list -- 5 failures, 7 degraded, 9 disabled -- is evidence of architectural coupling bugs, not just wiring mistakes. When core code directly imports integration modules, every refactor in either direction can break the other. Plugin interfaces create a stable contract boundary.
 
-### Where the Core Defender (D2) is right
+#### Where the Core Defender (D2) is right
 
 D2's "scheduler analogy" is partially valid. A microkernel still needs a scheduler -- it just needs a simple one. The Linux kernel's `SCHED_OTHER` (basic time-sharing) is built in; `SCHED_DEADLINE` is a separate scheduling class. The equivalent here: a simple round-robin or capability-match router belongs in core. Q-learning and flash attention do not.
 
 D2 is also correct that `defaultEnabled` must not be a leaky abstraction. This ruling therefore imposes a hard requirement: the core must contain a complete, functional fallback implementation of every mechanism that plugins enhance. If the intelligence plugin is absent, routing still works -- it just uses round-robin. If the guidance plugin is absent, sessions still start -- they just skip governance checks. No feature flag gymnastics, no "plugin required" errors for basic operations.
 
-### Where the Pragmatist (D3) is right
+#### Where the Pragmatist (D3) is right
 
 D3's 5-rung migration ladder with deploy gates is the correct execution strategy. This ruling adopts it. No phase proceeds until the previous phase passes `npm run deploy`. The estimated 10-14 working days is realistic and accepted. Feature flags are adopted for Phases 5-7 (the newly added extractions) so each can be individually rolled back if production issues arise.
 
 D3's observation that plugin CLI command loading is untested in production is critical. Phase 1 (HiveMind + Maestro) therefore serves as the proof-of-concept for dynamic command loading. If Phase 1 reveals that the plugin command loader is unreliable, Phases 5-7 are deferred until the loader is hardened.
 
-### Where the User Advocate (D4) is right
+#### Where the User Advocate (D4) is right
 
 D4's demand for lazy initialization and actionable error messages is adopted as a hard requirement across all phases. Plugin loading must be lazy -- the `intelligence` plugin is not loaded until a routing decision is needed. Error messages must tell the user what to do, not just what failed. D4's progressive disclosure principle is the user-facing justification for the entire extraction.
 
----
+### Verdicts
 
-## Verdicts
-
-### Q1: Should guidance (ADR-045) have been a plugin?
+#### Q1: Should guidance (ADR-045) have been a plugin?
 
 **VERDICT: YES.**
 
@@ -74,7 +67,7 @@ When absent, sessions proceed without governance enforcement -- degraded but fun
 
 **Action**: Extract to `guidance` plugin. `defaultEnabled: true`. New ADR supersedes ADR-045. Feature flag `--no-guidance` available during transition.
 
-### Q2: Should auto-memory (ADR-048) and learning memory (ADR-049) have been plugins?
+#### Q2: Should auto-memory (ADR-048) and learning memory (ADR-049) have been plugins?
 
 **VERDICT: YES, with a sharp boundary.**
 
@@ -89,7 +82,7 @@ ADR-049's LearningBridge has an optional dependency on `@claude-flow/neural` wit
 
 **Action**: Extract AutoMemoryBridge, LearningBridge, MemoryGraph, AgentMemoryScope, and the intelligence loop (ADR-050) into a `memory-intelligence` plugin. `defaultEnabled: true`. Core memory interfaces (`IMemoryBackend`, `MemoryEntry`, AgentDB adapter, HNSW index) stay in `@claude-flow/memory`. New ADR supersedes ADR-048 and ADR-049.
 
-### Q3: Should agentic-flow (ADR-056) have been a plugin?
+#### Q3: Should agentic-flow (ADR-056) have been a plugin?
 
 **VERDICT: YES. This is the easiest call.**
 
@@ -99,7 +92,7 @@ D2 argues the 150x speedup from Agent Booster makes it operationally required. B
 
 **Action**: Extract `services/agentic-flow-bridge.ts` and related imports into an `agentic-flow` plugin. `defaultEnabled: true`. New ADR supersedes ADR-056.
 
-### Q4: Should the RuVector core routing modules (cli/src/ruvector/) have been plugins?
+#### Q4: Should the RuVector core routing modules (cli/src/ruvector/) have been plugins?
 
 **VERDICT: YES. This is the ruling that matters most.**
 
@@ -122,7 +115,7 @@ D2's concern about the 25+ consumers is addressed by D3's migration ladder. Phas
 
 **Action**: Define `IIntelligenceRouter` and `IAnalysisEngine` abstractions in core with round-robin/simple fallback implementations. Extract all 14 files from `cli/src/ruvector/` and all 9 files from `commands/ruvector/` into an `intelligence` plugin. `defaultEnabled: true`. Feature flag `--builtin-routing` available during transition to force the fallback router. New ADR supersedes the routing portions of ADR-017.
 
-### Q5: What is the correct microkernel boundary?
+#### Q5: What is the correct microkernel boundary?
 
 **VERDICT: ADR-004 was right. Take it literally. But add one item: plugin infrastructure itself.**
 
@@ -167,13 +160,20 @@ PLUGINS (defaultEnabled: false -- opt-in):
 
 The boundary test: **delete every defaultEnabled plugin. The CLI starts. It spawns agents. It executes tasks. It stores and retrieves memories. It serves MCP tools. It routes tasks to models (round-robin). It classifies diffs (pass-through). It just does all of these things less intelligently.** That is the microkernel contract. Intelligence is policy. Policy lives in plugins.
 
----
+### Consequences
 
-## Revised Scope for ADR-0051
+* Good, because clean plugin interfaces create a stable contract boundary that prevents the coupling bugs catalogued in ADR-0050 (5 failures, 7 degraded, 9 disabled).
+* Good, because core becomes complete and functional without any plugins (fallback router, fallback classifier), so disabling any single plugin degrades gracefully rather than crashing.
+* Good, because the ruling establishes two durable precedents: feature ADRs cannot silently override the architecture ADR, and the mechanism-vs-policy test is the tiebreaker.
+* Bad, because the extraction expands scope from 28,607 lines (current ADR-0051) to ~44,620 lines across ~55 files, 9 deploy-gated phases, estimated at 10-14 working days.
+* Bad, because plugin-based CLI command loading is untested in production in this codebase, so Rung 1 must serve as the proof-of-concept gate before Rungs 5-7 proceed.
+* Neutral, because D2 (Core Defender) dissents on Q1, Q2, and Q4 — the ruling distinguishes operational convenience from architectural necessity and relies on `defaultEnabled: true` plus fallback implementations to address the degradation concern.
+
+### Revised Scope for ADR-0051
 
 The current ADR-0051 extracts 28,607 lines across 29 files. This ruling expands the scope to approximately 45,000 lines across 55+ files, organized as D3's 5-rung migration ladder extended to 9 phases with deploy gates.
 
-### Rung 1: HiveMind + Maestro (SAFE -- unanimous agreement)
+#### Rung 1: HiveMind + Maestro (SAFE -- unanimous agreement)
 
 All five debaters agree these are plugins. ADR-004 lists them explicitly.
 
@@ -185,7 +185,7 @@ All five debaters agree these are plugins. ADR-004 lists them explicitly.
 - **2,927 lines extracted.**
 - **DEPLOY GATE: `npm run deploy` must pass 55/55.**
 
-### Rung 2: RuVector PostgreSQL bridge + provider (SAFE -- unanimous agreement)
+#### Rung 2: RuVector PostgreSQL bridge + provider (SAFE -- unanimous agreement)
 
 Already in the plugins directory. Has its own ARCHITECTURE.md describing it as a bridge.
 
@@ -195,7 +195,7 @@ Already in the plugins directory. Has its own ARCHITECTURE.md describing it as a
 - **25,248 lines extracted.**
 - **DEPLOY GATE: `npm run deploy` must pass 55/55.**
 
-### Rung 3: SONA integration (SAFE -- unanimous agreement)
+#### Rung 3: SONA integration (SAFE -- unanimous agreement)
 
 Small module, coupled to RuVector provider. Extracted alongside it.
 
@@ -203,7 +203,7 @@ Small module, coupled to RuVector provider. Extracted alongside it.
 - **432 lines extracted.**
 - **DEPLOY GATE: `npm run deploy` must pass 55/55.**
 
-### Rung 4: agentic-flow bridge (LOW RISK -- D2 dissents)
+#### Rung 4: agentic-flow bridge (LOW RISK -- D2 dissents)
 
 Already has graceful fallback. D2 argues the 150x speedup makes it operationally required. Ruling: performance is not a core requirement; correctness is. The bridge is already 90% a plugin.
 
@@ -213,7 +213,7 @@ Already has graceful fallback. D2 argues the 150x speedup makes it operationally
 - **831 lines extracted.**
 - **DEPLOY GATE: `npm run deploy` must pass 55/55.**
 
-### Rung 5: Guidance system (MODERATE RISK -- D2 dissents, D3 demands feature flag)
+#### Rung 5: Guidance system (MODERATE RISK -- D2 dissents, D3 demands feature flag)
 
 D2 argues guidance is session-critical. Ruling: sessions function without governance enforcement. D3's feature flag demand is adopted.
 
@@ -227,7 +227,7 @@ D2 argues guidance is session-critical. Ruling: sessions function without govern
 - **Dependency change (separate package stays intact; wiring changes only).**
 - **DEPLOY GATE: `npm run deploy` must pass 55/55.**
 
-### Rung 6: Memory intelligence (MODERATE RISK -- D2 dissents, D3 demands feature flag)
+#### Rung 6: Memory intelligence (MODERATE RISK -- D2 dissents, D3 demands feature flag)
 
 D2 argues memory bridges are core memory management. Ruling: IMemoryBackend and store/retrieve/search are core; bridges, graphs, and learning pipelines are policy.
 
@@ -239,7 +239,7 @@ D2 argues memory bridges are core memory management. Ruling: IMemoryBackend and 
 - **~2,100 lines extracted.**
 - **DEPLOY GATE: `npm run deploy` must pass 55/55.**
 
-### Rung 7: RuVector intelligence routing (HIGHEST RISK -- D2 strongly dissents)
+#### Rung 7: RuVector intelligence routing (HIGHEST RISK -- D2 strongly dissents)
 
 This is the most contested extraction. D2 argues it breaks 7 commands. The mitigation is threefold:
 
@@ -261,7 +261,7 @@ The extraction then becomes a package boundary change, not a functionality remov
 - **~13,082 lines extracted. ~90 lines of new abstraction/fallback code.**
 - **DEPLOY GATE: `npm run deploy` must pass 55/55.**
 
-### Rung 8: Dynamic plugin loading wiring
+#### Rung 8: Dynamic plugin loading wiring
 
 - Plugin-command-loader.ts (~50 lines)
 - Startup integration: load defaultEnabled plugins, register tools/commands
@@ -270,7 +270,7 @@ The extraction then becomes a package boundary change, not a functionality remov
 - **~100 lines of new infrastructure code.**
 - **DEPLOY GATE: `npm run deploy` must pass 55/55.**
 
-### Rung 9: Final verification
+#### Rung 9: Final verification
 
 - All MCP tool names resolve unchanged
 - Plugin-absent startup is clean and functional
@@ -281,7 +281,7 @@ The extraction then becomes a package boundary change, not a functionality remov
 - `npm run deploy` passes 55/55
 - Performance regression test: startup time with all plugins < 200ms
 
-### Revised totals
+#### Revised totals
 
 | Metric | Current ADR-0051 | This ruling |
 |--------|-----------------|-------------|
@@ -293,9 +293,7 @@ The extraction then becomes a package boundary change, not a functionality remov
 | Estimated effort (D3) | unstated | 10-14 working days |
 | Feature flags | 0 | 4 (for Phases 4-7) |
 
----
-
-## Items Reclassified from "DO NOT REMOVE" / "Out of Scope" to "EXTRACT"
+### Items Reclassified from "DO NOT REMOVE" / "Out of Scope" to "EXTRACT"
 
 | Item | Lines | Old status | New status | Rationale |
 |------|------:|-----------|-----------|-----------|
@@ -305,9 +303,7 @@ The extraction then becomes a package boundary change, not a functionality remov
 | Guidance system (ADR-045) | pkg | Out of scope (core by ADR) | EXTRACT (Rung 5) | ADR-045 violated ADR-004; governance is policy, not mechanism |
 | AutoMemoryBridge + LearningBridge + MemoryGraph + AgentMemoryScope | ~2,100 | Out of scope (core by ADR) | EXTRACT (Rung 6) | Bridges and graphs are memory policy, not memory mechanism |
 
----
-
-## Dissent Record
+### Dissent Record
 
 **D2 (Core Defender) dissents on Q1, Q2, Q4.** D2 argues that guidance, memory intelligence, and model routing are operationally inseparable from core. The ruling acknowledges the operational dependency but distinguishes operational convenience from architectural necessity. The `defaultEnabled: true` designation with fallback implementations addresses D2's concern that users must not experience degradation in the default configuration.
 
@@ -315,9 +311,7 @@ The extraction then becomes a package boundary change, not a functionality remov
 
 **D1 (Purist), D4 (User Advocate), and D5 (Theorist) support all verdicts.**
 
----
-
-## Precedent Established
+### Precedent Established
 
 This ruling establishes two precedents for future ADRs:
 
@@ -325,9 +319,9 @@ This ruling establishes two precedents for future ADRs:
 
 2. **The mechanism-vs-policy test is the tiebreaker.** When debating whether a module belongs in core or in a plugin, ask: "Is this a mechanism (what the system must do) or a policy (how the system chooses to do it)?" Mechanisms live in core. Policies live in plugins. If a policy must always be active for a good user experience, it is a `defaultEnabled: true` plugin, not a core module.
 
----
+## More Information
 
-## Ruling Authority
+This ruling carried the authority to resolve the debate between the 6-agent swarm analysis and the project owner's position. Original status: "**FINAL RULING** -- 2026-03-17".
 
 This ruling is final for the purpose of ADR-0051 scope definition. The current ADR-0051 text should be revised to incorporate Rungs 4-7. Separate superseding ADRs should be written for:
 
@@ -338,4 +332,4 @@ This ruling is final for the purpose of ADR-0051 scope definition. The current A
 
 The owner's position is upheld: **the direct integrations were architectural mistakes. The ADRs that mandated them hardwired policy into the kernel. The plugin system (ADR-004, ADR-015) was the correct answer all along. It was built, tested, and then bypassed. This ruling corrects that trajectory.**
 
-Signed: Queen Architect, 2026-03-17
+Signed: Queen Architect, 2026-03-17.

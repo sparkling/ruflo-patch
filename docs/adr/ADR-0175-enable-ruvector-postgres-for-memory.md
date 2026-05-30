@@ -1,14 +1,10 @@
 ---
 status: superseded
-completed: true
 date: 2026-05-12
-tags: [memory, ruvector-postgres, postgres, pgrx, axis-substrate, fork-freedom, embeddings, no-fallback]
+tags: [memory, postgres, embeddings]
 supersedes: []
-superseded-by: [ADR-0177]
 depends-on: [ADR-0073, ADR-0086, ADR-0166, ADR-0170, ADR-0174]
-retires-for-axis: [ADR-0073, ADR-0086]   # for memory_* only; RVF stays relevant outside this axis (e.g., graph_* persistence per ADR-0174 follow-up #2)
 implements: []
-references-upstream: [ruvnet/ruflo:PR-1569, ruvnet/ruflo:Issue-1568, ruvnet/RuVector:ADR-044, ruvnet/ruflo:ADR-027]
 ---
 
 > **Superseded by ADR-0177 (2026-05-12).** The `memory_*`-on-`ruvector-postgres` substrate change is retired in favor of staying on RVF + `@ruvector/rvf` (the pre-existing ADR-0073 substrate). ADR-0177 keeps RVF as the `memory_*` primary; ADR-0073 + ADR-0086 are reinstated and no longer "retires-for-axis" candidates.
@@ -248,6 +244,8 @@ Known-model dimension lookup table (for `ONNX_EMBEDDING_MODEL`):
 * Bad, because the "shared postgres" benefit is partial — operators running the `memory.backend = 'rvf'` mode get no benefit from the shared install they're not using.
 
 ## More Information
+
+Original status: implemented and completed, then superseded by ADR-0177 (2026-05-12). This ADR retires RVF for the `memory_*` axis only (the `completed: true` and `retires-for-axis: [ADR-0073, ADR-0086]` markers from the original frontmatter); RVF stays relevant outside this axis (e.g., graph_* persistence per ADR-0174 follow-up #2). It references upstream sources `ruvnet/ruflo:PR-1569`, `ruvnet/ruflo:Issue-1568`, `ruvnet/RuVector:ADR-044`, and `ruvnet/ruflo:ADR-027`.
 
 ### Relationship to ADR-0073 (RVF Storage Backend Upgrade)
 

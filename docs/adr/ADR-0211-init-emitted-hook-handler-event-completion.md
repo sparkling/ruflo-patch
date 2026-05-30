@@ -1,11 +1,9 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-19
-implemented-date: 2026-05-22
-tags: [init, hooks, template, manifests, swarm-reviewed]
+tags: [init, hooks, template, manifests]
 supersedes: []
-depends-on: [0201]
+depends-on: [ADR-0201]
 implements: []
 ---
 
@@ -140,6 +138,8 @@ A fresh 6-expert council re-verified ADR-0211 against fork HEAD + upstream. **Op
 * **Cosmetic:** `depends-on`→`[0201]`; the `intelligence.cjs:677-683` `+0.05/-0.02` delta is in the *runtime* full helper, not the init-emitted stub (which is a no-op accepting `feedback(success)`); `stats` is a CLI-only handler key never wired to an event (the subset test still holds).
 
 ## More Information
+
+Lifecycle dates from the original record: accepted 2026-05-19, implemented 2026-05-22. This ADR was swarm-reviewed.
 
 * ADR-0201 findings F-02-008 (init handler gaps), F-02-009 (`feedback(true)`); F-02-010 (cli-core schema drift); F-01-002 (parallel `@claude-flow/hooks` package).
 * **Cross-ADR (the dependencies Option D had, that C′ avoids):** ADR-0202 (F-13-001 daemon RVF lock + open F-13-002/F-13-009 — accepted, unimplemented), ADR-0204 (MCP server archivist-init / schema validation), ADR-0210 (the `hooks_notify` **MCP tool** stub at `hooks-tools.ts:2178/2200`), ADR-0218 (dispatch-queue producer), ADR-0207 (no socket channel). ADR-0203 governs the *server-side* `@claude-flow/hooks` package — a different layer.

@@ -1,8 +1,7 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-25
-tags: [archivist, staging-substrate, fs-json, rvf, carve-out, amendment, CT-M]
+tags: [archivist, staging-substrate, fs-json, rvf]
 supersedes: []
 depends-on: [ADR-0166, ADR-0180, ADR-0181, ADR-0202, ADR-0233, ADR-0246]
 implements: []
@@ -86,25 +85,17 @@ Per `[[feedback-no-fallbacks.md]]`, the carve-out is **not** a silent fallback: 
   
   Note: the MODULE.md footnote was authored *before* the `cc879ce` in-lock-commit fix and describes the *staged*-then-commit shape that path (a) restored for FS-JSON. The `cc879ce` commit then carved FS-JSON *back out* of that staged shape because of [[ADR-0123]] durability. The two pieces of doc are mutually consistent if read in commit order: pre-`cc879ce` the FS-JSON path had full staging; post-`cc879ce` the FS-JSON path commits in-lock and invariants run on already-committed state. The MODULE.md footnote will be amended in a separate commit to reflect the post-`cc879ce` shape; that amendment is named follow-up for this ADR.
 
-## Consequences
+### Consequences
 
-### Positive
-
-* **[[ADR-0246]]'s charter implication is now honestly documented.** The "all internal state via RVF via the Archivist with staged invariants" reading is now explicitly amended with three named carve-outs. Future audits read this ADR alongside [[ADR-0246]] and skip the re-litigation cycle.
-* **[[ADR-0202]]'s per-tick discipline is durably named.** The two unmigrated workers were tracked in [[ADR-0202]] §"Sites" but as part of a different decision (lifetime-hold breakage); this ADR re-anchors them as the explicit list of pre-[[ADR-0180]]-Phase-7 carve-outs.
-* **[[ADR-0123]]'s durability bar is durably named.** The `cc879ce` commit's inline rationale is now also corpus-resident, so a future maintainer who sees the FS-JSON-only behaviour difference in `staging-substrate.ts` does not have to spelunk git log to find the why.
-* **Phase 7 has a concrete trigger.** When [[ADR-0180]] Phase 7 ships, this ADR's C2 row closes; the migration condition is well-shaped (no ambiguity about *which* workers and *what* shape).
-
-### Negative
-
-* **Three permanent-or-deferred carve-outs make [[ADR-0246]]'s uniform reading less crisp.** The `[[ADR-0246]] F-03-002 path (a)`-reads-uniform message is now caveated; a reader who skims [[ADR-0246]] without finding this ADR may still expect uniform RVF routing for the daemon and for FS-JSON staging.
-* **C1's "permanent by design" is contestable.** A future architect could argue the Archivist *should* be its own RVF-routed consumer via a bootstrap layer. This ADR rejects that today on circularity-and-complexity grounds; the rejection is not unanimous and may be re-opened.
-* **C2's migration condition is gated on [[ADR-0180]] Phase 7, which has its own dependency stack.** The two workers may remain unmigrated for multiple release cycles. Per `[[feedback-no-fallbacks]]`, the per-tick release-discipline lint (`scripts/lint-no-daemon-lock-cache.mjs`) is the hold-the-line gate; if that lint ever softens, this carve-out turns silent.
-
-### Neutral
-
-* **No code change in this ADR.** This is a documentation-and-disposition ADR; the carve-outs already exist in the runtime. The only related fork edits are the MODULE.md footnote amendment named in §"Evidence" (separate commit), which clarifies the post-`cc879ce` shape.
-* **No INTEGRATION-LEDGER entry needed.** No upstream divergence is introduced by this ADR — all three carve-outs already exist as fork code with prior ADR coverage; this ADR only assembles them under a single named amendment.
+* Good, because **[[ADR-0246]]'s charter implication is now honestly documented.** The "all internal state via RVF via the Archivist with staged invariants" reading is now explicitly amended with three named carve-outs. Future audits read this ADR alongside [[ADR-0246]] and skip the re-litigation cycle.
+* Good, because **[[ADR-0202]]'s per-tick discipline is durably named.** The two unmigrated workers were tracked in [[ADR-0202]] §"Sites" but as part of a different decision (lifetime-hold breakage); this ADR re-anchors them as the explicit list of pre-[[ADR-0180]]-Phase-7 carve-outs.
+* Good, because **[[ADR-0123]]'s durability bar is durably named.** The `cc879ce` commit's inline rationale is now also corpus-resident, so a future maintainer who sees the FS-JSON-only behaviour difference in `staging-substrate.ts` does not have to spelunk git log to find the why.
+* Good, because **Phase 7 has a concrete trigger.** When [[ADR-0180]] Phase 7 ships, this ADR's C2 row closes; the migration condition is well-shaped (no ambiguity about *which* workers and *what* shape).
+* Bad, because **Three permanent-or-deferred carve-outs make [[ADR-0246]]'s uniform reading less crisp.** The `[[ADR-0246]] F-03-002 path (a)`-reads-uniform message is now caveated; a reader who skims [[ADR-0246]] without finding this ADR may still expect uniform RVF routing for the daemon and for FS-JSON staging.
+* Bad, because **C1's "permanent by design" is contestable.** A future architect could argue the Archivist *should* be its own RVF-routed consumer via a bootstrap layer. This ADR rejects that today on circularity-and-complexity grounds; the rejection is not unanimous and may be re-opened.
+* Bad, because **C2's migration condition is gated on [[ADR-0180]] Phase 7, which has its own dependency stack.** The two workers may remain unmigrated for multiple release cycles. Per `[[feedback-no-fallbacks]]`, the per-tick release-discipline lint (`scripts/lint-no-daemon-lock-cache.mjs`) is the hold-the-line gate; if that lint ever softens, this carve-out turns silent.
+* Neutral, because **No code change in this ADR.** This is a documentation-and-disposition ADR; the carve-outs already exist in the runtime. The only related fork edits are the MODULE.md footnote amendment named in §"Evidence" (separate commit), which clarifies the post-`cc879ce` shape.
+* Neutral, because **No INTEGRATION-LEDGER entry needed.** No upstream divergence is introduced by this ADR — all three carve-outs already exist as fork code with prior ADR coverage; this ADR only assembles them under a single named amendment.
 
 ## Confirmation
 

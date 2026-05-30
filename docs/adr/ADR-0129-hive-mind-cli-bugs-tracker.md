@@ -1,15 +1,17 @@
-# ADR-0129: Hive-mind CLI bugs surfaced during ADR-0116/0117 testing
+---
+status: accepted
+date: 2026-05-02
+tags: [hive-mind, cli, tracker, bugs]
+supersedes: []
+depends-on: [ADR-0116, ADR-0117]
+implements: []
+---
 
-- **Status**: **All 4 bugs closed (2026-05-03)** — B1/B2/B4 fixed in fork commit c277b2d81; B3 fixed earlier in 4fcd79605. Living tracker remains open for new CLI bugs.
-- **Date**: 2026-05-02
-- **Deciders**: Henrik Pettersen
-- **Depends on**: ADR-0116 (marketplace plugin packaging — testing surfaced these bugs), ADR-0117 (MCP server registration)
-- **Related**: ADR-0118 (runtime gaps tracker — orthogonal concern; these are CLI bugs, not runtime/protocol gaps)
-- **Scope**: Fork-side CLI work in `forks/ruflo/v3/@claude-flow/cli/src/commands/hive-mind.ts` and adjacent MCP-tool wiring. Per `feedback-patches-in-fork.md`, these are bugs and bugs are fixed in fork.
+# Hive-mind CLI bugs surfaced during ADR-0116/0117 testing
 
-## Context
+## Context and Problem Statement
 
-End-to-end testing of `ruflo-hive-mind` (ADR-0116) against `@sparkleideas/cli@3.5.58-patch.323` from a fresh `init --full` project surfaced four CLI-layer bugs that are **not** covered by ADR-0118's runtime tracker (T1-T10). The runtime tracker addresses advertised-but-unimplemented protocols/types (weighted/gossip/CRDT consensus, memory types + TTL, queen/worker-type behaviour, etc.). The bugs catalogued here are pure CLI bugs — dispatch routing, output formatting, argument parsing — that exist on top of an otherwise-working runtime.
+End-to-end testing of `ruflo-hive-mind` (ADR-0116) against `@sparkleideas/cli@3.5.58-patch.323` from a fresh `init --full` project surfaced four CLI-layer bugs that are **not** covered by ADR-0118's runtime tracker (T1-T10). The runtime tracker addresses advertised-but-unimplemented protocols/types (weighted/gossip/CRDT consensus, memory types + TTL, queen/worker-type behaviour, etc.). The bugs catalogued here are pure CLI bugs — dispatch routing, output formatting, argument parsing — that exist on top of an otherwise-working runtime. This living tracker indexes those four bugs (B1-B4).
 
 Reproduction environment:
 - Project: `/tmp/ruflo-newproj-test`, created via `npx @sparkleideas/cli@latest init --full`
@@ -193,8 +195,15 @@ Mixing them in ADR-0118 would conflate two different work streams with different
 - USERGUIDE re-flow / doc updates — covered by ADR-0116 plugin README annotations
 - Any non-hive-mind CLI bugs — file under their own ADR or fix directly per `feedback-patches-in-fork.md`
 
-## References
+## More Information
 
+Original status: **All 4 bugs closed (2026-05-03)** — B1/B2/B4 fixed in fork commit c277b2d81; B3 fixed earlier in 4fcd79605. Living tracker remains open for new CLI bugs.
+
+This tracker depends on ADR-0116 (marketplace plugin packaging — testing surfaced these bugs) and ADR-0117 (MCP server registration). It is related to ADR-0118 (runtime gaps tracker — orthogonal concern; these are CLI bugs, not runtime/protocol gaps).
+
+Scope: Fork-side CLI work in `forks/ruflo/v3/@claude-flow/cli/src/commands/hive-mind.ts` and adjacent MCP-tool wiring. Per `feedback-patches-in-fork.md`, these are bugs and bugs are fixed in fork.
+
+References:
 - ADR-0116 §USERGUIDE-vs-implementation verification matrix — surfaced what's runtime vs documentation
 - ADR-0116 §Acceptance criteria #11 — CLI command coverage check (does NOT verify each subcommand's `--help` output, hence B3 wasn't caught)
 - ADR-0118 — runtime gaps tracker (10 T-tasks, orthogonal)

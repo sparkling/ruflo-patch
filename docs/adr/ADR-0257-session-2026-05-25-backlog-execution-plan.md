@@ -1,8 +1,7 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-25
-tags: [session-backlog, execution-plan, swarm-orchestration, integration-ledger, ADR-129, ADR-130]
+tags: [session-backlog, execution-plan, swarm-orchestration, integration-ledger]
 supersedes: []
 depends-on: [ADR-0254, ADR-0255, ADR-0256]
 implements: []

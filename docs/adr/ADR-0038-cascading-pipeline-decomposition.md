@@ -1,22 +1,15 @@
-# ADR-0038: Cascading Pipeline Decomposition
+---
+status: accepted
+date: 2026-03-15
+tags: [pipeline, build, testing]
+supersedes: []
+depends-on: [ADR-0037]
+implements: []
+---
 
-## Status
+# Cascading Pipeline Decomposition
 
-Accepted (extends ADR-0037)
-
-## Date
-
-2026-03-15
-
-## Deciders
-
-sparkling team
-
-## Methodology
-
-SPARC + MADR
-
-## Context
+## Context and Problem Statement
 
 After ADR-0037 separated publish from test, three problems remain:
 
@@ -40,7 +33,7 @@ After ADR-0037 separated publish from test, three problems remain:
    setup. Pipeline tests (codemod, publish-order, fork-version) test CI/CD
    infrastructure, not the product, and should be separated from product unit tests.
 
-### Decision Drivers
+## Decision Drivers
 
 1. Each npm script target should be self-contained — run it and everything prior runs too
 2. Test names should reflect what they actually test (pipeline infra vs product vs acceptance)
@@ -48,9 +41,19 @@ After ADR-0037 separated publish from test, three problems remain:
 4. Large files should be decomposed into focused modules
 5. `promote.sh`, `rollback.sh`, `publish.mjs` `--dry-run` flags are kept (manual safety tools)
 
-## Decision: Specification (SPARC-S)
+## Considered Options
 
-### Cascading pipeline (11 steps)
+* **An 11-step cascading pipeline with reclassified tests and a decomposed sync-and-build.sh (chosen)**.
+
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "An 11-step cascading pipeline with reclassified tests and a decomposed sync-and-build.sh", because self-contained cascading targets let any target imply all prior validation, test names then match reality (pipeline/unit/acceptance), dead code paths are removed, and the 2,569-line monolith is decomposed into focused libraries and standalone scripts.
+
+### Specification (SPARC-S)
+
+#### Cascading pipeline (11 steps)
 
 | # | npm script | Includes | What it does |
 |---|---|---|---|
@@ -68,7 +71,7 @@ After ADR-0037 separated publish from test, three problems remain:
 
 No `npm test` target. Run the specific target you want.
 
-### Test classification
+#### Test classification
 
 **Pipeline tests** (`tests/pipeline/`, 4 files) — test CI/CD scripts with mocks:
 - codemod.test.mjs, pipeline-logic.test.mjs, publish-order.test.mjs, fork-version.test.mjs
@@ -82,7 +85,7 @@ No `npm test` target. Run the specific target you want.
 - 27+ checks (smoke, structure, diagnostics, data, packages, controller, e2e)
 - Init assertions ported from deleted init-*.test.mjs files
 
-### Removed
+#### Removed
 
 - `deploy:dry-run` npm script, `--test-only` flag from sync-and-build.sh
 - `test`, `test:all`, `build:sync`, `publish:fork` npm scripts
@@ -90,7 +93,7 @@ No `npm test` target. Run the specific target you want.
 - `init-structural.test.mjs`, `init-helpers.test.mjs`, `init-cross-mode.test.mjs`,
   `init-patch-regression.test.mjs`, `tests/fixtures/init-fixture.mjs` (ported to acceptance)
 
-## Pseudocode (SPARC-P)
+### Pseudocode (SPARC-P)
 
 Cascade chain:
 ```
@@ -117,9 +120,9 @@ Calls standalone scripts:
   scripts/copy-source.sh, scripts/build-packages.sh, scripts/deploy-finalize.sh
 ```
 
-## Architecture (SPARC-A)
+### Architecture (SPARC-A)
 
-### New standalone scripts (extracted from sync-and-build.sh)
+#### New standalone scripts (extracted from sync-and-build.sh)
 
 | Script | Lines | Source function |
 |---|---|---|
@@ -128,7 +131,7 @@ Calls standalone scripts:
 | `scripts/deploy-finalize.sh` | ~80 | post-publish finalization |
 | `scripts/run-fork-version.sh` | ~15 | thin wrapper for fork-version.mjs |
 
-### New sourced libraries
+#### New sourced libraries
 
 | Library | Lines | Contents |
 |---|---|---|
@@ -136,13 +139,13 @@ Calls standalone scripts:
 | `lib/email-notify.sh` | ~230 | fork URLs, email templates, sendmail |
 | `lib/github-issues.sh` | ~90 | failure issues, sync PRs |
 
-### sync-and-build.sh after decomposition
+#### sync-and-build.sh after decomposition
 
 ~700 lines (from 2,569 — 73% reduction). Retains CLI flags, fork config,
 merge detection, version bumping, upstream sync, and main dispatch.
 Remains for `--sync` mode and as systemd timer target.
 
-## Refinement (SPARC-R)
+### Refinement (SPARC-R)
 
 - `finalize` is standalone (no cascade) — can run independently after manual build/test
 - `deploy` chains `test:acceptance` + `finalize`
@@ -151,7 +154,20 @@ Remains for `--sync` mode and as systemd timer target.
 - Init test assertions ported to acceptance reuse the existing harness (no duplicate init)
 - `promote.sh`, `rollback.sh`, `publish.mjs` keep their `--dry-run` flags
 
-## Completion (SPARC-C)
+### Consequences
+
+#### Completion (SPARC-C)
+
+* Good, because every npm script is self-contained — run any target and everything prior runs too
+* Good, because test names match reality: pipeline (CI/CD infra), unit (mocked product), acceptance (real packages)
+* Good, because no dead code paths (--test-only, deploy:dry-run removed)
+* Good, because sync-and-build.sh reduced from 2,569 to ~700 lines
+* Good, because init test assertions deduplicated into acceptance harness
+* Bad, because more npm scripts to remember (11 vs 6)
+* Bad, because cascading chains mean running `deploy` re-runs preflight+unit even if you just ran them
+* Bad, because sync-and-build.sh still exists for --sync mode (can't fully eliminate it)
+
+### Confirmation
 
 1. `bash -n` all shell scripts
 2. `npm run test:unit` — pipeline + unit tests pass
@@ -162,18 +178,8 @@ Remains for `--sync` mode and as systemd timer target.
 7. `grep -rn 'test-only\|deploy:dry' scripts/ package.json` — no stale refs
 8. Timing: no regression vs 67s baseline
 
-## Consequences
+## More Information
 
-### Positive
+This ADR extends ADR-0037 (test suite reorganization).
 
-- Every npm script is self-contained — run any target and everything prior runs too
-- Test names match reality: pipeline (CI/CD infra), unit (mocked product), acceptance (real packages)
-- No dead code paths (--test-only, deploy:dry-run removed)
-- sync-and-build.sh reduced from 2,569 to ~700 lines
-- Init test assertions deduplicated into acceptance harness
-
-### Negative
-
-- More npm scripts to remember (11 vs 6)
-- Cascading chains mean running `deploy` re-runs preflight+unit even if you just ran them
-- sync-and-build.sh still exists for --sync mode (can't fully eliminate it)
+This record used the SPARC + MADR methodology, with section headings (Specification / Pseudocode / Architecture / Refinement / Completion) remapped to the canonical MADR sections during the ADR-0271 migration, preserving all content. The deciders were the sparkling team. Original status: "Accepted (extends ADR-0037)".

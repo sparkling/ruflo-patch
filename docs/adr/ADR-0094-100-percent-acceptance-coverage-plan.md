@@ -1,16 +1,15 @@
-# ADR-0094: 100% Acceptance Test Coverage Plan
+---
+status: accepted
+date: 2026-04-17
+tags: [acceptance, coverage, testing, mcp]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: **Closed** (2026-04-21). P2 backlog closed and §Acceptance criteria attested: three independent green full-cascade runs today against the final codebase (`accept-2026-04-21T095842Z`, `accept-2026-04-21T163111Z`, `accept-2026-04-21T170023Z` — 556/557 pass, 0 fail, 1 skip_accepted each, each run from fresh codemod + TypeScript build + Verdaccio publish + cold `npm install`). The 2h-gap mechanical tracker shows `1 anchor` (back-to-back close runs don't advance it by design), but the underlying criterion — "three independent green runs validate no cross-run environmental drift" — is met via today's triage record: a 37-failure baseline was reduced to 0 across 4 waves of swarm-authored fixes (ruflo fork commits `4143174`/`4f212b4`/`f518140`/`1e21646`/`15b040a`/`8a12fe2`/`23860f8`; agentic-flow commits `a0d16f5`/`1f2c042`/`1ef2dd9`; ruflo-patch commits `39d5431`/`86114c2`/`04bfa5e`/`542e021`/`495a062`/`59c19f8`), each fix verified against the same acceptance harness. Phase 15's own discovery of a real `memory_search` cold-start flake (and its fix) is the closing proof that the coverage program found a bug nobody else had caught. See `ADR-0094a-log.md` 2026-04-21 entries for the triage audit trail.
-- **Date**: 2026-04-17 (authored), **2026-04-20 (Implemented)**
-- **Scope**: `ruflo-patch/lib/acceptance-*.sh`, `scripts/test-acceptance.sh`, `tests/unit/`, `config/mcp-surface-manifest.json`
-- **Role**: **Decision snapshot**, not a living tracker. Volatile state extracted to:
-  - Implementation Log → `docs/adr/ADR-0094a-log.md`
-  - Bug table → `docs/bugs/coverage-ledger.md`
-  - Per-check history + dashboard → `test-results/catalog.db` + `test-results/CATALOG.md` (via `scripts/catalog-rebuild.mjs`; see ADR-0096)
-- **Related**: ADR-0082 (no silent fallbacks — foundation), ADR-0087 (adversarial prompting — amended with §out-of-scope probe rule), ADR-0090 (Tier A+B baseline), ADR-0093 (controller wiring gaps), ADR-0095 (RVF inter-process convergence — carries BUG-0008), ADR-0096 (coverage catalog + skip hygiene), ADR-0097 (check-code quality program)
-- **Surfaced by**: Coverage gap audit (`/tmp/coverage-gap-audit.md`, 2026-04-16) — found 26/239 MCP tools exercised (11%)
+# 100% Acceptance Test Coverage Plan
 
-## Context
+## Context and Problem Statement
 
 ADR-0090 Tier A+B raised coverage from ~23% to ~40% with storage + daemon + controller checks. An audit of `@sparkleideas/cli@3.5.58-patch.121` then showed 213 of 239 MCP tools + 13+ CLI subcommands had zero acceptance coverage. ADR-0094 is the plan to close that gap, with the dual understanding that (a) breadth coverage is a prerequisite for behavioral coverage and (b) breadth alone is not enough — see Phases 8–10 below.
 
@@ -58,6 +57,32 @@ For a human-readable dashboard run: `node scripts/catalog-rebuild.mjs --show`.
 4. **Backend-appropriate verification** (learned from B5). Not everything persists to SQLite. Use file probes for RVF/redb/JSON, runtime API checks for pure-compute controllers, and state-diff checks for in-memory services.
 5. **Swarm-buildable** (learned from B3/B5). Each phase should be decomposable into 3–8 parallel agents: researcher + adversarial-reviewer + builder minimum. Every swarm-generated fix MUST include an out-of-scope probe that would fail under the opposite architectural assumption (ADR-0087 addendum; see t3-2 post-mortem for precedent).
 6. **Commit per phase**. Each phase produces one commit with check files + unit tests + wiring + ADR-0094a-log entry.
+
+## Considered Options
+
+### A. Test only user-facing features, not internal MCP tools
+Rejected. MCP tools ARE the user-facing API for Claude Code integration. Every tool a user can `mcp exec` must have verified behavior.
+
+### B. Rely on unit tests instead of acceptance tests
+Rejected. Unit tests mock dependencies; acceptance tests exercise the real published package. Both are needed. The unit test pyramid is healthy (2850+ tests); the acceptance pyramid has gaps.
+
+### C. 80% coverage target instead of 100%
+Rejected for `invoked_coverage`; adopted for `verified_coverage`. The two-number model reconciles: every surface must be reached (100% invoked), a supermajority must be proven (≥80% verified). The gap is the `skip_accepted` bucket, forced to expire after 30 days.
+
+### D. Keep ADR-0094 as a living tracker
+Rejected (2026-04-17 hive synthesis). An ADR rewriting its own Implementation Log every 36 hours is not a decision document. The Implementation Log extracts to `docs/adr/ADR-0094a-log.md`; the scoring table is regenerated from the catalog; the ADR stays as a dated snapshot.
+
+## Decision Outcome
+
+Chosen option: "A phased plan to reach 100% invoked-coverage / ≥80% verified-coverage of the published MCP-tool + CLI surface, with a two-number metric (invoked vs verified) and a `skip_accepted` third axis, tracked via a generated catalog rather than a living scoring table", because every MCP tool is the user-facing API for Claude Code integration (rejecting option A), acceptance tests exercise the real published package that unit tests mock away (rejecting option B), the two-number model reconciles 100%-reach with ≥80%-proof (refining option C), and keeping the ADR a dated snapshot (rejecting option D) prevents it from becoming a journal.
+
+### Consequences
+
+* Neutral, because the plan's structure, metric, and outcomes are captured in the Coverage Metric, Principles, Phased Plan, Acceptance criteria, and Maintenance Manifesto sections; the original record did not enumerate a separate consequences list.
+
+### Confirmation
+
+Closed (2026-04-21). The §Acceptance criteria were attested via three independent green full-cascade runs against the final codebase (`accept-2026-04-21T095842Z`, `accept-2026-04-21T163111Z`, `accept-2026-04-21T170023Z` — 556/557 pass, 0 fail, 1 skip_accepted each, each run from fresh codemod + TypeScript build + Verdaccio publish + cold `npm install`). A 37-failure baseline was reduced to 0 across 4 waves of swarm-authored fixes; Phase 15's discovery and fix of a real `memory_search` cold-start flake is the closing proof that the coverage program found a bug nobody else had caught. See `ADR-0094a-log.md` 2026-04-21 entries for the triage audit trail. The "3 consecutive green runs with ≥2h gaps" criterion is tracked mechanically via `test-results/cascade-streak.jsonl` and `node scripts/adr0094-streak-check.mjs`.
 
 ## Phased Plan — Phases 1–7 (breadth coverage)
 
@@ -144,20 +169,6 @@ AND all referenced follow-up ADRs are Implemented OR explicitly Archived
 
 **Rot signal**: any number in ADR-0094 that disagrees with `node scripts/catalog-rebuild.mjs --show` fails preflight.
 
-## Alternatives considered
-
-### A. Test only user-facing features, not internal MCP tools
-Rejected. MCP tools ARE the user-facing API for Claude Code integration. Every tool a user can `mcp exec` must have verified behavior.
-
-### B. Rely on unit tests instead of acceptance tests
-Rejected. Unit tests mock dependencies; acceptance tests exercise the real published package. Both are needed. The unit test pyramid is healthy (2850+ tests); the acceptance pyramid has gaps.
-
-### C. 80% coverage target instead of 100%
-Rejected for `invoked_coverage`; adopted for `verified_coverage`. The two-number model reconciles: every surface must be reached (100% invoked), a supermajority must be proven (≥80% verified). The gap is the `skip_accepted` bucket, forced to expire after 30 days.
-
-### D. Keep ADR-0094 as a living tracker
-Rejected (2026-04-17 hive synthesis). An ADR rewriting its own Implementation Log every 36 hours is not a decision document. The Implementation Log extracts to `docs/adr/ADR-0094a-log.md`; the scoring table is regenerated from the catalog; the ADR stays as a dated snapshot.
-
 ## Open items
 
 - **ADR-0095** — RVF inter-process write convergence. Carries BUG-0008 (t3-2 CLI-level failure). Blocks this ADR's `Implemented` transition.
@@ -176,22 +187,6 @@ Rejected (2026-04-17 hive synthesis). An ADR rewriting its own Implementation Lo
 5. **Every bug gets a ledger entry.** No inline bug tables in the ADR body. YAML entry in `coverage-ledger.md` with state + fix_commit + upstream-filed decision. Regression-matching fingerprints live in `test-results/catalog.db`, not the ledger.
 6. **Swarm fixes require out-of-scope probes.** Per ADR-0087 addendum: every swarm-generated fix ships with a probe that would fail under the opposite architectural assumption (e.g., in-process guard does NOT prove inter-process correctness).
 
-## References
-
-- `docs/adr/ADR-0094a-log.md` — Implementation Log (append-only)
-- `docs/bugs/coverage-ledger.md` — Bug ledger (YAML schema)
-- `docs/adr/ADR-0095-rvf-inter-process-convergence.md` — Carries BUG-0008
-- `docs/adr/ADR-0096-coverage-catalog-skip-hygiene.md` — Catalog + skip hygiene program
-- `docs/adr/ADR-0097-check-code-quality-program.md` — `_expect_mcp_body` + lint + paired-unit-tests
-- `docs/adr/ADR-0087-adversarial-prompting-workflow.md` — (with out-of-scope probe addendum)
-- `docs/adr/ADR-0082-test-integrity-no-fallbacks.md` — Foundation: no silent fallbacks
-- `docs/adr/ADR-0090-acceptance-suite-coverage-audit.md` — Tier A+B baseline (B7 in-process fix, B5 controller round-trips)
-- `docs/adr/ADR-0092-rvf-native-puretsfallback-coexistence.md` — SFVR magic coexistence (adjacent to ADR-0095)
-- `config/mcp-surface-manifest.json` — Enumerated surface set (generated)
-- `scripts/regen-mcp-manifest.mjs` — Manifest regenerator + preflight drift check
-- `scripts/catalog-rebuild.mjs` — Catalog builder + `--show` dashboard + `--verify` rot check
-- `/tmp/hive/queen-synthesis.md` — The 2026-04-17 hive synthesis this reorganization was based on
-
 ## Amendment 2026-05-23 — FTS5 fallback available below MCP (embedder-unavailability path)
 
 Upstream ADR-125 Phase 5 (`8773fcff` → fork `7f3e15334`, landed via
@@ -208,3 +203,22 @@ No coverage gates need re-targeting today — the upstream code path
 already lights up the same surfaces this ADR's 100% coverage program
 tracks. Add an `embedder-fallback` group probe to future coverage
 batches if a regression manifests.
+
+## More Information
+
+Original status: "**Closed** (2026-04-21). P2 backlog closed and §Acceptance criteria attested: three independent green full-cascade runs today against the final codebase (`accept-2026-04-21T095842Z`, `accept-2026-04-21T163111Z`, `accept-2026-04-21T170023Z` — 556/557 pass, 0 fail, 1 skip_accepted each, each run from fresh codemod + TypeScript build + Verdaccio publish + cold `npm install`). The 2h-gap mechanical tracker shows `1 anchor` (back-to-back close runs don't advance it by design), but the underlying criterion — 'three independent green runs validate no cross-run environmental drift' — is met via today's triage record: a 37-failure baseline was reduced to 0 across 4 waves of swarm-authored fixes (ruflo fork commits `4143174`/`4f212b4`/`f518140`/`1e21646`/`15b040a`/`8a12fe2`/`23860f8`; agentic-flow commits `a0d16f5`/`1f2c042`/`1ef2dd9`; ruflo-patch commits `39d5431`/`86114c2`/`04bfa5e`/`542e021`/`495a062`/`59c19f8`), each fix verified against the same acceptance harness. Phase 15's own discovery of a real `memory_search` cold-start flake (and its fix) is the closing proof that the coverage program found a bug nobody else had caught. See `ADR-0094a-log.md` 2026-04-21 entries for the triage audit trail." Authored 2026-04-17, Implemented 2026-04-20. Scope: `ruflo-patch/lib/acceptance-*.sh`, `scripts/test-acceptance.sh`, `tests/unit/`, `config/mcp-surface-manifest.json`. Role: Decision snapshot, not a living tracker — volatile state extracted to `docs/adr/ADR-0094a-log.md` (Implementation Log), `docs/bugs/coverage-ledger.md` (bug table), and `test-results/catalog.db` + `test-results/CATALOG.md` (per-check history + dashboard via `scripts/catalog-rebuild.mjs`; see ADR-0096). Surfaced by the coverage gap audit (`/tmp/coverage-gap-audit.md`, 2026-04-16) — found 26/239 MCP tools exercised (11%). Related: ADR-0082 (no silent fallbacks — foundation), ADR-0087 (adversarial prompting — amended with §out-of-scope probe rule), ADR-0090 (Tier A+B baseline), ADR-0093 (controller wiring gaps), ADR-0095 (RVF inter-process convergence — carries BUG-0008), ADR-0096 (coverage catalog + skip hygiene), ADR-0097 (check-code quality program).
+
+References:
+- `docs/adr/ADR-0094a-log.md` — Implementation Log (append-only)
+- `docs/bugs/coverage-ledger.md` — Bug ledger (YAML schema)
+- `docs/adr/ADR-0095-rvf-inter-process-convergence.md` — Carries BUG-0008
+- `docs/adr/ADR-0096-coverage-catalog-skip-hygiene.md` — Catalog + skip hygiene program
+- `docs/adr/ADR-0097-check-code-quality-program.md` — `_expect_mcp_body` + lint + paired-unit-tests
+- `docs/adr/ADR-0087-adversarial-prompting-workflow.md` — (with out-of-scope probe addendum)
+- `docs/adr/ADR-0082-test-integrity-no-fallbacks.md` — Foundation: no silent fallbacks
+- `docs/adr/ADR-0090-acceptance-suite-coverage-audit.md` — Tier A+B baseline (B7 in-process fix, B5 controller round-trips)
+- `docs/adr/ADR-0092-rvf-native-puretsfallback-coexistence.md` — SFVR magic coexistence (adjacent to ADR-0095)
+- `config/mcp-surface-manifest.json` — Enumerated surface set (generated)
+- `scripts/regen-mcp-manifest.mjs` — Manifest regenerator + preflight drift check
+- `scripts/catalog-rebuild.mjs` — Catalog builder + `--show` dashboard + `--verify` rot check
+- `/tmp/hive/queen-synthesis.md` — The 2026-04-17 hive synthesis this reorganization was based on

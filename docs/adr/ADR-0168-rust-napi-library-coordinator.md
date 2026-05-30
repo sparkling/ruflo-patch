@@ -1,15 +1,13 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-11
-methodology: [phase2-implementation, spec-from-adr-0167]
-decision-makers: [Henrik Pettersen]
-tags: [concurrency, rust, rvf, performance, intra-process, batching, coordinator]
-related: [0095, 0154, 0163, 0164, 0165, 0167]
-audience: ai-executor
+tags: [concurrency, rust, rvf, performance]
+supersedes: []
+depends-on: []
+implements: []
 ---
 
-# ADR-0168: δ-Rust In-Process Writer-Coordinator (Phase 2)
+# δ-Rust In-Process Writer-Coordinator (Phase 2)
 
 ## Context and Problem Statement
 
@@ -101,6 +99,17 @@ The coordinator is opt-in (`coordinated: bool` flag on ingest), process-local,
 keyed on the canonical `.rvf` path, and shares one coordinator per path across
 all concurrent callers in a process. Batches accumulate until the in-flight
 commit completes; waiting callers are drained into the NEXT batch automatically.
+
+### Consequences
+
+* Good, because batching N pending in-process ingests into ONE `write_manifest` + `commit_new_root` reduces N × F_FULLFSYNC to 1 × F_FULLFSYNC — a theoretical 8× reduction at N=8 (~767ms → ~95-200ms).
+* Good, because the coordinator is a pure Rust library (no fork/exec cold-start, no IPC socket, no socket failure modes) and is opt-in/default-off, so legacy callers are completely unaffected.
+* Good, because it changes no on-disk format, no cross-process flock invariant, and no ADR-0095 d11–d14 property — it layers strictly above the correct Phase 1 write path.
+* Neutral, because it optimizes intra-process batching only; cross-process coordination remains the kernel flock's domain (ADR-0167 Phase 1), and a subprocess daemon with `.coord.sock` is deferred to a possible future ADR-0169.
+
+### Confirmation
+
+Verified by the acceptance criteria AC1–AC6 below — intra-process N=8 same-handle wall-time ≤ 200ms (`tests/adr0168_intra_process_batch.rs`), ADR-0167 cross-process N=8 still PASS ≤ 10s, 324+ existing rvf-runtime tests preserved, p95 commit latency exposed via `metrics()`, default-off legacy compatibility, and race-free concurrent `for_path` resolution (`Arc::ptr_eq`).
 
 ## API Surface
 
@@ -210,3 +219,7 @@ This ADR implements the δ-Rust recommendation from ADR-0167 Amendment
 2026-05-10b/c/d (process-coordinator-expert Wave-2 + Queen synthesis + DA
 concurrence). The DA's "ship α first, file ADR-0168 for δ" verdict is the
 explicit deferral that created this ADR's scope.
+
+## More Information
+
+Original metadata: Methodology phase2-implementation + spec-from-adr-0167; audience `ai-executor`; marked `completed: true`. This decision was recorded as related to ADR-0095, ADR-0154, ADR-0163, ADR-0164, ADR-0165, and ADR-0167.

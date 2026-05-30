@@ -1,10 +1,9 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-24
-tags: [mcp, stdio, jsonrpc, logging, pii, observability, ct-g]
+tags: [mcp, stdio, jsonrpc, logging]
 supersedes: []
-depends-on: [0201, 0226, 0233]
+depends-on: [ADR-0201, ADR-0226, ADR-0233]
 implements: []
 ---
 
@@ -116,7 +115,9 @@ decision. Both sites are behaviour-verifiable (no stdout bytes other than JSON-R
   (it's the live `agentdb mcp start` entrypoint and the only blocker is [[ADR-0213]]'s separate
   boot-crash repair).
 
-## Decision
+## Decision Outcome
+
+Chosen option: "Option A + a narrow Option B lint rider", because it fixes the stdout-corruption sites directly while adding a lint guard against recurrence.
 
 **Option A + a narrow Option B lint rider**, with the v3/mcp/ portion of site #1 contingent on
 [[ADR-0233]]'s CT-F decision (ADR-0239):

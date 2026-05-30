@@ -1,11 +1,9 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-20
-implemented-date: 2026-05-22
 tags: [config, schema-validation, fail-loud, no-fallbacks, zod, audit-followup]
 supersedes: []
-depends-on: [0201]
+depends-on: [ADR-0201]
 implements: []
 ---
 
@@ -330,6 +328,8 @@ boundary (the F-14-005/006/007/008/010/011 cluster left to their own ADRs) is
 appropriate.
 
 ## More Information
+
+This decision was completed; implemented on 2026-05-22.
 
 - **Audit source:** `docs/audits/2026-05-19-soundness-audit/14-config-soundness.md`
   findings F-14-009 (CRITICAL) + F-14-014 (HIGH per README H17 / WARNING

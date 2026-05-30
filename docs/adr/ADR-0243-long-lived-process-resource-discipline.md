@@ -1,10 +1,9 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-24
-tags: [audit-followup, leaks, long-lived-process, mcp-stdio, worker-daemon, wasm-handles, timers, signal-handlers]
+tags: [audit-followup, leaks, long-lived-process, mcp-stdio]
 supersedes: []
-depends-on: [0201, 0233]
+depends-on: [ADR-0201, ADR-0233]
 implements: []
 ---
 
@@ -231,41 +230,36 @@ The behaviour tests called out per-site above are necessary but not
 sufficient; they assert the FIX at the site, not the FREEDOM FROM
 DRIFT at the process level.
 
-## Consequences
+### Consequences
 
-### Positive
-* Eliminates the four live process-lifetime leaks (F-10-001, F-10-005,
+* Good, because it eliminates the four live process-lifetime leaks (F-10-001, F-10-005,
   F-10-007, F-10-010) on the MCP-stdio and `WorkerDaemon` paths.
-* Adopts existing, already-tested in-tree patterns (`HiveLRU`,
+* Good, because it adopts existing, already-tested in-tree patterns (`HiveLRU`,
   `installSignalHandlersOnce`, `.unref()` discipline) rather than
   inventing new abstractions — no new surface to maintain.
-* `no-unref-setinterval` lint prevents the F-10-002 class from
+* Good, because `no-unref-setinterval` lint prevents the F-10-002 class from
   recurring in NEW code, regardless of how CT-F decides the existing
   occurrence.
-* Each site ships with a behaviour test that fails BEFORE the fix is
+* Good, because each site ships with a behaviour test that fails BEFORE the fix is
   applied — matches [[ADR-0201]] §Default ("behaviour-verify at the
   seam that matters").
-
-### Negative
-* The bounded-LRU shape for `ruvllm-tools.ts` reuses but does not share
+* Bad, because the bounded-LRU shape for `ruvllm-tools.ts` reuses but does not share
   code with `HiveLRU`. If a third callsite emerges, Option B
   (`HandleRegistry` extraction) becomes the right choice — accept that
   re-factoring cost when it lands.
-* `activeTrajectories` TTL eviction adds wall-clock dependency to a
+* Bad, because `activeTrajectories` TTL eviction adds wall-clock dependency to a
   module that today has none. The TTL value (1h) is a guess pending
   real client-failure-mode data.
-* Site #2 deferral means F-10-002 stays open until CT-F (ADR-0239)
+* Bad, because site #2 deferral means F-10-002 stays open until CT-F (ADR-0239)
   lands. Risk window: until then, a CLI command that transiently
   constructs a `ConnectionPool` (e.g. through an as-yet-unidentified
   import path) hangs Node's event loop on exit. Mitigation: the lint
   catches NEW uses; the audit confirmed zero external callers of
   `v3/mcp/` today.
-
-### Neutral
-* No public API changes. All remedies are internal to the named files.
-* Env-var (`CLAUDE_FLOW_RUVLLM_CACHE_MAX`) follows the existing
+* Neutral, because no public API changes. All remedies are internal to the named files.
+* Neutral, because env-var (`CLAUDE_FLOW_RUVLLM_CACHE_MAX`) follows the existing
   `CLAUDE_FLOW_HIVE_CACHE_MAX` shape; no new config-chain wiring needed.
-* Behaviour tests live under each package's existing `__tests__/`; no
+* Neutral, because behaviour tests live under each package's existing `__tests__/`; no
   new test infrastructure.
 
 ### Dependency on CT-F (ADR-0239 placeholder)

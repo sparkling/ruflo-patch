@@ -1,8 +1,7 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-25
-tags: [upstream-sync, rvagent-wasm, plugin-bridge, ADR-129, implementation, pilot]
+tags: [rvagent-wasm, plugin-bridge, implementation, pilot]
 supersedes: []
 depends-on: [ADR-0254]
 implements: [ADR-0254]
@@ -262,28 +261,20 @@ The devil's advocate may surface these. All grounded in the analysis above.
 3. **Should fork plugins opportunistically add `rvagent` blocks to their `plugin.json` now (with helpers landed but no consumer)?** No behavioral effect today; signals intent for Phase 2. Defer to Phase 2 land.
 4. **Does the upstream smoke's 2 SKIP'd assertions need a separate follow-up ADR documenting the SKIP?** No — the SKIPs are Option A's documented scope (this ADR), not a silent gap. The smoke's output explains them inline.
 
-## Consequences
+### Consequences
 
-### Positive
+* Good, because **Phase 4 ADR-129 pilot lands** — closes the disposition trigger in ADR-0254 §"Phase 4 — pick now" with concrete code.
+* Good, because **Two helpers ready for Phase 2 wire-up** — when Phase 2's three gating questions resolve, the `includePlugins` parameter in `wasm_agent_compose` consumes these helpers verbatim; no rework required.
+* Good, because **Smoke + CI guard against helper rot** — fixture-level validation runs on every push; helpers cannot regress silently before Phase 2.
+* Good, because **Plugin authors can begin adding `rvagent` blocks opportunistically** — the helpers gracefully skip missing/malformed blocks, so a plugin that declares the field before Phase 2 lands sees no behavior change but stays forward-compat.
+* Bad, because **Helpers are unreachable from MCP callers** until Phase 2 lands. This is the Phase 2/4 coupling surfaced in §"Phase 4 ↔ Phase 2 coupling" — acceptable per Option A's framing, but a real functional gap until Phase 2 closes.
+* Bad, because **The smoke ships with 2 SKIP'd assertions** (the `wasm_agent_compose` block existence checks). Not noise — the SKIPs are documented gates — but a future reader who runs the smoke without context will see SKIPs and may file an issue. Mitigation: the smoke's exit-code is 0 with SKIPs, and the JSDoc on the helpers references this ADR.
+* Bad, because **Phase 4 verdict "lands as-is" in ADR-0254 was partially aspirational** — this ADR corrects the framing. ADR-0254 stays factually intact (it dispositioned Phase 4 as the low-risk pilot, which it is); this ADR adds the operational detail that "low-risk" means "helpers only, no `includePlugins` consumer."
+* Neutral, because **No INTEGRATION-LEDGER entry in this ADR.** Per ADR-0254 §"Neutral" row 2: *"When Phase 4 of ADR-129 actually lands, the ledger row is added then."* This ADR plans Phase 4; the ledger row gets appended in Step 4 of the implementation by the agent that lands the cherry-pick.
+* Neutral, because **No upstream divergence introduced.** Option A picks upstream's helpers verbatim; the only fork-local change is the smoke's skip-gating, which is forward-compat with upstream's full Phase 2+4 shape (the gates become PASS once Phase 2 lands).
+* Neutral, because **No code change in this ADR itself.** This is an implementation-plan ADR per the ADR-0254 hand-off; the implementation commit follows.
 
-* **Phase 4 ADR-129 pilot lands** — closes the disposition trigger in ADR-0254 §"Phase 4 — pick now" with concrete code.
-* **Two helpers ready for Phase 2 wire-up** — when Phase 2's three gating questions resolve, the `includePlugins` parameter in `wasm_agent_compose` consumes these helpers verbatim; no rework required.
-* **Smoke + CI guard against helper rot** — fixture-level validation runs on every push; helpers cannot regress silently before Phase 2.
-* **Plugin authors can begin adding `rvagent` blocks opportunistically** — the helpers gracefully skip missing/malformed blocks, so a plugin that declares the field before Phase 2 lands sees no behavior change but stays forward-compat.
-
-### Negative
-
-* **Helpers are unreachable from MCP callers** until Phase 2 lands. This is the Phase 2/4 coupling surfaced in §"Phase 4 ↔ Phase 2 coupling" — acceptable per Option A's framing, but a real functional gap until Phase 2 closes.
-* **The smoke ships with 2 SKIP'd assertions** (the `wasm_agent_compose` block existence checks). Not noise — the SKIPs are documented gates — but a future reader who runs the smoke without context will see SKIPs and may file an issue. Mitigation: the smoke's exit-code is 0 with SKIPs, and the JSDoc on the helpers references this ADR.
-* **Phase 4 verdict "lands as-is" in ADR-0254 was partially aspirational** — this ADR corrects the framing. ADR-0254 stays factually intact (it dispositioned Phase 4 as the low-risk pilot, which it is); this ADR adds the operational detail that "low-risk" means "helpers only, no `includePlugins` consumer."
-
-### Neutral
-
-* **No INTEGRATION-LEDGER entry in this ADR.** Per ADR-0254 §"Neutral" row 2: *"When Phase 4 of ADR-129 actually lands, the ledger row is added then."* This ADR plans Phase 4; the ledger row gets appended in Step 4 of the implementation by the agent that lands the cherry-pick.
-* **No upstream divergence introduced.** Option A picks upstream's helpers verbatim; the only fork-local change is the smoke's skip-gating, which is forward-compat with upstream's full Phase 2+4 shape (the gates become PASS once Phase 2 lands).
-* **No code change in this ADR itself.** This is an implementation-plan ADR per the ADR-0254 hand-off; the implementation commit follows.
-
-## Confirmation
+### Confirmation
 
 1. R-A's finding (`docs/research/2026-05-25-adr129-rvagent-upstream-trace.md`) and ADR-0254 (the parent disposition) remain in-corpus as the evidence base for this implementation plan.
 2. If Phase 4 helpers land per this ADR, the implementing commit cites ADR-0256 in its commit message: e.g., `feat(ADR-0256): ADR-129 P4 plugin-bridge helpers (Option A — helpers-only)`.

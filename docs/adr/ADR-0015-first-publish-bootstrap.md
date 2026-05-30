@@ -1,10 +1,15 @@
-# ADR-0015: First-Publish Bootstrap
+---
+status: accepted
+date: 2026-03-05
+tags: [publish, npm, bootstrap, pipeline]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-## Status
+# First-Publish Bootstrap
 
-Implemented
-
-## Context
+## Context and Problem Statement
 
 ### Specification (SPARC-S)
 
@@ -37,7 +42,16 @@ FUNCTION npmViewSucceeds(name):
   RETURN result.exitCode == 0
 ```
 
-## Decision
+## Considered Options
+
+* **Detect whether each package has ever been published; first-publish with no `--tag` (defaults to `latest`), subsequent publishes use `--tag prerelease` (chosen).**
+* **Always publish with `--tag prerelease`, then manually run `npm dist-tag add` for every package** -- Rejected. The first publish requires 26 manual `npm dist-tag add` commands (one per package) plus the `ruflo` top-level package. This is error-prone -- missing a single package means `npm install` fails for any consumer that transitively depends on it. The bootstrap detection automates this entirely.
+* **Publish with `--tag latest` explicitly on first run** -- Rejected as unnecessary. `npm publish` with no `--tag` flag defaults to `latest`. Explicitly passing `--tag latest` achieves the same result but introduces a flag that could accidentally be left in place for subsequent runs, bypassing the prerelease gate. The absence of `--tag` is the clearest signal that this is a first-publish.
+* **Use a local state file to track first-publish status** -- Rejected. A state file (`published-packages.json`) would need to be committed to the repo or stored on the build server. If the file is lost or the build runs on a different machine, it must be reconstructed. Querying npm directly (`npm view`) is stateless, authoritative, and requires no local bookkeeping.
+
+## Decision Outcome
+
+Chosen option: "Detect whether each package has ever been published; first-publish with no `--tag` (defaults to `latest`), subsequent publishes use `--tag prerelease`", because it makes the first publish "just work" for all 26 packages without manual `dist-tag add` commands, using a stateless `npm view` query rather than local bookkeeping.
 
 ### Architecture (SPARC-A)
 
@@ -99,30 +113,15 @@ The bootstrap detection runs per-package inside the publish loop. Each package i
 
 All 26 packages have a `latest` dist-tag. The bootstrap detection returns `'prerelease'` for every package. The build script behaves identically to the steady-state flow described in ADR-0010. The bootstrap logic remains in the code but is effectively a no-op.
 
-### Considered Alternatives
+### Consequences
 
-1. **Always publish with `--tag prerelease`, then manually run `npm dist-tag add` for every package** -- Rejected. The first publish requires 26 manual `npm dist-tag add` commands (one per package) plus the `ruflo` top-level package. This is error-prone -- missing a single package means `npm install` fails for any consumer that transitively depends on it. The bootstrap detection automates this entirely.
-
-2. **Publish with `--tag latest` explicitly on first run** -- Rejected as unnecessary. `npm publish` with no `--tag` flag defaults to `latest`. Explicitly passing `--tag latest` achieves the same result but introduces a flag that could accidentally be left in place for subsequent runs, bypassing the prerelease gate. The absence of `--tag` is the clearest signal that this is a first-publish.
-
-3. **Use a local state file to track first-publish status** -- Rejected. A state file (`published-packages.json`) would need to be committed to the repo or stored on the build server. If the file is lost or the build runs on a different machine, it must be reconstructed. Querying npm directly (`npm view`) is stateless, authoritative, and requires no local bookkeeping.
-
-## Consequences
-
-### Refinement (SPARC-R)
-
-**Positive:**
-
-- First publish "just works" -- no manual intervention required for 26 packages
-- Detection is stateless -- the build script queries npm directly, no local state files to maintain
-- Bootstrap logic is a single `npm view` call per package -- negligible overhead (~1 second per package, ~26 seconds total)
-- After the first cycle, the detection becomes a no-op and the normal prerelease gate takes over
-- Partial bootstrap is handled correctly -- if a previous run published 10 of 26 packages, the next run detects which 10 exist and uses prerelease for them, while first-publishing the remaining 16
-
-**Negative:**
-
-- The first publish of every package goes directly to `@latest`. There is no prerelease review step for the initial versions. This is acceptable because the first publish is a known, planned event -- not an automated reaction to upstream changes.
-- If npm is temporarily unavailable during the `npm view` check, the command may fail with a network error rather than a clean "not found" exit code. The script must distinguish between "package does not exist" (exit code 1, `E404`) and "npm is down" (network error). Only `E404` should trigger first-publish behavior.
+* Good, because the first publish "just works" -- no manual intervention required for 26 packages.
+* Good, because detection is stateless -- the build script queries npm directly, no local state files to maintain.
+* Good, because bootstrap logic is a single `npm view` call per package -- negligible overhead (~1 second per package, ~26 seconds total).
+* Good, because after the first cycle, the detection becomes a no-op and the normal prerelease gate takes over.
+* Good, because partial bootstrap is handled correctly -- if a previous run published 10 of 26 packages, the next run detects which 10 exist and uses prerelease for them, while first-publishing the remaining 16.
+* Bad, because the first publish of every package goes directly to `@latest`. There is no prerelease review step for the initial versions. This is acceptable because the first publish is a known, planned event -- not an automated reaction to upstream changes.
+* Bad, because if npm is temporarily unavailable during the `npm view` check, the command may fail with a network error rather than a clean "not found" exit code. The script must distinguish between "package does not exist" (exit code 1, `E404`) and "npm is down" (network error). Only `E404` should trigger first-publish behavior.
 
 **Trade-offs and edge cases:**
 
@@ -130,7 +129,22 @@ All 26 packages have a `latest` dist-tag. The bootstrap detection returns `'prer
 - **Scoped packages require scope access**: `npm publish` for `@sparkleideas/*` packages requires that the npm account has publish access to the `@sparkleideas` scope. This is a one-time setup step (register the scope on npmjs.com) and is not repeated per package.
 - **Race condition on first run**: If two build processes run simultaneously (unlikely with systemd timer, but possible with manual trigger), both may detect a package as "never published" and attempt first-publish. The second `npm publish` will fail with `EPUBLISHCONFLICT` (version already exists). This is a benign failure -- the package is already published by the first process. The retry logic in the publish loop handles this gracefully.
 
-### Bug Fix (2026-03-07)
+### Confirmation
+
+Completion (SPARC-C):
+
+- [x] Build script calls `npm view <package> version` before each publish to detect first-publish status
+- [x] Never-published packages use `npm publish --tag latest` (npm 11+ requires explicit --tag for prerelease versions)
+- [x] Already-published packages use `npm publish --tag prerelease` (ADR-0010 gate)
+- [x] Script distinguishes npm `E404` (package not found) from network errors
+- [x] After first full publish, `npm view @sparkleideas/cli version` returns a version
+- [ ] After first full publish, `npx @sparkleideas/cli --version` succeeds
+- [ ] After first full publish, all 24 packages have a `latest` dist-tag
+- [x] Subsequent builds use `--tag prerelease` for all packages (bootstrap detection returns prerelease)
+- [ ] Partial bootstrap scenario tested: publish 5 packages, stop, re-run -- remaining 19 get first-publish, 5 get prerelease
+- [x] Version-string sniffing override removed — first-publish uses `--tag latest` explicitly (bug fix 2026-03-07)
+
+## Bug Fix (2026-03-07)
 
 `publish.mjs` line 434 contained a version-string sniffing override:
 
@@ -151,16 +165,3 @@ instead of no tag, so `@latest` was never set.
 tag using --tag when publishing a prerelease version`). Omitting `--tag` fails. The
 correct approach is `publishArgs.push('--tag', tag ?? 'latest')` — first publish
 explicitly passes `--tag latest`, subsequent publishes pass `--tag prerelease`.
-
-### Completion (SPARC-C)
-
-- [x] Build script calls `npm view <package> version` before each publish to detect first-publish status
-- [x] Never-published packages use `npm publish --tag latest` (npm 11+ requires explicit --tag for prerelease versions)
-- [x] Already-published packages use `npm publish --tag prerelease` (ADR-0010 gate)
-- [x] Script distinguishes npm `E404` (package not found) from network errors
-- [x] After first full publish, `npm view @sparkleideas/cli version` returns a version
-- [ ] After first full publish, `npx @sparkleideas/cli --version` succeeds
-- [ ] After first full publish, all 24 packages have a `latest` dist-tag
-- [x] Subsequent builds use `--tag prerelease` for all packages (bootstrap detection returns prerelease)
-- [ ] Partial bootstrap scenario tested: publish 5 packages, stop, re-run -- remaining 19 get first-publish, 5 get prerelease
-- [x] Version-string sniffing override removed — first-publish uses `--tag latest` explicitly (bug fix 2026-03-07)

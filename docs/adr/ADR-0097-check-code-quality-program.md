@@ -1,12 +1,15 @@
-# ADR-0097: Check-Code Quality Program
+---
+status: accepted
+date: 2026-04-17
+tags: [acceptance, testing, lint, quality]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: Implemented (2026-04-21 PM) — lint script, Tier Y gate, and Tier Z ledger all shipped by the closure swarm. L1=0 / L2=0 / L5=0 / L6=0 / L7=0 after linter regex refinement + existing-file remediation. Tier Z backlog reduced 34 → 29 (5 paired unit tests added). See §"Status Update 2026-04-21" and §"Closure work 2026-04-21 PM".
-- **Date**: 2026-04-17
-- **Scope**: `lib/acceptance-harness.sh` (canonical helpers), `lib/acceptance-*-checks.sh` (190 Phase 1–7 files), `scripts/lint-acceptance-checks.mjs`, `tests/unit/acceptance-checks-*.test.mjs`
-- **Forked from**: ADR-0094 §D rows 11–12 (hive synthesis)
-- **Related**: ADR-0094 (parent), ADR-0090 B1/B3/B5 (paired-unit-test precedent), ADR-0082 (no silent fallbacks — bad regex IS a silent pass path)
+# Check-Code Quality Program
 
-## Context
+## Context and Problem Statement
 
 The ADR-0094 Phase 1–7 swarm produced 190 new acceptance checks in 27 files. Observations:
 - **Zero** of the 27 files have paired unit tests (`tests/unit/acceptance-*-checks.test.mjs`). ADR-0090 B1/B3/B5 set the precedent (every Tier-B check has a paired `.test.mjs`); Phase 1–7 broke that precedent.
@@ -17,7 +20,16 @@ The ADR-0094 Phase 1–7 swarm produced 190 new acceptance checks in 27 files. O
 
 Checks are code. Bad checks = silent fallbacks. This ADR defines the quality program.
 
-## Decision (Proposed)
+## Considered Options
+
+* **Tier X (10 now) + Tier Y (CI gate) + Tier Z (rolling)** (chosen) — proposed by E6, accepted by the hive.
+* **A. Big-bang retrofit** — pair all 190 existing checks with unit tests in one sprint. Pros: consistency; no two-tier world. Cons: opportunity cost — diverts a swarm from Phase 8–10 behavioral work where the *next* bug class lives.
+* **B. No retrofit, new checks only** — Pros: fastest path. Cons: leaves 190 checks untested; the 33% first-run failure rate repeats on every cross-cutting edit.
+* **C. Property-based testing via bash fuzz harness** — randomly permute MCP response shapes, assert invariants. Pros: catches regex brittleness that targeted tests miss. Cons: novel tooling; no precedent in the project.
+
+## Decision Outcome
+
+Chosen option: "Tier X (10 now) + Tier Y (CI gate) + Tier Z (rolling)", because the 33% first-run failure rate justifies immediate paired backfill of the 10 worst offenders plus a hard gate on new work, while a big-bang 190-test backfill would be a multi-week distraction from the behavioral work where the next bug class lives.
 
 ### Canonical harness extension
 
@@ -69,40 +81,23 @@ Driver pattern: ADR-0090 B3's `tests/unit/adr0090-b3-daemon-metrics.test.mjs` is
 
 Rationale: big-bang 190-test backfill is a 4-week distraction. The 33% first-run failure rate justifies Tier X + Y now; Tier Z piggybacks on organic touches.
 
-## Alternatives
+### Consequences
 
-### A. Big-bang retrofit
-Pair all 190 existing checks with unit tests in one sprint.
-**Pros**: consistency; no two-tier world.
-**Cons**: opportunity cost — diverts a swarm from Phase 8–10 behavioral work where the *next* bug class lives.
+* Good, because the canonical harness helpers replace 23 drifting `_<domain>_invoke_tool` variants with one well-tested helper that unwraps the MCP envelope.
+* Good, because the L1–L7 linter and Tier Y CI gate convert the quality bar from convention into hard tooling.
+* Good, because Tier X fixes the 10 worst offenders immediately while Tier Z piggybacks on organic touches, avoiding a multi-week distraction.
+* Bad, because Tier Z leaves ~180 checks on the old helpers until their domain is touched for unrelated reasons (explicit, dated debt in the ledger).
+* Neutral, because automatic retry remains banned (per ADR-0082) — flaky checks must be fixed or deferred, never masked.
 
-### B. No retrofit, new checks only
-**Pros**: fastest path.
-**Cons**: leaves 190 checks untested; the 33% first-run failure rate repeats on every cross-cutting edit.
+### Confirmation
 
-### C. Property-based testing via bash fuzz harness
-Randomly permute MCP response shapes, assert invariants.
-**Pros**: catches regex brittleness that targeted tests miss.
-**Cons**: novel tooling; no precedent in the project.
-
-## Recommendation
-
-Tier X (10 now) + Tier Y (CI gate) + Tier Z (rolling). Proposed by E6. Accepted by the hive.
-
-## Acceptance criteria
+#### Acceptance criteria
 
 1. `lib/acceptance-harness.sh` exports `_expect_mcp_body`, `_mcp_invoke_tool`, `_with_iso_cleanup`.
 2. `scripts/lint-acceptance-checks.mjs` implements L1-L7; preflight exit code reflects errors.
 3. Tier X: 10 paired-unit-test files exist in `tests/unit/` — one per targeted Phase-1–7 check.
 4. Tier Y: pre-commit / pre-push hook (or CI job) rejects new `lib/acceptance-*-checks.sh` files without a matching `tests/unit/acceptance-*-checks.test.mjs`.
 5. Tier Z tracker: a `docs/bugs/coverage-ledger.md` entry per Phase-1–7 file still on the old helpers, state `deferred` with explicit `accepted_until` dates.
-
-## References
-
-- ADR-0094 §D rows 11–12 (the synthesis this forks from)
-- ADR-0090 B3's test (`tests/unit/adr0090-b3-daemon-metrics.test.mjs`) as the paired-unit-test template
-- ADR-0082 (silent-fallbacks — bad regex IS a silent pass)
-- Queen synthesis `/tmp/hive/queen-synthesis.md` §F row 3
 
 ## Status Update 2026-04-21
 
@@ -144,3 +139,8 @@ While writing the Tier X paired tests, a real bug was identified in `lib/accepta
 
 This ADR is Implemented. The quality bar is no longer held by convention alone — the linter is a hard preflight gate, the Tier Y pre-push hook blocks new unpaired check files, and the Tier Z backlog is explicit in the ledger with dated deferrals. Tier Z reduction continues organically (29 files remaining, `accepted_until: 2026-07-01`).
 
+## More Information
+
+This ADR was forked from ADR-0094 §D rows 11–12 (hive synthesis). Original status: "Implemented (2026-04-21 PM) — lint script, Tier Y gate, and Tier Z ledger all shipped by the closure swarm. L1=0 / L2=0 / L5=0 / L6=0 / L7=0 after linter regex refinement + existing-file remediation. Tier Z backlog reduced 34 → 29 (5 paired unit tests added)." Dated 2026-04-17. Scope: `lib/acceptance-harness.sh` (canonical helpers), `lib/acceptance-*-checks.sh` (190 Phase 1–7 files), `scripts/lint-acceptance-checks.mjs`, `tests/unit/acceptance-checks-*.test.mjs`.
+
+The original record cross-referenced these related decisions: ADR-0094 (the parent and §D rows 11–12 this forks from); ADR-0090 B1/B3/B5 (the paired-unit-test precedent, with B3's `tests/unit/adr0090-b3-daemon-metrics.test.mjs` as the template); and ADR-0082 (no silent fallbacks — bad regex IS a silent pass path). The Queen synthesis `/tmp/hive/queen-synthesis.md` §F row 3 also informed this work.

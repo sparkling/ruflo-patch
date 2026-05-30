@@ -1,45 +1,15 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-27
-accepted: 2026-05-28
-implemented: 2026-05-28
-tags: [regression, rvf, mcp, daemon, memory, lock, investigation, blocker]
+tags: [regression, rvf, mcp, daemon, memory, lock]
 supersedes: []
 depends-on: [ADR-0202, ADR-0073, ADR-0227]
 implements: []
 ---
 
-> **Status note (2026-05-28)**: All three tasks complete.
-> - **Task #7 (trace)**: root cause identified — MCP server held the RVF
->   kernel flock for its lifetime because `warmUpRvfWithRetry` opened the
->   backend eagerly at startup and `_isPersistent=true` keeps `_storage`
->   cached. ([[feedback-trace-before-hypothesis]] paid off.)
-> - **Task #8 (fix)**: Option F — defer `warmUpRvfWithRetry` to first
->   `tools/call`. Three commits before finding the actual entry point
->   (see Revisions 2 + 3): `5c6d12c5f` patched `src/mcp-server.ts` (dead
->   code, reverted in `103514bcc`); `27fbb575b` + `61f453b4d` patched the
->   same file with different shape (still dead code); `39b74674a` patched
->   `bin/mcp-server.js` (also dead code from `ruflo mcp start`); finally
->   `8f4fe15de` patched `bin/cli.js` (THE actual live path —
->   bin/ruflo.mjs proxies to cli.js which handles MCP inline). Lesson
->   captured in [[feedback-trace-bin-entry-before-patching]]: the FIRST
->   read for any CLI fix is `cat <pkg>/package.json | jq .bin` + `ls
->   <pkg>/bin/`.
-> - **Task #9 (acceptance)**: `scripts/smoke-adr0267-rvf-lock.mjs` PASSes
->   in 5971ms (release `3.7.0-alpha.10-patch.362`; 713/722 / 0 failed /
->   9 skip_accepted). Smoke initially failed because it waited for a
->   `mode:mcp-stdio` ready log that cli.js never emits (that log is in
->   `bin/mcp-server.js`, the dead code I'd been patching); fixed by
->   switching to a 5s settle wait + asserting `cli memory store` returns
->   in <30s.
->
-> Workaround documented in §Confirmation (`ruflo daemon stop` before CLI
-> memory ops) is no longer needed.
-
 # RVF lock regression — CLI memory operations blocked by MCP/daemon lock holder
 
-## Context
+## Context and Problem Statement
 
 User-reported regression (2026-05-27): `npx @sparkleideas/cli memory store …` — and by extension every CLI memory operation that opens RVF — blocks indefinitely when the MCP daemon (or its RVF-bound MCP server) is running. The exclusive `flock` on the RVF backend file is held across the lifetime of the daemon process, not released per-op.
 
@@ -162,6 +132,14 @@ This ADR is `proposed`. Ratification + implementation are separate steps:
 - Task #8 produces a §Revision 1 to this ADR with the selected option + edits.
 - Task #9 produces the acceptance smoke + harness wiring.
 - ADR-0267 flips `accepted` → `completed: true` only when Task #9's smoke is green AND the regression is reproducibly fixed in `_cli_cmd memory store` paths.
+
+### Consequences
+
+* Good, because tracing before hypothesizing (per `[[feedback-trace-before-hypothesis]]`) keeps the fix mechanism open until Task #7 names the actual lock holder, avoiding the hypothesis-then-fix waste seen on ADR-0181 #100.
+* Good, because the Task #9 acceptance smoke is the canonical regression detector — any future fix attempt must flip it FAIL → PASS, so the regression cannot silently reopen.
+* Good, because the eventual Option F fix (defer `warmUpRvfWithRetry` to first `tools/call`) eliminates the held-for-lifetime flock with the smallest surface and mirrors the daemon's known-good per-op release semantics.
+* Bad, because the investigation burned five release cycles patching dead entry points (`src/mcp-server.ts`, `bin/mcp-server.js`) before discovering `bin/cli.js` is the live MCP-mode path (lesson captured in `[[feedback-trace-bin-entry-before-patching]]`).
+* Neutral, because ADR-0181 Phase 5 DA-L2's "fail loud at startup for corrupt RVF" property is deferred to the first `tools/call` — equivalent for a long-lived server, the fault still surfaces loudly, just in the first tool-call's protocol error code instead of at startup.
 
 ## Pre-flight (trace findings) — Task #7 complete (2026-05-28)
 
@@ -342,7 +320,15 @@ Captured in `[[feedback-trace-bin-entry-before-patching]]`: the very first read 
 | Fix introduces per-op latency on RVF that regresses memory_search performance | Benchmark via `node scripts/analyze-acceptance-perf.mjs` before/after; if regression >10%, revisit option choice |
 | `_check_adr0267_*` helper naming trips ADR-0082 silent-pass lint | Pre-commit: `_check_<verb>` shape per ADR-0261 §L3 (lessons-learned) |
 
-## Cross-references
+## More Information
+
+Original status: proposed 2026-05-27; accepted, implemented, and completed 2026-05-28. Status note (2026-05-28): All three tasks complete.
+
+- **Task #7 (trace)**: root cause identified — MCP server held the RVF kernel flock for its lifetime because `warmUpRvfWithRetry` opened the backend eagerly at startup and `_isPersistent=true` keeps `_storage` cached. ([[feedback-trace-before-hypothesis]] paid off.)
+- **Task #8 (fix)**: Option F — defer `warmUpRvfWithRetry` to first `tools/call`. Three commits before finding the actual entry point (see Revisions 2 + 3): `5c6d12c5f` patched `src/mcp-server.ts` (dead code, reverted in `103514bcc`); `27fbb575b` + `61f453b4d` patched the same file with different shape (still dead code); `39b74674a` patched `bin/mcp-server.js` (also dead code from `ruflo mcp start`); finally `8f4fe15de` patched `bin/cli.js` (THE actual live path — bin/ruflo.mjs proxies to cli.js which handles MCP inline). Lesson captured in [[feedback-trace-bin-entry-before-patching]]: the FIRST read for any CLI fix is `cat <pkg>/package.json | jq .bin` + `ls <pkg>/bin/`.
+- **Task #9 (acceptance)**: `scripts/smoke-adr0267-rvf-lock.mjs` PASSes in 5971ms (release `3.7.0-alpha.10-patch.362`; 713/722 / 0 failed / 9 skip_accepted). Smoke initially failed because it waited for a `mode:mcp-stdio` ready log that cli.js never emits (that log is in `bin/mcp-server.js`, the dead code I'd been patching); fixed by switching to a 5s settle wait + asserting `cli memory store` returns in <30s.
+
+The workaround documented in §Confirmation (`ruflo daemon stop` before CLI memory ops) is no longer needed.
 
 * `[[ADR-0202]]` — RVF lock infrastructure (exit-code-1 on LockHeld); this ADR investigates a regression OF the lock semantics ADR-0202 ratified
 * `[[ADR-0073]]` — RVF backend cosine-direct fix; orthogonal but in the same code surface

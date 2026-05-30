@@ -1,13 +1,15 @@
-# ADR-0130: RVF WAL fsync durability — true power-loss durability for the RVF write-ahead log
+---
+status: accepted
+date: 2026-05-02
+tags: [rvf, memory, durability, fsync]
+supersedes: []
+depends-on: [ADR-0123]
+implements: []
+---
 
-- **Status**: Implemented (2026-05-03) per ADR-0118 §Status (T11 complete)
-- **Date**: 2026-05-02
-- **Deciders**: Henrik Pettersen
-- **Depends on**: ADR-0123 (T5 RVF-backed memory backend — explicitly deferred true power-loss durability to this ADR; see ADR-0123 §Risks item 7 and §Validation `check_adr0123_sigkill_crash_durability` callout)
-- **Related**: ADR-0086 Debt 7 (better-sqlite3 / sql.js placement history — durability primitive is an RVF-internal concern, not a SQL pragma question), ADR-0118 review-notes-triage row H3 (the triage row that escalated this), ADR-0095 d11 (existing tmp-file fsync-before-rename pattern in RVF persist path — model for the WAL-append fsync introduced here)
-- **Scope**: Fork-side change to `forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts` WAL append path. Per `feedback-no-upstream-donate-backs.md`, this stays on `sparkling/main`.
+# RVF WAL fsync durability — true power-loss durability for the RVF write-ahead log
 
-## Context
+## Context and Problem Statement
 
 ADR-0123 (T5) chose **SIGKILL-without-power-loss** as its durability gate. The triage trail is explicit:
 
@@ -36,50 +38,6 @@ The `feedback-data-loss-zero-tolerance.md` memory rule is explicit: 99%, 99.9%, 
 - **(c) Opt-in fsync via env var (e.g. `RUFLO_RVF_WAL_FSYNC=1`)** — default off (today's behaviour), operators opt in for power-loss durability.
 - **(d) Defer further until a real durability incident surfaces** — accept the SIGKILL-without-power-loss gate as sufficient until empirical evidence shows the gap matters in practice.
 
-## Pros and Cons of the Options
-
-### (a) fsync after every appendFile call
-
-- Pros:
-  - 100% durability under power loss for any acked `store` call — the durability bar `feedback-data-loss-zero-tolerance` codifies.
-  - Mirrors ADR-0095 d11's existing tmp-file fsync-before-rename pattern; the change is shape-consistent with what RVF already does for the main `.rvf` file.
-  - Single touch site; no batching state machine; no env-var branch to maintain; no operator-facing tuning surface to document.
-  - Failure of `fsync` surfaces via thrown error — `feedback-no-fallbacks` is satisfied by default if the syscall is `await`ed, not wrapped in `try/catch`.
-- Cons:
-  - Real per-write latency cost. On commodity SSDs typically <1ms, but the cost compounds: a hot writer doing 1000 stores/sec adds 1000 fsyncs/sec. On rotational disks or cloud volumes with fsync throttling (some EBS gp2/gp3 profiles, container-level fsync throttling) the cost can be 10ms+ per call.
-  - On macOS, `fsync` does not provide true durability through the disk write cache — only `fcntl(F_FULLFSYNC)` does. Node's `fs.fsync` maps to `fsync(2)`, not `F_FULLFSYNC`. So the option-(a) guarantee is "Linux: durable through power loss; macOS: durable through process-kill and OS-crash, but not necessarily through power loss with disk cache enabled". Honest framing requires documenting this rather than claiming uniform 100% across platforms.
-  - The latency cost is unconditional — operators with no power-loss exposure (e.g. local development on UPS-backed workstations) pay it without benefit.
-
-### (b) Periodic batched fsync (every N writes or T ms)
-
-- Pros:
-  - Per-write latency cost amortised. A timer-driven fsync every 100ms means at most 100ms of writes lost on power loss, with negligible per-write overhead.
-  - Operator-tunable N and T expose the durability/throughput trade-off explicitly.
-- Cons:
-  - **Violates `feedback-data-loss-zero-tolerance`** — by construction, up to N writes or T ms of writes are lost on power loss. Reframing "100ms of loss" as acceptable is exactly the rate-of-loss reframing the rule forbids. Acked stores within the unfsynced window are advertised durable but are not.
-  - State machine complexity: timer + counter + lock interaction with the existing JS lock at `appendToWal`; a fsync timer firing during `store` must coordinate with the in-flight WAL append.
-  - Failure mode is subtle: an operator sees `store` resolve, infers durability, then loses N entries on power loss. The bug surface is exactly the silent-loss pattern the project memory codifies as not shippable.
-
-### (c) Opt-in fsync via env var
-
-- Pros:
-  - Zero behaviour change by default — no perf regression for existing operators.
-  - Operators with power-loss exposure can opt in.
-- Cons:
-  - **Default-off violates `feedback-data-loss-zero-tolerance` for the unopted population** — the rule does not have an opt-in clause; either the implementation is durable or it is not. Shipping a default-off durability primitive is "99.x% durable on average" framing in disguise.
-  - Two code paths to test (env on, env off); two acceptance gates to maintain.
-  - Adds a tuning surface (`RUFLO_RVF_WAL_FSYNC`) where the project memory rule says there should be no surface — the answer is just "yes, durable".
-
-### (d) Defer until incident
-
-- Pros:
-  - Zero work today. Zero perf cost. ADR-0123's SIGKILL gate is sufficient for the typical operator profile (developer workstation, CI runner, server with battery-backed RAID).
-  - Avoids speculative implementation against a low-probability scenario for the current operator base.
-- Cons:
-  - **Memory rule `feedback-data-loss-zero-tolerance` is not gated on incident frequency.** The rule says 99.x is not shippable; "we haven't seen the loss yet" is not a satisfaction argument.
-  - Defers the architectural decision indefinitely. The longer the gap remains, the more callers depend on the implicit guarantee that `await rvf.store(...)` is durable, which today it is not under power loss.
-  - The H3 review-notes triage already escalated this to a separate ADR (this one). Defer-until-incident is a third escalation back to "do nothing" — not a substantive option.
-
 ## Decision Outcome
 
 **Preliminary recommendation pending Henrik review: option (a) — fsync after every `appendFile` call in `appendToWal`.** Trace to drivers:
@@ -101,31 +59,77 @@ This ADR is a **placeholder design**: the recommendation is option (a), the stru
 
 Options (b) bare, (c), and (d) each fail the `feedback-data-loss-zero-tolerance` gate at the framing layer and are rejected.
 
-## Consequences
+The intended Decision once acked: *"Add an `await fdatasync(walFd)` (preferred) or `await fsync(walFd)` call at the end of `appendToWal` in `forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts` (within the WAL append region currently at lines 488-491), before the JS lock is released. The fsync is awaited inside the lock so a concurrent `compactWal` cannot observe an un-fsynced WAL state. Failure of the fsync syscall throws and propagates out of `store`. macOS uses Node's `fs.promises.fsync` (which maps to `fsync(2)`, not `F_FULLFSYNC`); the platform-specific durability bound is documented in the function's JSDoc and in the operator-facing durability guarantees section of the memory package README."* Final wording is held until Henrik acks the three pending items above.
 
-### Positive
+### Consequences
 
-- True power-loss durability for any acked `store` call on Linux. macOS bound documented (process-kill + OS-crash durable; power-loss durable iff disk write cache disabled or filesystem-level F_FULLFSYNC equivalent in effect).
-- ADR-0123's SIGKILL gate becomes a strict subset of this ADR's gate; no regression.
-- Single touch site; the diff is small and reviewable.
-- Failure mode is loud — fsync syscall errors throw, not silently degrade. `feedback-no-fallbacks` satisfied.
-- Closes the explicit ADR-0123 carve-out — H3 row in the review-notes triage moves to resolved.
-
-### Negative
-
-- Per-`store` latency cost. Concrete bound depends on the host:
+* Good, because of true power-loss durability for any acked `store` call on Linux. macOS bound documented (process-kill + OS-crash durable; power-loss durable iff disk write cache disabled or filesystem-level F_FULLFSYNC equivalent in effect).
+* Good, because ADR-0123's SIGKILL gate becomes a strict subset of this ADR's gate; no regression.
+* Good, because of a single touch site; the diff is small and reviewable.
+* Good, because the failure mode is loud — fsync syscall errors throw, not silently degrade. `feedback-no-fallbacks` satisfied.
+* Good, because it closes the explicit ADR-0123 carve-out — H3 row in the review-notes triage moves to resolved.
+* Bad, because of per-`store` latency cost. Concrete bound depends on the host:
   - Commodity NVMe SSD on Linux: typically 100µs–1ms per fsync.
   - SATA SSD on Linux: typically 1–5ms per fsync.
   - Rotational disk or fsync-throttled cloud volume: 10ms+ per fsync.
   - macOS APFS: fsync is fast (sub-ms) but not durable through disk write cache; F_FULLFSYNC is 10ms+.
-- A hot writer profile (1000+ stores/sec) sees throughput cap shift from CPU-bound to IO-bound. The acceptance gate must benchmark this; if the cost exceeds a documented threshold (TBD by Henrik), option (b) re-cast is the fallback path.
-- macOS power-loss durability is not delivered without an FFI binding for `F_FULLFSYNC`. This ADR ships honest documentation of that gap rather than a misleading uniform claim.
-- Adds one syscall per WAL append; observability needs a counter (fsync count, fsync latency p50/p99) so the cost is measurable in the eviction-rate-style metrics ADR-0123 introduced.
+* Bad, because a hot writer profile (1000+ stores/sec) sees throughput cap shift from CPU-bound to IO-bound. The acceptance gate must benchmark this; if the cost exceeds a documented threshold (TBD by Henrik), option (b) re-cast is the fallback path.
+* Bad, because macOS power-loss durability is not delivered without an FFI binding for `F_FULLFSYNC`. This ADR ships honest documentation of that gap rather than a misleading uniform claim.
+* Bad, because it adds one syscall per WAL append; observability needs a counter (fsync count, fsync latency p50/p99) so the cost is measurable in the eviction-rate-style metrics ADR-0123 introduced.
+* Neutral, because of no CLI-side change; no hive-mind-tools change; no marketplace plugin matrix row affected. The change is RVF-internal.
+* Neutral, because the ADR-0086 Debt 7 invariant is unaffected (no new SQLite or sql.js binding); `fs.promises.fsync` is stdlib.
 
-### Neutral
+### Confirmation
 
-- No CLI-side change; no hive-mind-tools change; no marketplace plugin matrix row affected. The change is RVF-internal.
-- ADR-0086 Debt 7 invariant is unaffected (no new SQLite or sql.js binding); `fs.promises.fsync` is stdlib.
+- **Acceptance — `check_adr0129_wal_fsync_power_loss_durability`** in `lib/acceptance-adr0129-rvf-fsync-checks.sh` (proposed location): drive a writer through a FUSE filesystem (or LD_PRELOAD `eatmydata`-style shim) that drops un-fsynced writes at a synthetic "power loss" event; assert that every entry whose `store` call resolved before the event is readable after the event. **100% — any data loss fails the check**, per `feedback-data-loss-zero-tolerance`. Wired into `scripts/test-acceptance.sh` sequentially after the parallel wave joins (FUSE mount + harness setup is heavy; cannot race other parallel checks).
+- **Integration — `tests/unit/adr0129-rvf-wal-fsync.test.mjs`**: stub `fs.promises.fsync` to record call sites; assert that every `appendToWal` call results in exactly one `fsync` of the WAL file descriptor before the JS lock is released. Defensive against future regressions where `fsync` gets dropped or moved out of the lock region.
+- **Integration — same file**: stub `fs.promises.fsync` to throw `EIO`; assert that the originating `store` call throws the same error (no swallow, no fallback).
+- **Performance — `tests/perf/adr0129-fsync-overhead.bench.mjs`** (or wired into existing perf harness): benchmark `store` throughput with and without the fsync call; report p50/p99 latency delta. If the delta exceeds the threshold Henrik defines (TBD on review), the result triggers the option (b) re-cast fallback path.
+- **ADR-0123 acceptance** (existing): `check_adr0123_sigkill_crash_durability` continues to pass — this ADR's change is strictly stronger, no regression.
+
+## Pros and Cons of the Options
+
+### (a) fsync after every appendFile call
+
+- Good, because of:
+  - 100% durability under power loss for any acked `store` call — the durability bar `feedback-data-loss-zero-tolerance` codifies.
+  - Mirrors ADR-0095 d11's existing tmp-file fsync-before-rename pattern; the change is shape-consistent with what RVF already does for the main `.rvf` file.
+  - Single touch site; no batching state machine; no env-var branch to maintain; no operator-facing tuning surface to document.
+  - Failure of `fsync` surfaces via thrown error — `feedback-no-fallbacks` is satisfied by default if the syscall is `await`ed, not wrapped in `try/catch`.
+- Bad, because of:
+  - Real per-write latency cost. On commodity SSDs typically <1ms, but the cost compounds: a hot writer doing 1000 stores/sec adds 1000 fsyncs/sec. On rotational disks or cloud volumes with fsync throttling (some EBS gp2/gp3 profiles, container-level fsync throttling) the cost can be 10ms+ per call.
+  - On macOS, `fsync` does not provide true durability through the disk write cache — only `fcntl(F_FULLFSYNC)` does. Node's `fs.fsync` maps to `fsync(2)`, not `F_FULLFSYNC`. So the option-(a) guarantee is "Linux: durable through power loss; macOS: durable through process-kill and OS-crash, but not necessarily through power loss with disk cache enabled". Honest framing requires documenting this rather than claiming uniform 100% across platforms.
+  - The latency cost is unconditional — operators with no power-loss exposure (e.g. local development on UPS-backed workstations) pay it without benefit.
+
+### (b) Periodic batched fsync (every N writes or T ms)
+
+- Good, because of:
+  - Per-write latency cost amortised. A timer-driven fsync every 100ms means at most 100ms of writes lost on power loss, with negligible per-write overhead.
+  - Operator-tunable N and T expose the durability/throughput trade-off explicitly.
+- Bad, because of:
+  - **Violates `feedback-data-loss-zero-tolerance`** — by construction, up to N writes or T ms of writes are lost on power loss. Reframing "100ms of loss" as acceptable is exactly the rate-of-loss reframing the rule forbids. Acked stores within the unfsynced window are advertised durable but are not.
+  - State machine complexity: timer + counter + lock interaction with the existing JS lock at `appendToWal`; a fsync timer firing during `store` must coordinate with the in-flight WAL append.
+  - Failure mode is subtle: an operator sees `store` resolve, infers durability, then loses N entries on power loss. The bug surface is exactly the silent-loss pattern the project memory codifies as not shippable.
+
+### (c) Opt-in fsync via env var
+
+- Good, because of:
+  - Zero behaviour change by default — no perf regression for existing operators.
+  - Operators with power-loss exposure can opt in.
+- Bad, because of:
+  - **Default-off violates `feedback-data-loss-zero-tolerance` for the unopted population** — the rule does not have an opt-in clause; either the implementation is durable or it is not. Shipping a default-off durability primitive is "99.x% durable on average" framing in disguise.
+  - Two code paths to test (env on, env off); two acceptance gates to maintain.
+  - Adds a tuning surface (`RUFLO_RVF_WAL_FSYNC`) where the project memory rule says there should be no surface — the answer is just "yes, durable".
+
+### (d) Defer until incident
+
+- Good, because of:
+  - Zero work today. Zero perf cost. ADR-0123's SIGKILL gate is sufficient for the typical operator profile (developer workstation, CI runner, server with battery-backed RAID).
+  - Avoids speculative implementation against a low-probability scenario for the current operator base.
+- Bad, because of:
+  - **Memory rule `feedback-data-loss-zero-tolerance` is not gated on incident frequency.** The rule says 99.x is not shippable; "we haven't seen the loss yet" is not a satisfaction argument.
+  - Defers the architectural decision indefinitely. The longer the gap remains, the more callers depend on the implicit guarantee that `await rvf.store(...)` is durable, which today it is not under power loss.
+  - The H3 review-notes triage already escalated this to a separate ADR (this one). Defer-until-incident is a third escalation back to "do nothing" — not a substantive option.
 
 ## Validation
 
@@ -134,14 +138,6 @@ Options (b) bare, (c), and (d) each fail the `feedback-data-loss-zero-tolerance`
 - **Integration — same file**: stub `fs.promises.fsync` to throw `EIO`; assert that the originating `store` call throws the same error (no swallow, no fallback).
 - **Performance — `tests/perf/adr0129-fsync-overhead.bench.mjs`** (or wired into existing perf harness): benchmark `store` throughput with and without the fsync call; report p50/p99 latency delta. If the delta exceeds the threshold Henrik defines (TBD on review), the result triggers the option (b) re-cast fallback path.
 - **ADR-0123 acceptance** (existing): `check_adr0123_sigkill_crash_durability` continues to pass — this ADR's change is strictly stronger, no regression.
-
-## Decision
-
-**Placeholder (pending Henrik review).** The intended Decision section once acked:
-
-*"Add an `await fdatasync(walFd)` (preferred) or `await fsync(walFd)` call at the end of `appendToWal` in `forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts` (within the WAL append region currently at lines 488-491), before the JS lock is released. The fsync is awaited inside the lock so a concurrent `compactWal` cannot observe an un-fsynced WAL state. Failure of the fsync syscall throws and propagates out of `store`. macOS uses Node's `fs.promises.fsync` (which maps to `fsync(2)`, not `F_FULLFSYNC`); the platform-specific durability bound is documented in the function's JSDoc and in the operator-facing durability guarantees section of the memory package README."*
-
-Final wording is held until Henrik acks the three pending items in §Decision Outcome.
 
 ## Implementation plan
 
@@ -276,8 +272,15 @@ The H3 row in `ADR-0118b-review-notes-triage.md` is also updated by that same se
 6. **Decision is placeholder, not final.** Henrik has not yet acked the three pending items in §Decision Outcome. Implementation of this ADR is gated on that ack. Until then, this ADR is design-only; no code changes against `rvf-backend.ts` are merged from it.
 7. **ADR-0086 Debt 7 invariant.** The `fs.promises.fsync` / `fdatasync` path is stdlib — no native binding, no co-import risk. If macOS `F_FULLFSYNC` becomes in scope, the FFI binding required is a single-purpose native module that imports neither better-sqlite3 nor sql.js; the invariant is preserved. Mitigation: invariant-check (`grep -l "from 'better-sqlite3'" dist/` ∩ `grep -l "from 'sql.js'" dist/` = ∅) runs as precondition to merge.
 
-## References
+## More Information
 
+Original status: Implemented (2026-05-03) per ADR-0118 §Status (T11 complete).
+
+This ADR depends on ADR-0123 (T5 RVF-backed memory backend — explicitly deferred true power-loss durability to this ADR; see ADR-0123 §Risks item 7 and §Validation `check_adr0123_sigkill_crash_durability` callout). It is related to ADR-0086 Debt 7 (better-sqlite3 / sql.js placement history — durability primitive is an RVF-internal concern, not a SQL pragma question), ADR-0118 review-notes-triage row H3 (the triage row that escalated this), and ADR-0095 d11 (existing tmp-file fsync-before-rename pattern in RVF persist path — model for the WAL-append fsync introduced here).
+
+Scope: Fork-side change to `forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts` WAL append path. Per `feedback-no-upstream-donate-backs.md`, this stays on `sparkling/main`.
+
+References:
 - ADR-0123 — T5 RVF-backed memory backend; explicitly defers true power-loss durability to this ADR (§Risks item 7, §Validation `check_adr0123_sigkill_crash_durability` callout)
 - ADR-0118 review-notes-triage row H3 — escalation row that named this ADR as the owner of the fsync gap
 - ADR-0095 d11 — RVF tmp-file fsync-before-rename pattern; model for the WAL-append fsync introduced here

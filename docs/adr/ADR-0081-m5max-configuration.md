@@ -1,12 +1,15 @@
-# ADR-0081: M5 Max Configuration Profile
+---
+status: accepted
+date: 2026-04-12
+tags: [sona, configuration, hardware, neural]
+supersedes: []
+depends-on: [ADR-0080]
+implements: []
+---
 
-- **Status**: Implemented
-- **Date**: 2026-04-12
-- **Deciders**: Henrik Pettersen
-- **Methodology**: Hive deliberation (Queen + 4 experts + Devil's Advocate)
-- **Depends on**: ADR-0080 (Storage Consolidation)
+# M5 Max Configuration Profile
 
-## Context
+## Context and Problem Statement
 
 A 5-agent hive council analysed the SONA learning system and all storage/embedding
 settings to determine optimal values for the development machine:
@@ -51,7 +54,15 @@ Only two functions actually run (no neural gate):
 - `decayConfidences()` — reduces pattern confidence over time (SQLite metadata)
 - `onInsightAccessed()` — boosts confidence on access (SQLite metadata)
 
-## Decision
+## Considered Options
+
+* **Record an M5 Max configuration profile: tune the live confidence-lifecycle values now, document neural-mode values (`research`) for future activation, and permanently rule out the invalid `adaptive` mode (chosen).**
+
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "Record an M5 Max configuration profile that tunes the live confidence-lifecycle values now and documents neural-mode values for future activation", because the devil's advocate established that the neural system is provably not running (always `null`), so only the confidence-lifecycle values matter today, while the `research`-mode values are documented for when `@claude-flow/neural` is enabled.
 
 ### Part A: Values That Matter Now (confidence lifecycle)
 
@@ -96,6 +107,18 @@ The `SONAMode` type union defines: `real-time`, `balanced`, `research`, `edge`, 
 `adaptive` is **not a valid mode** — it was aspirational and never implemented.
 All references to `sonaMode: 'adaptive'` were corrected to `'balanced'` in ADR-0080.
 
+### Consequences
+
+* Good, because Part A values are live and confirmed working via SQLite.
+* Good, because Part B values are documented for future activation.
+* Neutral, because no code changes are needed — this ADR records the analysis and decision.
+* Good, because the M5 Max has sufficient resources for any SONA mode including `research`.
+* Good, because `adaptive` mode is permanently ruled out (invalid, never implemented).
+
+### Confirmation
+
+Part A confidence-lifecycle values are confirmed live via SQLite operations (`decayConfidences()` and `onInsightAccessed()` run with no neural gate) and are aligned across `learning-bridge.ts` DEFAULT_CONFIG, `config-template.ts`, and `settings-generator.ts`. Part B activation is gated on the Prerequisites checklist below, including a pattern-learning test (store 50+ entries, consolidate, verify patterns learned).
+
 ## Hive Council Positions
 
 ### Modes Expert
@@ -132,10 +155,6 @@ is deferred until neural is enabled. When it is, use `research` on M5 Max.
 4. Verify the neural system initialises without errors
 5. Run a pattern learning test: store 50+ entries, consolidate, verify patterns learned
 
-## Consequences
+## More Information
 
-- Part A values are live and confirmed working via SQLite
-- Part B values are documented for future activation
-- No code changes needed — this ADR records the analysis and decision
-- The M5 Max has sufficient resources for any SONA mode including `research`
-- `adaptive` mode is permanently ruled out (invalid, never implemented)
+Original status: "Implemented", with a recorded Date of 2026-04-12. The methodology recorded was a hive deliberation (Queen + 4 experts + Devil's Advocate). This profile depends on ADR-0080 (Storage Consolidation).

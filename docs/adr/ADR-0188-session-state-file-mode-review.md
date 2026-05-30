@@ -1,16 +1,13 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-18
-implemented: 2026-05-18
-methodology: [MADR]
-decision-makers: [Henrik Pettersen]
 tags: [security, file-permissions, session-state]
-related: [0082, 0162, 0186]
-audience: ai-executor
+supersedes: []
+depends-on: [ADR-0082]
+implements: []
 ---
 
-# ADR-0188: Session-state file mode — should ~15 raw `writeFileSync` callsites adopt 0600?
+# Session-state file mode — should ~15 raw `writeFileSync` callsites adopt 0600?
 
 ## Context and Problem Statement
 
@@ -122,29 +119,16 @@ was chosen instead: commit `5228ffc445` was reverted via
 helpers-generator gap dissolves under Option 2 because there is
 nothing to convert there either.
 
-## Consequences
+### Consequences
 
-**If Option 1 (convert all)**:
-* Single PR, ~15 callsite edits + 3 file imports.
-* Lower regression risk than expected: `writeFileRestricted` already
-  preserves the existing call signatures.
-* All session-state writes uniformly at 0600 — defense-in-depth
-  consistent with credential vault writes.
-
-**If Option 2 (keep 0644)**:
-* No code change; one-paragraph doc note in `fs-secure.ts` explaining
-  why session JSON is NOT a `writeFileRestricted` consumer.
-* Risk: future security audit re-encounters the same finding without
-  the rationale captured in code.
-
-**If Option 3 (partial conversion)**:
-* Compromise position; introduces a soft boundary between "session
-  state" callsites that need 0600 and ones that don't. The boundary
-  has to be re-justified every time someone adds a new write site.
-
-**If Option 4 (lint rule)**:
-* Future-proofs without fixing the existing surface.
-* Adds a tooling dependency (eslint plugin or custom rule); maintenance
-  cost.
+* Good, because under the chosen Option 2 (keep 0644) there is no code change beyond a one-paragraph doc note in `fs-secure.ts` explaining why session JSON is NOT a `writeFileRestricted` consumer.
+* Bad, because under Option 2 a future security audit may re-encounter the same finding without the rationale captured in code (mitigated by the doc note).
+* Neutral, because had Option 1 (convert all) been chosen it would be a single PR of ~15 callsite edits + 3 file imports, with lower regression risk than expected (`writeFileRestricted` already preserves the existing call signatures) and all session-state writes uniformly at 0600 — defense-in-depth consistent with credential vault writes.
+* Neutral, because Option 3 (partial conversion) was a compromise position introducing a soft boundary between "session state" callsites that need 0600 and ones that don't — a boundary that has to be re-justified every time someone adds a new write site.
+* Neutral, because Option 4 (lint rule) would future-proof without fixing the existing surface, at the cost of a tooling dependency (eslint plugin or custom rule) and its maintenance.
 
 This ADR closes when Option 1/2/3/4 is chosen.
+
+## More Information
+
+Original status: accepted, implemented, and completed 2026-05-18. Original frontmatter recorded `methodology: [MADR]`, `decision-makers: [Henrik Pettersen]`, `audience: ai-executor`, and `related: [0082, 0162, 0186]`. The finding originated from ADR-0186's "DB-write file-mode audit" (ADR-0162 follow-up #2).

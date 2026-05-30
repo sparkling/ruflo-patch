@@ -1,11 +1,15 @@
-# ADR-0079: Acceptance Test Completeness
+---
+status: accepted
+date: 2026-04-11
+tags: [testing, acceptance, coverage]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-- **Status**: Implemented (2026-04-21)
-- **Date**: 2026-04-11
-- **Deciders**: Henrik Pettersen
-- **Methodology**: Hive deliberation (Queen + 8 experts + Devil's Advocate)
+# Acceptance Test Completeness
 
-## Context
+## Context and Problem Statement
 
 A 10-agent hive deliberation audited the acceptance test suite after reaching 169/169
 pass rate. The hive included an ADR historian, test auditor, E2E reviewer, memory/learning
@@ -43,10 +47,15 @@ experience them.
 169/169 gives ~65% confidence in the shipped product. High confidence for packaging
 and configuration. Low confidence for feature correctness.
 
-## Decision
+## Considered Options
 
-Add tests across all three levels (unit, acceptance, fork) to address the gaps identified
-by the hive. Organized by priority tier.
+* **Add tests across all three levels (unit, acceptance, fork) to address the hive-identified gaps, organized by priority tier (chosen).**
+
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "Add tests across all three levels (unit, acceptance, fork) to address the gaps identified by the hive", because the hive deliberation identified critical gaps in semantic and behavioral coverage that structural/packaging validation alone cannot close. Organized by priority tier.
 
 ---
 
@@ -406,6 +415,14 @@ version pin consistency check across 41 packages.
 | Packages with zero coverage | 25+ | <10 |
 | Confidence from green suite | ~65% | ~85% |
 
+### Consequences
+
+* Neutral, because the trade-offs and outcomes are captured in the per-tier sections, the Risks section, and the Comparison table above; the original record did not enumerate a separate consequences list.
+
+### Confirmation
+
+Implemented 2026-04-21. All 25 tests shipped. Tier 1: `lib/acceptance-adr0079-tier1-checks.sh` (390 LOC, 9 check functions covering T1-1..T1-9) plus `tests/unit/controller-init-smoke-adr0079.test.mjs` (76 LOC, T1-10). Tier 2: `lib/acceptance-adr0079-tier2-checks.sh` (146 LOC, T2-1..T2-8). Tier 3: `lib/acceptance-adr0079-tier3-checks.sh` (574 LOC, T3-1..T3-7). All three libs sourced by `scripts/test-acceptance.sh`. `docs/adr/ADR-0094a-log.md` 2026-04-21 closure entry confirms full-cascade acceptance run 556 pass / 0 fail / 1 skip_accepted across 3 consecutive runs.
+
 ## Status Update 2026-04-21
 
 - **Old status**: Proposed (2026-04-11)
@@ -414,3 +431,6 @@ version pin consistency check across 41 packages.
 - **Rationale**: The hive-identified gaps (semantic ranking, learning feedback, SQLite round-trip, MCP stdio, codemod completeness, pin consistency, controller init smoke, WASM attention, embedding dim, RVF concurrent safety, ESM import, bulk corpus) are all now behavioral checks in the acceptance suite, not structural greps.
 - **Remaining work**: None. T3-2 (concurrent writes) evolved to RVF .rvf.lock contention per ADR-0090 Tier A4 and is the gold-standard behavioral check; 3/3 green under mega-parallel waves per 2026-04-21 log.
 
+## More Information
+
+Original status: "Implemented (2026-04-21)", with a recorded Date of 2026-04-11. The methodology recorded was a hive deliberation (Queen + 8 experts + Devil's Advocate).

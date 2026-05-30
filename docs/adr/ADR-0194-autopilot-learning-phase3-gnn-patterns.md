@@ -1,20 +1,17 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-19
-accepted: 2026-05-19
-implemented: 2026-05-19
-methodology: [MADR]
-decision-makers: [Henrik Pettersen]
-tags: [autopilot, learning, gnn, ruvector, phase3, ADR-0193, ADR-059]
-related: [0192, 0193]
-upstream-related: [agentic-flow/ADR-059]
-audience: ai-executor
+tags: [autopilot, learning, gnn]
+supersedes: []
+depends-on: [ADR-0192, ADR-0193]
+implements: []
 ---
 
-# ADR-0194: AutopilotLearning Phase 3 — embedding-cluster pattern discovery
+# AutopilotLearning Phase 3 — embedding-cluster pattern discovery
 
-## Corpus evidence (2026-05-19)
+## Context and Problem Statement
+
+### Corpus evidence (2026-05-19)
 
 A corpus-gap analysis of real autopilot subjects (124 unique task subjects across `~/.claude/tasks/*/*.json`; episode tables across 17 `.swarm/memory.db` files were empty for `autopilot:%` sessions) found the cross-lexical failure case this ADR addresses does NOT empirically occur in production data:
 
@@ -28,7 +25,7 @@ Phase 2's token-sharing correlates well with embedding similarity in this corpus
 
 Full analysis: [`docs/plans/adr0194-corpus-gap-analysis.md`](../plans/adr0194-corpus-gap-analysis.md).
 
-## Context and Problem Statement
+### Problem statement
 
 ADR-0193 §G defers AutopilotLearning's Phase 3 (per upstream ADR-059's
 roadmap) to this sub-ADR. Phase 2 ships keyword-frequency pattern
@@ -191,6 +188,13 @@ Until that signal exists, the keyword path is "thin but not wrong"; a
 swap is speculation. The signal can be produced cheaply via a one-off
 script that seeds an `EPISODE_SESSION_ID`-scoped corpus with known
 cross-lexical groups and runs `discoverSuccessPatterns` against it.
+
+### Consequences
+
+* Good, because the chosen Option 1 (greedy cosine clustering) is copy-paste-able from the in-tree `MemoryConsolidation.clusterMemories` precedent, works at N=2, and needs no new clustering primitive or GNN dependency.
+* Good, because Option 2's GNNService embedding-enhancement remains available as a follow-up landing once Option 1 is stable, honestly exercising ruvector-gnn with a clean JS fallback.
+* Bad, because greedy ordering introduces nondeterminism (mitigatable by id-sort) and threshold-tuning sensitivity, and the core algorithm doesn't itself exploit `@ruvector/gnn` — the GNN role becomes optional embedding enhancement, not the clustering.
+* Neutral, because the full set of considered options' trade-offs (Options 2, 3, 4) is retained in the Considered Options section above; the readiness criterion gates when the swap is worth doing.
 
 ## Scope when implemented
 
@@ -502,3 +506,7 @@ EITHER:
 The probe script lives at
 [`docs/plans/adr0194-corpus-gap-analysis.md`](../plans/adr0194-corpus-gap-analysis.md)
 methodology; it can be re-run cheaply (~2 minutes including model load).
+
+## More Information
+
+Original status: accepted, implemented, and completed 2026-05-19. Original frontmatter recorded `methodology: [MADR]`, `decision-makers: [Henrik Pettersen]`, `audience: ai-executor`, `related: [0192, 0193]`, and `upstream-related: [agentic-flow/ADR-059]`.

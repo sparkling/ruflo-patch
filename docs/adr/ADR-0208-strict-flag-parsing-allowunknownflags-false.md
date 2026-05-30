@@ -1,11 +1,9 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-19
-implemented-date: 2026-05-22
-tags: [cli, parser, flags, strictness, hooks, manifest-drift, lint, swarm-reviewed]
+tags: [cli, parser, flags, strictness]
 supersedes: []
-depends-on: [0201]
+depends-on: [ADR-0201]
 implements: []
 ---
 
@@ -191,6 +189,8 @@ A fresh 6-expert council (code-verification, upstream-intent, ADR-corpus, MADR-t
 **Strong minority position (devil's advocate + upstream analyst):** because the flip reaches only one fork manifest (which the lint already covers) and its unique value (external/interactive callers) is unevidenced, the honest decision may be to **ship Option E (lint + cleanup + trip-wire) as the atomic, releasable unit and move the global flip to a separately-gated follow-up ADR** (entry criterion = the step-4 "full suite green under the flip" gate), rather than carry it as an in-ADR step that risks rotting into a perpetual TODO. The feasibility expert dissents (the flip is one word, reversible, and the strict path is pre-built, so rot-risk is low). Recorded for the batch-ratification decision; D′'s direction stands pending that call.
 
 ## More Information
+
+Lifecycle dates from the original record: accepted 2026-05-19, implemented 2026-05-22. This ADR was swarm-reviewed.
 
 * Source findings: F-02-001, F-02-003 + `00-README.md` #6 in `docs/audits/2026-05-19-soundness-audit/`; audit Recommendation #1(a) ("minimal-blast-radius fix") in `02-hooks-post-lifecycle.md:304`.
 * Parser: singleton `forks/ruflo/v3/@claude-flow/cli/src/parser.ts:555`; `validateFlags`/unknown-check `:534-544`; globals `:42-112`; class default `:34`; key normalize `:362-365`.

@@ -1,13 +1,15 @@
-# ADR-0065: Configuration Centralization and Storage Deduplication
+---
+status: accepted
+date: 2026-04-05
+tags: [config, storage, embeddings, memory]
+supersedes: []
+depends-on: [ADR-0062, ADR-0063, ADR-0064]
+implements: []
+---
 
-- **Status**: **Implemented (2026-05-03)** — P0/P1/P2 complete; P3 deferred per §Decision.
-- **Date**: 2026-04-05
-- **Deciders**: Henrik Pettersen
-- **Builds on**: ADR-0062 (storage config unification), ADR-0063 (storage audit), ADR-0064 (controller config alignment)
-- **Continued by**: [ADR-0066 — Controller Configuration Unification](ADR-0066-controller-config-unification.md)
-- **Architecture**: [Controller Wiring Vision](../architecture/controller-wiring-vision.md)
+# Configuration Centralization and Storage Deduplication
 
-## Context
+## Context and Problem Statement
 
 A cross-codebase audit of all 44 controllers, storage backends, and config files reveals
 three systemic problems that ADR-0062/0063/0064 partially addressed but did not resolve
@@ -74,7 +76,14 @@ Controller instances are also duplicated:
 - `mutationGuard`: Creates own HNSW index instead of sharing vectorBackend
 - `attestationLog`: Registry creates new instance vs AgentDB's existing one
 
-## Decision
+## Considered Options
+
+* **Centralize configuration into config.json/embeddings.json and deduplicate storage systems via prioritized P0–P3 work (chosen)** — wire the config files into the registry, fix the 384/768 split-brain, deduplicate controller instances and backends.
+* **Consolidate the three graph representations (MemoryGraph, CausalMemoryGraph, GraphDatabaseAdapter) — REJECTED** — a code-level audit showed they serve fundamentally different purposes; consolidating would create a god-object that does three different things badly.
+
+## Decision Outcome
+
+Chosen option: "Centralize configuration into config.json/embeddings.json and deduplicate storage systems via prioritized P0–P3 work", because the root cause is that `memory-bridge.ts` passes a manually-written object literal omitting all tuning parameters, leaving config files as dead documentation and allowing the 384/768 split-brain to corrupt cosine operations.
 
 ### P0: Wire config.json and embeddings.json into the registry (the forwarding gap)
 
@@ -245,28 +254,24 @@ as-is.
 | `neural.flashAttention` | Not in RuntimeConfig | Removed |
 | `neural.maxModels` | Not in RuntimeConfig | Removed |
 
-## Consequences
+### Consequences
 
-### Positive
-- config.json becomes the actual single source of truth (not just documentation)
-- embeddings.json controls ALL embedding behavior (model, dimension, HNSW params)
-- Dimension mismatches eliminated (no more 384 vs 768 split-brain)
-- Operators can tune controller behavior without code changes
-- Removing SqlJsBackend + JsonBackend eliminates ~1000 lines and 2 brute-force search paths
-- Centralizing HNSW params prevents formula drift between backends
+* Good, because config.json becomes the actual single source of truth (not just documentation).
+* Good, because embeddings.json controls ALL embedding behavior (model, dimension, HNSW params).
+* Good, because dimension mismatches are eliminated (no more 384 vs 768 split-brain).
+* Good, because operators can tune controller behavior without code changes.
+* Good, because removing SqlJsBackend + JsonBackend eliminates ~1000 lines and 2 brute-force search paths.
+* Good, because centralizing HNSW params prevents formula drift between backends.
+* Bad, because of a large changeset across memory-bridge.ts, memory-initializer.ts, controller-registry.ts.
+* Bad, because backward compatibility must be preserved for existing config files (missing fields = use defaults).
+* Bad, because removing SqlJsBackend drops WASM-only environment support (RvfBackend pure-TS covers this).
+* Neutral, because changing dimension fallbacks from 384 to 768 may break existing databases with 384-dim vectors.
+* Neutral, because config forwarding must handle partial configs gracefully (missing keys = defaults, not crashes).
+* Neutral, because removing fallback backends requires verifying RvfBackend works in all environments where sql.js was previously needed.
 
-### Negative
-- Large changeset across memory-bridge.ts, memory-initializer.ts, controller-registry.ts
-- Must preserve backward compatibility for existing config files (missing fields = use defaults)
-- Removing SqlJsBackend drops WASM-only environment support (RvfBackend pure-TS covers this)
+### Confirmation
 
-### Risks
-- Changing dimension fallbacks from 384 to 768 may break existing databases with 384-dim vectors
-- Config forwarding must handle partial configs gracefully (missing keys = defaults, not crashes)
-- Removing fallback backends requires verifying RvfBackend works in all environments where
-  sql.js was previously needed
-
-## Acceptance Criteria
+Acceptance Criteria:
 
 - [x] All config.json `controllers.*` fields are consumed by their respective controllers
 - [x] embeddings.json `dimension` and `model` are used by memory-bridge and memory-initializer
@@ -280,3 +285,14 @@ as-is.
 - [x] SqlJsBackend and JsonBackend removed; database-provider falls through to RvfBackend (P3-1 done)
 - [x] memory_entries DDL defined once, shared between SQLiteBackend and AgentDBBackend (P3-2 done)
 - [x] deriveHNSWParams extracted to shared utility (P3-3 done)
+
+## Risks
+
+- Changing dimension fallbacks from 384 to 768 may break existing databases with 384-dim vectors
+- Config forwarding must handle partial configs gracefully (missing keys = defaults, not crashes)
+- Removing fallback backends requires verifying RvfBackend works in all environments where
+  sql.js was previously needed
+
+## More Information
+
+Original status: "Implemented (2026-05-03) — P0/P1/P2 complete; P3 deferred per §Decision." Recorded 2026-04-05; deciders: Henrik Pettersen. This ADR builds on ADR-0062 (storage config unification), ADR-0063 (storage audit), and ADR-0064 (controller config alignment), and is continued by ADR-0066 (Controller Configuration Unification). The accompanying architecture document is `../architecture/controller-wiring-vision.md` (Controller Wiring Vision).

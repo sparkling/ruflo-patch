@@ -1,11 +1,9 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-24
-implemented: 2026-05-28
-tags: [errors, error-handling, mcp, envelope, retry, long-term, ct-i]
+tags: [errors, error-handling, mcp, envelope]
 supersedes: []
-depends-on: [0201, 0209, 0210, 0233]
+depends-on: [ADR-0201, ADR-0209, ADR-0210, ADR-0233]
 implements: []
 ---
 
@@ -36,7 +34,7 @@ implements: []
 
 > **Scope discipline up front (read this first).** This is a **long-term cultural-cleanup ADR**, not a one-cycle remediation. The defect class is "error-handling culture" — `~108` error classes, `~1,994` naked `throw new Error(string)` (1,218 in `forks/ruflo` + 776 in `forks/agentdb`), only `3` `{cause:e}` chains across both TS forks, `5` parallel `sanitizeError` definitions, `2` unused retry libraries, `8` ad-hoc retry loops, and `~56` MCP tool handlers that catch-and-return `{success:false, error: sanitizeError(e)}` instead of throwing. Proposing "fix all 2,000 throws" would be wrong (cost vs benefit; regression sprawl; merge tax against upstream which carries the same shape). The decision instead is to **establish the canon** (extract the gold-standard hierarchy that already exists, name it `@claude-flow/errors`), **gate new code on adoption** (lint warns on new `throw new Error(string)` while grandfathering existing), and **target the high-leverage protocol-boundary defect** (MCP envelope honesty — fatals must throw, not return `success:false`). Old code is grandfathered. There is no "Phase 4 of 4 — migrate all 2,000 throws" milestone.
 
-## Context
+## Context and Problem Statement
 
 [[ADR-0233]] §CT-I ("Error-handling cultural debt") consolidates the nine findings from
 [`docs/audits/2026-05-24-second-pass-audit/13-error-taxonomy.md`](../audits/2026-05-24-second-pass-audit/13-error-taxonomy.md). The shape:
@@ -84,7 +82,9 @@ Outcome: pre-flight clears for the shared-library extraction and the MCP envelop
 * **Option C — Big-bang: fix all 2,000 throws.** Pragmatic NO. Cost vs benefit is catastrophic (months of work, no functional improvement per site); regression sprawl risk is high (every touched file has to re-pass tests + acceptance); upstream merge tax is permanent (every touched file becomes a merge conflict against upstream); the gain is the same as A+B at year-end without the meantime breakage.
 * **Option D — Status quo + document the debt.** Accept the cultural-debt shape; let it sit; document it here for future maintainers. Defensible — the audit calibrated CT-I as LOW (`F-13-005` is MEDIUM only because it defeats the corpus rule at the user-facing surface) — but the gold-standard library *already exists in-tree* and the lint cost is small; doing nothing leaves both unused.
 
-## Decision
+## Decision Outcome
+
+Chosen option: "Option A + Option B, scope-limited and long-term-framed (explicitly NOT Option C)", because it establishes the in-tree gold-standard error shape as canon and gates new code without forcing a big-bang migration.
 
 **Chosen: Option A + Option B, scope-limited and long-term-framed. Explicitly NOT Option C.**
 
@@ -167,19 +167,19 @@ The blue path (cycle 1) is what this ADR commits to. The green steady-state is w
 
 **There is no end-state milestone that says "all throws migrated."** That's the point. The cultural shift happens at the new-code boundary; the existing corpus rots forward at whatever rate organic refactors touch it.
 
-## Consequences
+### Consequences
 
-* **Good** — The gold-standard error shape (already in-tree, already tested, already used by 2 plugins) becomes the named canon. New code has a documented "do this" path. The `cause:` chain becomes the natural shape (the `wrapError()` adapter does it for you).
-* **Good** — The lint catches **new** instances of the cultural debt without forcing migration of existing code. Engineers stop adding the `1,995`th naked `throw new Error(string)` without thinking. No big-bang.
-* **Good** — The MCP envelope-honesty arch-test repairs the largest single cluster of `feedback-best-effort-must-rethrow-fatals` violations at the user-facing surface — the `~56` handlers that demote fatals into `{success:false}` envelopes. Future handlers get the ergonomic rethrow path; old handlers grandfathered.
-* **Good** — The mcp-server.ts wrap doesn't change. The fix is in *how handlers use the existing thrown-error path*, not in re-engineering the protocol layer. Lower blast radius than a protocol-level redesign.
-* **Good** — Pre-flight check #2 + #4 cleared: upstream hasn't decided this; no sibling ADR overlaps; this ADR is the micro-ADR ADR-0210's council explicitly identified as owed.
-* **Neutral / Bad** — Introduces a new package boundary (`@claude-flow/errors`). Small merge tax against upstream (which carries the same gastown-bridge file but no shared package). Mitigated by keeping the new package as a thin re-export of code that originated upstream.
-* **Neutral / Bad** — The advisory-first lint may never get promoted to `exit 1` if the FP rate doesn't drop to zero. That's acceptable: the *signal* is what matters (engineer sees the warning at review time); the gate is the icing.
-* **Neutral / Bad** — Old code stays ugly. The `~1,994` naked throws + `5` sanitizeErrors + `3` cause-chains are still there at the end of this ADR's adoption. By design. The audit calibrated this slice as LOW; the long-term cleanup is by erosion, not by replacement.
-* **Bad** — Engineer cognitive load: there are now two "right" shapes for error rethrow in the codebase (the new `wrapError()` and the old `throw new Error(${e.message})`). Mitigated by the README + the lint pointing new code at the new shape, and by the grandfather allowlist marking old code as "known-debt, don't touch unless you're refactoring."
-* **Bad** — The retry-library, ErrorHandler-wiring, and ErrorCodes-dedupe decisions remain open. This ADR explicitly defers them; if they sit open for cycles, the cultural-debt shape persists. Tracked in More information; a follow-up sweep should pick them up.
-* **Bad** — The MCP envelope-honesty rule, even advisory-first, is going to surface a long list of existing handlers as candidates for "you should throw here." Grandfathered, but visible. The advisory count becomes a long-term tracking metric.
+* Good, because **—** The gold-standard error shape (already in-tree, already tested, already used by 2 plugins) becomes the named canon. New code has a documented "do this" path. The `cause:` chain becomes the natural shape (the `wrapError()` adapter does it for you).
+* Good, because **—** The lint catches **new** instances of the cultural debt without forcing migration of existing code. Engineers stop adding the `1,995`th naked `throw new Error(string)` without thinking. No big-bang.
+* Good, because **—** The MCP envelope-honesty arch-test repairs the largest single cluster of `feedback-best-effort-must-rethrow-fatals` violations at the user-facing surface — the `~56` handlers that demote fatals into `{success:false}` envelopes. Future handlers get the ergonomic rethrow path; old handlers grandfathered.
+* Good, because **—** The mcp-server.ts wrap doesn't change. The fix is in *how handlers use the existing thrown-error path*, not in re-engineering the protocol layer. Lower blast radius than a protocol-level redesign.
+* Good, because **—** Pre-flight check #2 + #4 cleared: upstream hasn't decided this; no sibling ADR overlaps; this ADR is the micro-ADR ADR-0210's council explicitly identified as owed.
+* Neutral, because **—** Introduces a new package boundary (`@claude-flow/errors`). Small merge tax against upstream (which carries the same gastown-bridge file but no shared package). Mitigated by keeping the new package as a thin re-export of code that originated upstream.
+* Neutral, because **—** The advisory-first lint may never get promoted to `exit 1` if the FP rate doesn't drop to zero. That's acceptable: the *signal* is what matters (engineer sees the warning at review time); the gate is the icing.
+* Neutral, because **—** Old code stays ugly. The `~1,994` naked throws + `5` sanitizeErrors + `3` cause-chains are still there at the end of this ADR's adoption. By design. The audit calibrated this slice as LOW; the long-term cleanup is by erosion, not by replacement.
+* Bad, because **—** Engineer cognitive load: there are now two "right" shapes for error rethrow in the codebase (the new `wrapError()` and the old `throw new Error(${e.message})`). Mitigated by the README + the lint pointing new code at the new shape, and by the grandfather allowlist marking old code as "known-debt, don't touch unless you're refactoring."
+* Bad, because **—** The retry-library, ErrorHandler-wiring, and ErrorCodes-dedupe decisions remain open. This ADR explicitly defers them; if they sit open for cycles, the cultural-debt shape persists. Tracked in More information; a follow-up sweep should pick them up.
+* Bad, because **—** The MCP envelope-honesty rule, even advisory-first, is going to surface a long list of existing handlers as candidates for "you should throw here." Grandfathered, but visible. The advisory count becomes a long-term tracking metric.
 
 ### Confirmation
 
@@ -213,6 +213,7 @@ These are intentional follow-up ADRs, each with its own pre-flight + decision sh
 
 ### References
 
+* Original status: accepted 2026-05-24; the decided work was implemented on 2026-05-28.
 * **Audit slice:** [`docs/audits/2026-05-24-second-pass-audit/13-error-taxonomy.md`](../audits/2026-05-24-second-pass-audit/13-error-taxonomy.md) — full 9-finding evidence base for CT-I.
 * **Consolidated theme:** [[ADR-0233]] §CT-I — defect-class statement; priority `10` (lowest urgency) by ADR-0233's triage; long-term framing is consistent with that calibration.
 * **Pre-flight:** [[ADR-0201]] §[Remediation-ADR pre-flight checklist](./ADR-0201-codebase-soundness-completeness-audit-with-runtime-validation.md#remediation-adr-pre-flight-checklist-added-2026-05-20) — the four checks this ADR applied above.

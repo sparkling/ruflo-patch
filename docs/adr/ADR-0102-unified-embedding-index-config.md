@@ -1,30 +1,15 @@
-# ADR-0102: Unified Embedding & Index Config — Cross-Context Schema
+---
+status: accepted
+date: 2026-04-26
+tags: [embedding, config, hnsw, ruvector]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-> **[RECONCILED 2026-05-29 → CLOSED; see [[ADR-0270]]]** The product concern —
-> config-chain-driven embedding/index parameters — is **delivered on the Node
-> path the fork actually ships**: `v3/@claude-flow/memory/src/resolve-config.ts`
-> resolves model/dimension/HNSW through the 4-layer chain (768-dim mpnet default
-> + refined 384→768 safety gate that lets genuine 384-dim models through), per
-> [[ADR-0068]]/[[ADR-0177]] and `[[reference-embedding-model]]`. The unbuilt
-> remainder (the `ruvector-config` Rust crate + removing the `embedding_dim: 384`
-> presets in `crates/ruvllm/src/claude_flow/*` and `crates/ruvector-crv/src/types.rs`)
-> is **DECLINED, not deferred**: those literals are ruvllm's *internal
-> routing-index* defaults, not the memory path the config chain governs, and the
-> shipped `ruvllm_hnsw_create` MCP tool already takes the dimension from the caller
-> (validated `[1, 100_000]`, no hardcoded 384). The sole beneficiary of the Rust
-> unification is a hypothetical standalone `cargo add ruvllm` user — the
-> "imagine this as a public project" framing this ADR opened with — a
-> hypothetical-failure-case (`[[feedback-corpus-evidence-before-feature-work]]`)
-> with no fork consumer and no forcing function; the fork does not donate this
-> work upstream (`[[feedback-no-upstream-donate-backs]]`). Original proposal
-> status preserved below.
-- **Status**: Proposed 2026-04-26 — pending implementation; supersedes nothing, extends ADR-0068
-- **Date**: 2026-04-26
-- **Scope**: One canonical config file driving embedding model, dimension, distance metric, HNSW (m / efConstruction / efSearch), and quantization across both the ruflo orchestration layer (Node/TS) and the ruvector storage+index layer (Rust). All consumer sites read from a single loader; no hardcoded literals in business code.
-- **Related**: ADR-0052 (Config-driven Embedding Framework), ADR-0066 (Controller Configuration Unification), ADR-0068 (Controller Configuration Implementation — extended by this ADR), ADR-0069 (384→768 safety gate), ADR-0082 (no read-side-effects), ADR-0094 (acceptance coverage living tracker)
-- **Memory**: `reference-embedding-model`, `feedback-no-fallbacks`, `feedback-test-in-init-projects`, `project-rvf-primary`
+# Unified Embedding & Index Config — Cross-Context Schema
 
-## Context
+## Context and Problem Statement
 
 The ruvector fork has 10 hardcoded `embedding_dim: 384` literals (in `crates/ruvllm/src/claude_flow/*` and `crates/ruvector-crv/src/types.rs`) plus split-brain HNSW parameters relative to ruflo:
 
@@ -55,7 +40,18 @@ A 7-worker hive plus a queen synthesizer voiced positions on the approach and si
 
 The full position briefs from each expert are archived in the discussion thread that produced this ADR.
 
-## Decision
+## Considered Options
+
+* **Unified config schema, owned by ruvector, consumed by ruflo (Queen's verdict: GO MODIFIED)** (chosen).
+* **"Just bump the default" (devil's advocate)** — rejected because Rust and Node consumers must agree byte-for-byte at runtime; a TS-only export cannot bind Rust callers.
+* **Atomic single-PR rollout (devil's advocate)** — rejected: conflates a default change with a config-system change, with no escape valve when on-disk indexes break.
+* **Two-PR rollout (some experts)** — rejected: lacks the feature-gate seam.
+* **Full walk-up config discovery (5 of 7 experts)** — rejected as default: operationally opaque ("which ancestor won?"); made opt-in via `RUVECTOR_CONFIG_WALK=1`.
+* **Fill + writeback with stderr notice at read time (ruflo + DX experts)** — rejected: race conditions, git-status pollution, ADR-0082 read-side-effect violation; replaced with explicit `migrate` command.
+
+## Decision Outcome
+
+Chosen option: "Unified config schema, owned by ruvector, consumed by ruflo (GO MODIFIED)", because Rust and Node consumers must agree byte-for-byte at runtime (a TS-only export cannot bind Rust callers), and a single canonical JSON file with single-directory precedence, explicit migrate commands, and a four-PR rollout makes the config chain the only path that produces embedding/index parameters while leaving self-describing on-disk indexes untouched.
 
 ### Approach (Queen's verdict: GO MODIFIED)
 
@@ -169,7 +165,36 @@ Every defaulted key logs source attribution: `[from-file]`, `[from-model-default
 
 Every override logs at INFO with source `[env]`. When an env override is ignored because an existing index already has the value baked in its header, log at INFO with reason `[ignored, header-pinned]`.
 
-## Hidden risks accepted / addressed
+### Consequences
+
+**Pros**
+
+* Good, because of a single source of truth for embedding/index parameters across both ecosystems.
+* Good, because the 384 safety gate moves from ruflo-only to a shared loader rule.
+* Good, because all 10 hardcoded literals are removed; future model changes are one-line config edits.
+* Good, because existing 384-dim deployments keep working unchanged (index header drives behavior, not config).
+* Good, because HNSW build-time vs query-time invariants are respected: header for existing indexes, config for new indexes.
+* Good, because the new `ruvector-config` crate keeps `ruvector-core` clean for wasm/no_std consumers.
+* Good, because ADR-0101 fork README work can finally describe a coherent install + configure story.
+
+**Cons**
+
+* Bad, because two loaders (Rust + Node) require schema-version discipline to avoid drift.
+* Bad, because the new `ruvector-config` crate adds a workspace member.
+* Bad, because users who actively want to switch embedding models must rebuild indexes themselves (Appendix A); we do not auto-rebuild because we cannot guarantee correctness without knowing where their source text lives.
+* Bad, because the four-PR rollout takes longer than a single default-bump.
+* Bad, because of one-directional coupling: ruflo schema changes block on ruvector schema authority.
+
+**Out of scope (explicit deferrals)**
+
+* Neutral, because schema v2 migration paths are deferred (the `schemaVersion` field reservation is in scope; v2 itself is not).
+* Neutral, because quantization config defaults are deferred (in schema but values deferred to a later ADR).
+* Neutral, because distance metric per-index override is deferred (single global metric in v1).
+* Neutral, because Cypher / graph DB config keys are out of scope (this ADR covers vector DB and HNSW only).
+
+### Confirmation
+
+#### Hidden risks accepted / addressed
 
 | Risk (raised by) | Mitigation |
 |---|---|
@@ -182,7 +207,7 @@ Every override logs at INFO with source `[env]`. When an env override is ignored
 | Schema drift between Rust and Node loaders (devil's advocate) | JSON Schema is the contract; both loaders validated against it in CI |
 | `git status` pollution from writeback (migration expert) | No writeback as read side effect; explicit migrate command only |
 
-## Conditions before implementation
+#### Conditions before implementation
 
 1. JSON Schema drafted and reviewed in `ruvector-config` before PR1 lands
 2. Acceptance test: run loader against fixture project with no config file; verify compiled defaults match schema
@@ -192,34 +217,7 @@ Every override logs at INFO with source `[env]`. When an env override is ignored
 6. Sibling ADR-0001 created in `ruvector/docs/adr/` referencing the same schema artifact
 7. Memory entry `reference-embedding-config-schema` added pointing at ADR-0102 + the JSON Schema file path
 
-## Consequences
-
-**Pros**
-
-- Single source of truth for embedding/index parameters across both ecosystems
-- 384 safety gate moves from ruflo-only to a shared loader rule
-- All 10 hardcoded literals removed; future model changes are one-line config edits
-- Existing 384-dim deployments keep working unchanged (index header drives behavior, not config)
-- HNSW build-time vs query-time invariants respected: header for existing indexes, config for new indexes
-- New `ruvector-config` crate keeps `ruvector-core` clean for wasm/no_std consumers
-- ADR-0101 fork README work can finally describe a coherent install + configure story
-
-**Cons**
-
-- Two loaders (Rust + Node) require schema-version discipline to avoid drift
-- New `ruvector-config` crate adds a workspace member
-- Users who actively want to switch embedding models must rebuild indexes themselves (Appendix A); we do not auto-rebuild because we cannot guarantee correctness without knowing where their source text lives
-- Four-PR rollout takes longer than a single default-bump
-- One-directional coupling: ruflo schema changes block on ruvector schema authority
-
-**Out of scope (explicit deferrals)**
-
-- Schema v2 migration paths (the `schemaVersion` field reservation is in scope; v2 itself is not)
-- Quantization config defaults (in schema but values deferred to a later ADR)
-- Distance metric per-index override (single global metric in v1)
-- Cypher / graph DB config keys (this ADR covers vector DB and HNSW only)
-
-## Acceptance criteria
+#### Acceptance criteria
 
 - [ ] `ruvector-config` crate exists, JSON Schema published, walk-up opt-in works
 - [ ] `ruvector config show` outputs resolved config + per-key source
@@ -252,3 +250,11 @@ Three realistic paths:
 3. **Stay on the old model** — explicitly set `model = "Xenova/all-MiniLM-L6-v2"` and `dim = 384` in the config file. The 384→768 safety gate fires only on ambiguous configurations (dim set without a matching model); explicit MiniLM+384 is a valid config and passes through with an INFO log.
 
 This is documentation, not tooling. We do not ship an automated migration command because we cannot guarantee correctness without knowing where the user's source text lives.
+
+## More Information
+
+Status: reconciled 2026-05-29 → CLOSED (see ADR-0270). The product concern — config-chain-driven embedding/index parameters — is delivered on the Node path the fork actually ships: `v3/@claude-flow/memory/src/resolve-config.ts` resolves model/dimension/HNSW through the 4-layer chain (768-dim mpnet default + refined 384→768 safety gate that lets genuine 384-dim models through), per ADR-0068/ADR-0177 and `reference-embedding-model`. The unbuilt remainder (the `ruvector-config` Rust crate + removing the `embedding_dim: 384` presets in `crates/ruvllm/src/claude_flow/*` and `crates/ruvector-crv/src/types.rs`) is DECLINED, not deferred: those literals are ruvllm's internal routing-index defaults, not the memory path the config chain governs, and the shipped `ruvllm_hnsw_create` MCP tool already takes the dimension from the caller (validated `[1, 100_000]`, no hardcoded 384). The sole beneficiary of the Rust unification is a hypothetical standalone `cargo add ruvllm` user — the "imagine this as a public project" framing this ADR opened with — a hypothetical-failure-case (`feedback-corpus-evidence-before-feature-work`) with no fork consumer and no forcing function; the fork does not donate this work upstream (`feedback-no-upstream-donate-backs`).
+
+The original proposal status was "Proposed 2026-04-26 — pending implementation; supersedes nothing, extends ADR-0068." Dated 2026-04-26. Scope: one canonical config file driving embedding model, dimension, distance metric, HNSW (m / efConstruction / efSearch), and quantization across both the ruflo orchestration layer (Node/TS) and the ruvector storage+index layer (Rust). All consumer sites read from a single loader; no hardcoded literals in business code.
+
+The original record cross-referenced these related decisions: ADR-0052 (Config-driven Embedding Framework); ADR-0066 (Controller Configuration Unification); ADR-0068 (Controller Configuration Implementation — extended by this ADR); ADR-0069 (384→768 safety gate); ADR-0082 (no read-side-effects); and ADR-0094 (acceptance coverage living tracker). Relevant memory entries: `reference-embedding-model`, `feedback-no-fallbacks`, `feedback-test-in-init-projects`, `project-rvf-primary`.

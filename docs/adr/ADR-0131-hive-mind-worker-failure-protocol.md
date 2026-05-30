@@ -1,13 +1,15 @@
-# ADR-0131: Hive-mind worker-failure prompt protocol + auto-status-transitions in `_consensus` (T12)
+---
+status: accepted
+date: 2026-05-02
+tags: [hive-mind, consensus, worker-failure]
+supersedes: []
+depends-on: [ADR-0103, ADR-0109, ADR-0118]
+implements: []
+---
 
-- **Status**: Implemented (2026-05-03) per ADR-0118 §Status (T12 complete)
-- **Date**: 2026-05-02
-- **Deciders**: Henrik Pettersen
-- **Depends on**: ADR-0103 (README claims investigation roadmap — ratified ADR-0109 Option E as the worker-failure design), ADR-0109 (worker-failure handling — Option E §6 is the prompt-side contract carried forward here), ADR-0118 (hive-mind runtime gaps tracker — owns this work as task T12)
-- **Related**: ADR-0104 (queen orchestration — owns the §6 worker-coordination prompt template this ADR extends), ADR-0106 (consensus algorithm enforcement — owns the auto-status-transition surface in `_consensus`), ADR-0114 (substrate/protocol/execution layering — failure-protocol lives at protocol + execution layers), ADR-0119/ADR-0120/ADR-0121 (T1/T2/T3 consensus strategy extensions — auto-status-transition logic must stay correct across all strategies)
-- **Scope**: Fork-side runtime work in `forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hive-mind-tools.ts` (`_consensus` action + `_status` action surface) and `forks/ruflo/v3/@claude-flow/cli/src/commands/hive-mind.ts` (queen prompt template §6). Closes ADR-0118 task T12 only; T1-T11 remain separate.
+# Hive-mind worker-failure prompt protocol + auto-status-transitions in `_consensus` (T12)
 
-## Context
+## Context and Problem Statement
 
 ADR-0103's investigation roadmap row 92 ratified **ADR-0109 Option E** (hybrid: A worker-failure protocol in §6 prompt + B auto-status transitions in `_consensus` + D README reframing). That program landed Option D (the README + skill doc copy corrections) and structurally shipped Option B's auto-status precedent in ADR-0106, but the **prompt-side failure model (Option A) and the auto-status-transitions in `_consensus` for the modern consensus strategy surface (`weighted`/`gossip`/`crdt` once T1/T2/T3 land) had no Tn assignment** in ADR-0118's initial 11-task split. The comparison report 2026-05-02 surfaced this as the residual gap; the runtime-gaps tracker accepts T12 to close it.
 
@@ -50,20 +52,6 @@ ADR-0109 R8 (sub-queen failure in hierarchical-mesh topology) is **explicitly ou
 - **Option (b) — Defer failure handling entirely to caller (queen prompt)**. Ship Option E §A only (the prompt protocol); leave `_consensus` and `_status` unchanged. Caller writes its own `state.consensus.history` entry on timeout via `_memory`.
 - **Option (c) — Split into separate `_failure` MCP tool**. Introduce a new `hive-mind_failure` action verb (or even a new MCP tool) for `report-worker-absent` / `mark-quorum-failed` / `retry-task` actions. Keep `_consensus` and `_status` clean of failure semantics.
 
-## Pros and Cons of the Options
-
-**Option (a) — auto-transitions + minimal lineage + §6 protocol**
-- Pros: matches ADR-0109 Option E §6 literally; closes T12 in a single commit; `_consensus({action:'status'})` becomes self-healing across all strategies (no caller-side coordination required); `_status` surfaces failure state to the queen prompt without a new tool; lineage is one additive field — substrate-compatible. Cross-strategy: as T1/T2/T3 extend `calculateRequiredVotes` to `weighted`/`gossip`/`crdt`, the auto-transition predicate "transparently" handles them via the strategy-agnostic dispatch.
-- Cons: couples failure semantics into `_consensus`'s status path — the action gains a side effect (mutating `proposal.status`, moving the row from `pending` to `history`) where today it only reads. Callers expecting pure-read behaviour from `action: 'status'` may be surprised; mitigated by it being our own first-party caller (the queen prompt). Lineage adds one persisted field per worker; test surface grows.
-
-**Option (b) — defer to caller**
-- Pros: smallest fork-side diff; preserves `_consensus`-as-pure-read invariant; failure handling stays in the queen prompt where the LLM already coordinates spawn/result decisions.
-- Cons: every queen prompt across every hive must independently implement the auto-status-transition logic via raw `_memory` writes — duplicates the §6 contract across N spawn templates and trusts the LLM to write the exact `'failed-quorum-not-reached'` literal that downstream tooling reads. Brittle. Falsifiable contract gets hidden in prose. ADR-0109 Option E specifically pulled this work *out* of the prompt and into the handler precisely because prompt-only enforcement failed in practice.
-
-**Option (c) — separate `_failure` MCP tool**
-- Pros: clean separation of concerns — `_consensus` reads, `_failure` writes failure state; orthogonal action verbs; easier to disable/feature-flag the failure subsystem if it regresses.
-- Cons: introduces a new MCP tool surface (or new action verb requiring its own JSON-schema and dispatch arm); Queen prompt must coordinate two tools where today it coordinates one; ADR-0109 Option C already considered and deferred this exact split — undoing that deferral without new evidence (specifically that A+B proved insufficient) violates the tracker's escalation rule.
-
 ## Decision Outcome
 
 Chosen option: **Option (a) (auto-status-transitions in `_consensus` + minimal lineage tracking + §6 prompt protocol)**, because (1) ADR-0103 already ratified ADR-0109 Option E and option (a) is the mechanical implementation of that ratified design; (2) option (b) duplicates the protocol across N spawn templates with no enforcement; (3) option (c) violates the explicit ADR-0109 deferral on Option C without new evidence. Lineage stays at a single `retryOf` pointer per worker; if chain semantics or whole-hive abort policy emerge as needs, escalate per the ADR-0118 T12 escalation rule.
@@ -74,23 +62,46 @@ Chosen option: **Option (a) (auto-status-transitions in `_consensus` + minimal l
 
 **Auto-transition strategy-applicability.** The transition fires for **any** `proposal.strategy` value in the supported enum at evaluation time. The threshold `required` is read from `calculateRequiredVotes(proposal.strategy, totalNodes, ...)`; T12 inherits the fully-extended switch from T1/T2/T3 once those land. Until then, the transition exercises against `bft`/`raft`/`quorum` only and the acceptance check skips `weighted`/`gossip`/`crdt` cases until each Tn lands its respective enum extension (each Tn must add its case to T12's acceptance check on closure — see §Risks and the cross-Tn dependency note).
 
-## Consequences
+**T12 ships ADR-0109 Option E's §6 prompt protocol + auto-status-transitions in `_consensus` + minimal `retryOf` lineage tracking + `_status` failure summary, in a single commit, behind the test pyramid above.** Option E's §6 contract strings (`'absent'`, `60s`, `retry-once`) and auto-status-transition literals (`'failed-quorum-not-reached'`, `absentVoters`) are verbatim contracts asserted by the tests; renaming any of them is a breaking change to the cross-ADR contract with ADR-0103/ADR-0109.
 
-**Positive**
-- ADR-0109 Option E §6 prompt-protocol is materialised in the queen template; the §6 contract is no longer a documentation-only promise.
-- `_consensus({action:'status'})` becomes self-healing for stalled proposals across all strategies; the queen no longer needs a per-strategy timeout-handling branch in its prompt.
-- `_status` surfaces a `failedWorkers` summary, giving the queen prompt a one-shot "what's still missing" view without re-reading `state.consensus.history`.
-- `retryOf` lineage records the parent-child relationship for retried workers, so post-mortems and audit trails can reconstruct who replaced whom.
-- Cross-strategy: when T1/T2/T3 land, weighted/gossip/crdt rounds get auto-status-transition behaviour for free (no code change in `_consensus({action:'status'})`).
-- ADR-0118 T12 row flips to `complete`; ADR-0116 plugin README annotation lift fires on the next P1 materialise run.
+### Consequences
 
-**Negative**
-- `_consensus({action:'status'})` is no longer a pure read — it can mutate `proposal.status` and move the row from `pending` to `history`. Callers expecting idempotent reads must adapt; documented in the action's JSON-schema description and surfaced in the response shape (`statusJustTransitioned: boolean`).
-- The auto-transition is one-way; a worker that was marked absent cannot be re-admitted to the *same* consensus round. Re-spawn requires a new worker ID and a fresh proposal (or a new vote on an unstarted proposal).
-- `state.workers[]` shape gains optional `failedAt: number | null` and `retryOf: string | null` per entry. Existing state files compile against the wider shape (both fields optional and defaulted to null on load). One-shot migration is not required, but `loadHiveState` must default both fields when reading older state.
-- `_status` response gains a `failedWorkers: { id, failedAt, retryOf }[]` summary field; downstream consumers that pattern-match the existing response shape with strict-shape validators will need to widen.
-- Retry-lineage stays minimal (`retryOf` is a single pointer, not a chain). If a retried worker itself fails and is retried, the new entry's `retryOf` points to the *immediate* predecessor; chain reconstruction requires recursive lookup at audit-time.
-- `_consensus({action:'vote'})` rejects votes against already-failed proposals and from already-failed worker IDs — adds two new named-error paths the queen prompt must handle gracefully (Option E §A's "do not silently drop" applies here too: the rejection must surface to the queen, not be swallowed).
+* Good, because ADR-0109 Option E §6 prompt-protocol is materialised in the queen template; the §6 contract is no longer a documentation-only promise.
+* Good, because `_consensus({action:'status'})` becomes self-healing for stalled proposals across all strategies; the queen no longer needs a per-strategy timeout-handling branch in its prompt.
+* Good, because `_status` surfaces a `failedWorkers` summary, giving the queen prompt a one-shot "what's still missing" view without re-reading `state.consensus.history`.
+* Good, because `retryOf` lineage records the parent-child relationship for retried workers, so post-mortems and audit trails can reconstruct who replaced whom.
+* Good, because cross-strategy: when T1/T2/T3 land, weighted/gossip/crdt rounds get auto-status-transition behaviour for free (no code change in `_consensus({action:'status'})`).
+* Good, because ADR-0118 T12 row flips to `complete`; ADR-0116 plugin README annotation lift fires on the next P1 materialise run.
+* Bad, because `_consensus({action:'status'})` is no longer a pure read — it can mutate `proposal.status` and move the row from `pending` to `history`. Callers expecting idempotent reads must adapt; documented in the action's JSON-schema description and surfaced in the response shape (`statusJustTransitioned: boolean`).
+* Bad, because the auto-transition is one-way; a worker that was marked absent cannot be re-admitted to the *same* consensus round. Re-spawn requires a new worker ID and a fresh proposal (or a new vote on an unstarted proposal).
+* Bad, because `state.workers[]` shape gains optional `failedAt: number | null` and `retryOf: string | null` per entry. Existing state files compile against the wider shape (both fields optional and defaulted to null on load). One-shot migration is not required, but `loadHiveState` must default both fields when reading older state.
+* Bad, because `_status` response gains a `failedWorkers: { id, failedAt, retryOf }[]` summary field; downstream consumers that pattern-match the existing response shape with strict-shape validators will need to widen.
+* Bad, because retry-lineage stays minimal (`retryOf` is a single pointer, not a chain). If a retried worker itself fails and is retried, the new entry's `retryOf` points to the *immediate* predecessor; chain reconstruction requires recursive lookup at audit-time.
+* Bad, because `_consensus({action:'vote'})` rejects votes against already-failed proposals and from already-failed worker IDs — adds two new named-error paths the queen prompt must handle gracefully (Option E §A's "do not silently drop" applies here too: the rejection must surface to the queen, not be swallowed).
+
+### Confirmation
+
+Per `feedback-all-test-levels`, all three pyramid levels are mandatory and ship in the same commit:
+
+- **Unit** — `tests/unit/adr0131-worker-failure-protocol.test.mjs` (London-school, mocked I/O): covers (a) §6 prompt-string presence — the WORKER FAILURE PROTOCOL block is emitted by `generateHiveMindPrompt` with the literal `'absent'` status string, the literal `60s` threshold, and the literal `retry-once` instruction; (b) `_consensus({action:'status'})` auto-transition for `bft`, `raft`, `quorum` proposals past `timeoutAt` with `totalVotes < required` — verifies status flips to `'failed-quorum-not-reached'`, `absentVoters` populated, proposal moved from `pending` to `history`; (c) `_consensus({action:'vote'})` rejects votes from failed workers (`WorkerAlreadyFailedError`) and rejects votes against failed proposals (`ProposalAlreadyFailedError`); (d) `loadHiveState` defaults `failedAt`/`retryOf` to null on older state files; (e) `_status` response includes `failedWorkers` summary derived from per-worker fields; (f) `retryOf` round-trip through `saveHiveState`/`loadHiveState`; (g) the strategy-switch default arm in the auto-transition predicate throws synchronously on unknown strategy values.
+- **Integration** — same file (per CLAUDE.md pyramid; `tests/unit/*.test.mjs` covers both tiers): drives `_consensus({action:'propose'}) → vote → tally → status` end-to-end through `loadHiveState`/`saveHiveState` writing to a tempdir; asserts on-disk `state.consensus.history` row matches the failed-quorum-not-reached resolution; asserts `state.workers[]` failedAt/retryOf fields persist; asserts the §6 prompt string appears verbatim in the rendered queen-spawn output.
+- **Acceptance** — `lib/acceptance-adr0131-worker-failure.sh` (new file, wired into `scripts/test-acceptance.sh`): round-trips `_consensus`/`_status`/§6-prompt assertions against a fresh `init --full` project's published `@sparkleideas/cli`; constructs a `bft`/`raft`/`quorum` proposal with a `timeoutAt` already in the past and zero votes, calls `_consensus({action:'status'})`, asserts the response shows `'failed-quorum-not-reached'` with `absentVoters` populated. Strategy coverage starts at `bft`/`raft`/`quorum`; `weighted`/`gossip`/`crdt` cases added when their respective Tns land. Uses `_cli_cmd` per `reference-cli-cmd-helper.md`.
+
+ADR-0118 status table flips T12 to `complete` only after all three levels are green; ADR-0116 annotation lift is blocked until then per `feedback-no-fallbacks.md`.
+
+## Pros and Cons of the Options
+
+**Option (a) — auto-transitions + minimal lineage + §6 protocol**
+- Good, because it matches ADR-0109 Option E §6 literally; closes T12 in a single commit; `_consensus({action:'status'})` becomes self-healing across all strategies (no caller-side coordination required); `_status` surfaces failure state to the queen prompt without a new tool; lineage is one additive field — substrate-compatible. Cross-strategy: as T1/T2/T3 extend `calculateRequiredVotes` to `weighted`/`gossip`/`crdt`, the auto-transition predicate "transparently" handles them via the strategy-agnostic dispatch.
+- Bad, because it couples failure semantics into `_consensus`'s status path — the action gains a side effect (mutating `proposal.status`, moving the row from `pending` to `history`) where today it only reads. Callers expecting pure-read behaviour from `action: 'status'` may be surprised; mitigated by it being our own first-party caller (the queen prompt). Lineage adds one persisted field per worker; test surface grows.
+
+**Option (b) — defer to caller**
+- Good, because of the smallest fork-side diff; preserves `_consensus`-as-pure-read invariant; failure handling stays in the queen prompt where the LLM already coordinates spawn/result decisions.
+- Bad, because every queen prompt across every hive must independently implement the auto-status-transition logic via raw `_memory` writes — duplicates the §6 contract across N spawn templates and trusts the LLM to write the exact `'failed-quorum-not-reached'` literal that downstream tooling reads. Brittle. Falsifiable contract gets hidden in prose. ADR-0109 Option E specifically pulled this work *out* of the prompt and into the handler precisely because prompt-only enforcement failed in practice.
+
+**Option (c) — separate `_failure` MCP tool**
+- Good, because of clean separation of concerns — `_consensus` reads, `_failure` writes failure state; orthogonal action verbs; easier to disable/feature-flag the failure subsystem if it regresses.
+- Bad, because it introduces a new MCP tool surface (or new action verb requiring its own JSON-schema and dispatch arm); Queen prompt must coordinate two tools where today it coordinates one; ADR-0109 Option C already considered and deferred this exact split — undoing that deferral without new evidence (specifically that A+B proved insufficient) violates the tracker's escalation rule.
 
 ## Validation
 
@@ -101,10 +112,6 @@ Per `feedback-all-test-levels`, all three pyramid levels are mandatory and ship 
 - **Acceptance** — `lib/acceptance-adr0131-worker-failure.sh` (new file, wired into `scripts/test-acceptance.sh`): round-trips `_consensus`/`_status`/§6-prompt assertions against a fresh `init --full` project's published `@sparkleideas/cli`; constructs a `bft`/`raft`/`quorum` proposal with a `timeoutAt` already in the past and zero votes, calls `_consensus({action:'status'})`, asserts the response shows `'failed-quorum-not-reached'` with `absentVoters` populated. Strategy coverage starts at `bft`/`raft`/`quorum`; `weighted`/`gossip`/`crdt` cases added when their respective Tns land. Uses `_cli_cmd` per `reference-cli-cmd-helper.md`.
 
 ADR-0118 status table flips T12 to `complete` only after all three levels are green; ADR-0116 annotation lift is blocked until then per `feedback-no-fallbacks.md`.
-
-## Decision
-
-T12 ships ADR-0109 Option E's §6 prompt protocol + auto-status-transitions in `_consensus` + minimal `retryOf` lineage tracking + `_status` failure summary, in a single commit, behind the test pyramid above. Option E's §6 contract strings (`'absent'`, `60s`, `retry-once`) and auto-status-transition literals (`'failed-quorum-not-reached'`, `absentVoters`) are verbatim contracts asserted by the tests; renaming any of them is a breaking change to the cross-ADR contract with ADR-0103/ADR-0109.
 
 ## Implementation plan
 
@@ -360,8 +367,15 @@ Per `feedback-no-fallbacks.md` and `feedback-no-squelch-tests.md`, annotations m
 
 Each is a follow-up ADR per the ADR-0118 T12 escalation rule.
 
-## References
+## More Information
 
+Original status: Implemented (2026-05-03) per ADR-0118 §Status (T12 complete).
+
+This ADR depends on ADR-0103 (README claims investigation roadmap — ratified ADR-0109 Option E as the worker-failure design), ADR-0109 (worker-failure handling — Option E §6 is the prompt-side contract carried forward here), and ADR-0118 (hive-mind runtime gaps tracker — owns this work as task T12). It is related to ADR-0104 (queen orchestration — owns the §6 worker-coordination prompt template this ADR extends), ADR-0106 (consensus algorithm enforcement — owns the auto-status-transition surface in `_consensus`), ADR-0114 (substrate/protocol/execution layering — failure-protocol lives at protocol + execution layers), and ADR-0119/ADR-0120/ADR-0121 (T1/T2/T3 consensus strategy extensions — auto-status-transition logic must stay correct across all strategies).
+
+Scope: Fork-side runtime work in `forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hive-mind-tools.ts` (`_consensus` action + `_status` action surface) and `forks/ruflo/v3/@claude-flow/cli/src/commands/hive-mind.ts` (queen prompt template §6). Closes ADR-0118 task T12 only; T1-T11 remain separate.
+
+References:
 - ADR-0103 — README claims investigation roadmap (row 92 ratified ADR-0109 Option E as the worker-failure design)
 - ADR-0109 — Worker failure handling (Option E §6 is the prompt-side contract carried forward here; specifically Option A prompt protocol, Option B auto-status transitions; Option C deferred; R8 sub-queen out-of-scope)
 - ADR-0118 — Hive-mind runtime gaps tracker (owns this work as task T12)

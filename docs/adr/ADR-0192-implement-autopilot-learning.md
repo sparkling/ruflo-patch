@@ -1,17 +1,13 @@
 ---
 status: accepted
-completed: true
 date: 2026-05-19
-implemented: 2026-05-19
-methodology: [MADR]
-decision-makers: [Henrik Pettersen]
-tags: [autopilot, learning, agentdb, sona, agentic-flow, ADR-058, ADR-072, ADR-0191]
-related: [0072, 0082, 0191]
-upstream-related: [agentic-flow/ADR-058, agentic-flow/ADR-059]
-audience: ai-executor
+tags: [autopilot, learning, agentdb]
+supersedes: []
+depends-on: [ADR-0082, ADR-0191]
+implements: []
 ---
 
-# ADR-0192: Implement `AutopilotLearning` — the speced-but-never-built core of the autopilot system
+# Implement `AutopilotLearning` — the speced-but-never-built core of the autopilot system
 
 ## Context and Problem Statement
 
@@ -325,33 +321,30 @@ Once Phase 1-5 land, ADR-072 (still **Proposed**) can move to
 **Implemented**. Update its status block and add a back-pointer to
 this ADR (ADR-0192) in its dependency chain.
 
-## Consequences
+## Decision Consequences
 
-### Positive
+### Consequences
 
-* The 7 references to `AutopilotLearning` across the codebase
+* Good, because the 7 references to `AutopilotLearning` across the codebase
   resolve to real code instead of silent null returns.
-* ADR-072's autopilot integration unblocks: 9 CLI subcommands + 10
+* Good, because ADR-072's autopilot integration unblocks: 9 CLI subcommands + 10
   MCP tools become functionally complete.
-* The Stop-hook re-engagement prompt gains learned context, which
+* Good, because the Stop-hook re-engagement prompt gains learned context, which
   ADR-072 frames as the primary value-add of the autopilot system
   (the mechanism alone doesn't improve completion quality; the
   learning loop does).
-* The 8-it-block integration test in
+* Good, because the 8-it-block integration test in
   `autopilot-drift-learning.test.ts` actually runs (today it imports
   a non-existent module and presumably skips or errors out at
   module-load).
-* ADR-0191 follow-up A4 closes: optional dependency is no longer
+* Good, because ADR-0191 follow-up A4 closes: optional dependency is no longer
   silently returning null; the integration is real.
-
-### Negative
-
-* New code surface to maintain. Phase 1 is ~200 lines of producer +
+* Bad, because there is new code surface to maintain. Phase 1 is ~200 lines of producer +
   tests; subsequent phases may grow it.
-* AgentDB schema gains a new namespace (`autopilot_episodes`).
+* Bad, because the AgentDB schema gains a new namespace (`autopilot_episodes`).
   Minor — AgentDB is built for this — but a schema-migration story
   for existing installs needs a thought.
-* The cli's autopilot subcommands' behavior changes: today they
+* Bad, because the cli's autopilot subcommands' behavior changes: today they
   uniformly return `{ available: false }`. After Phase 3 they return
   real data, which means any test or consumer that asserted
   `available: false` as a stable shape needs an update.
@@ -548,3 +541,7 @@ verified end-to-end.
   self-contained probe. Release-3 looked broken (DEGRADED) but the
   artifacts were correct — the failure was stale-cache resolution,
   not actual code. `--force` invalidates and reveals the real state.
+
+## More Information
+
+Original status: accepted, implemented, and completed 2026-05-19. Original frontmatter recorded `methodology: [MADR]`, `decision-makers: [Henrik Pettersen]`, `audience: ai-executor`, `related: [0072, 0082, 0191]`, and `upstream-related: [agentic-flow/ADR-058, agentic-flow/ADR-059]`.

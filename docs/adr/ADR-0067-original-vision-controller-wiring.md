@@ -1,12 +1,17 @@
-# ADR-0067: The Original Vision -- How Controller Wiring Was Supposed to Work
-
-**Status**: Closed (informational, kept for history) — 2026-04-21
-**Date**: 2026-04-05
-**Context**: Synthesized from upstream code evidence to guide future refactoring
-**Architecture**: [Controller Wiring Vision](../architecture/controller-wiring-vision.md)
-**Implements**: [ADR-0066 — Controller Configuration Unification](ADR-0066-controller-config-unification.md)
-
 ---
+status: accepted
+date: 2026-04-05
+tags: [controller, wiring, agentdb, architecture]
+supersedes: []
+depends-on: []
+implements: [ADR-0066]
+---
+
+# The Original Vision -- How Controller Wiring Was Supposed to Work
+
+## Context and Problem Statement
+
+This record synthesizes, from upstream code evidence, how controller wiring between AgentDB and ControllerRegistry was originally intended to work, in order to guide future refactoring. It is informational analysis kept for history rather than a work item; the three "correct solutions" it documents (Parts A/B/C in Section 5) were absorbed by later ADRs that actually shipped code.
 
 ## 1. The Intended Relationship Between AgentDB and ControllerRegistry
 
@@ -165,3 +170,7 @@ The gap is not in the design — it's in the wiring. Three specific changes comp
 - Part A (singleton injection into `AgentDB.initialize()`) was progressively completed across ADR-0090 B5 waves (fork commits `8238837`, `7a977f1`, `b14a664`, `b340e90`, `d7f613a`, `794ad50`) that added missing constructor DDL/singleton wiring for CausalMemoryGraph, ReflexionMemory, SkillLibrary, ExplainableRecall, NightlyLearner, and sonaTrajectory.
 - Rationale: ADR-0067 remains useful as the authoritative narrative for *why* the wiring looked the way it did in 2026-04. Keep as a historical reference. No further implementation tracked here — follow ADR-0089 and ADR-0093 for live work.
 - Remaining work: none scoped to this ADR. Any residual lazy-AgentDB refactor (§10 item 1) would be a new ADR, not a resumption of this one.
+
+## More Information
+
+Original status: "Closed (informational, kept for history) — 2026-04-21." Recorded 2026-04-05; synthesized from upstream code evidence to guide future refactoring. This analysis informs the implementation of ADR-0066 (Controller Configuration Unification). The accompanying architecture document is `../architecture/controller-wiring-vision.md` (Controller Wiring Vision).

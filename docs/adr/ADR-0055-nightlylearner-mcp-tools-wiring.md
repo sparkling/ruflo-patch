@@ -1,13 +1,15 @@
-# ADR-0055: NightlyLearner Skill Consolidation + MCP Tool Completion
-
-**Status**: Implemented (v3.5.15-patch.114, 2026-03-22)
-**Date**: 2026-03-22
-**Deciders**: System Architecture
-**Methodology**: SPARC + MADR
-
+---
+status: accepted
+date: 2026-03-22
+tags: [nightlylearner, mcp-tools, skills, wiring]
+supersedes: []
+depends-on: []
+implements: []
 ---
 
-## S - Specification
+# NightlyLearner Skill Consolidation + MCP Tool Completion
+
+## Context and Problem Statement
 
 ### Problem 1: NightlyLearner dead wiring (Issue #6 / #85)
 
@@ -22,11 +24,23 @@ The CLI exposes 36 agentdb MCP tools but documentation targets 41. Five tools ha
 backend methods that exist and are tested but have no MCP tool registration:
 `skill-create`, `skill-search`, `learner-run`, `learning-predict`, `experience-record`.
 
----
+## Considered Options
 
-## P - Pseudocode
+* Wire `consolidateEpisodesIntoSkills()` into the NightlyLearner pipeline as a new non-fatal Step 5, and register the 5 missing MCP tools (chosen).
 
-### Fix 1: NightlyLearner wiring
+(No alternatives were recorded.)
+
+## Decision Outcome
+
+Chosen option: "Wire skill consolidation into NightlyLearner and register the 5 missing MCP tools", because the consolidation method already exists but was never called (episodes accumulated without becoming reusable skills), and five backend methods were already implemented and tested but lacked MCP tool registration, leaving the documented 41-tool surface incomplete.
+
+### S - Specification
+
+(See Context and Problem Statement above for both problems.)
+
+### P - Pseudocode
+
+#### Fix 1: NightlyLearner wiring
 
 ```
 run() pipeline:
@@ -50,7 +64,7 @@ consolidateSkills():
     // Non-fatal — log and continue
 ```
 
-### Fix 2: MCP tool registration
+#### Fix 2: MCP tool registration
 
 ```
 For each missing tool:
@@ -60,11 +74,9 @@ For each missing tool:
   4. Add to agentdbTools export array
 ```
 
----
+### A - Architecture
 
-## A - Architecture
-
-### NightlyLearner pipeline (after fix)
+#### NightlyLearner pipeline (after fix)
 
 ```
 Episodes table
@@ -82,7 +94,7 @@ NightlyLearner.run()
   └── Step 7: Generate recommendations
 ```
 
-### MCP tools (after fix)
+#### MCP tools (after fix)
 
 36 existing + 5 new = 41 total:
 
@@ -94,17 +106,15 @@ NightlyLearner.run()
 | `agentdb_learning_predict` | learningSystem | `predict()` / `recommendAlgorithm()` |
 | `agentdb_experience_record` | reflexion | `store()` |
 
-### Tool naming convention
+#### Tool naming convention
 
 All 41 MCP tools use underscores as separators: `agentdb_{feature}_{action}`.
 This matches the upstream agentdb MCP server convention. Hyphens were normalized
 to underscores in patch.114 (14 legacy tools renamed).
 
----
+### R - Refinement
 
-## R - Refinement
-
-### Files changed
+#### Files changed
 
 **Issue #6 (agentic-flow fork)**:
 - `packages/agentdb/src/controllers/NightlyLearner.ts`
@@ -117,7 +127,7 @@ to underscores in patch.114 (14 legacy tools renamed).
   - +5 tool definitions (~200 lines)
   - Export array updated (36 → 41 entries)
 
-### Risk assessment
+#### Risk assessment
 
 | Risk | Severity | Mitigation |
 |------|----------|------------|
@@ -126,38 +136,38 @@ to underscores in patch.114 (14 legacy tools renamed).
 | Controller not available at runtime | LOW | All tools check controller existence before calling |
 | Performance of consolidation in nightly run | LOW | Configurable params, small episode tables in practice |
 
----
+### C - Completion
 
-## C - Completion
+#### Related issues
 
-### Validation
+- #85 (P4-A: SkillLibrary routing) — addressed by NightlyLearner wiring
+- #82-91 (controller wiring) — partially addressed by 5 new MCP tools
+
+### Consequences
+
+#### Positive
+
+* Good, because NightlyLearner now actually consolidates episodes into skills (was dead code since v3 inception).
+* Good, because 41/41 MCP tools are registered — matches documentation.
+* Good, because skills become searchable and reusable across sessions.
+* Good, because `agentdb_learner-run` lets users trigger the nightly pipeline on demand.
+
+#### Negative
+
+* Bad, because skill consolidation adds latency to the nightly run (~100ms for small episode tables).
+* Bad, because 5 new tools increase the MCP tool surface area (more to maintain).
+
+### Confirmation
+
+#### Validation
 
 - `tsc --noEmit`: clean on both forks
 - `npm run test:unit`: 541/541 pass
 - `npm run deploy`: 56/56 acceptance, v3.5.15-patch.114
 - All 41 MCP tool names normalized to underscore convention
 
-### Related issues
+## More Information
 
-- #85 (P4-A: SkillLibrary routing) — addressed by NightlyLearner wiring
-- #82-91 (controller wiring) — partially addressed by 5 new MCP tools
+This decision was recorded by System Architecture using the SPARC + MADR methodology. Original status: "Implemented (v3.5.15-patch.114, 2026-03-22)".
 
-## Consequences
-
-### Positive
-
-- NightlyLearner now actually consolidates episodes into skills (was dead code since v3 inception)
-- 41/41 MCP tools registered — matches documentation
-- Skills become searchable and reusable across sessions
-- `agentdb_learner-run` lets users trigger the nightly pipeline on demand
-
-### Negative
-
-- Skill consolidation adds latency to the nightly run (~100ms for small episode tables)
-- 5 new tools increase the MCP tool surface area (more to maintain)
-
-## Related
-
-- **ADR-0050**: Controller activation — established the deferred init pipeline
-- **ADR-0052**: Config-driven embedding — embedding dimensions for skill vectors
-- **ADR-0054**: RuVector patch pipeline (proposed) — completes the fork model
+The original record cross-referenced these related decisions: ADR-0050 (controller activation — established the deferred init pipeline); ADR-0052 (config-driven embedding — embedding dimensions for skill vectors); and ADR-0054 (RuVector patch pipeline, proposed — completes the fork model).

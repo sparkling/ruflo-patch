@@ -1,10 +1,15 @@
-# ADR-0008: Skip Ruvector Rebuild
+---
+status: accepted
+date: 2026-03-05
+tags: [ruvector, build, pipeline, native]
+supersedes: []
+depends-on: []
+implements: []
+---
 
-## Status
+# Skip Ruvector Rebuild
 
-Implemented
-
-## Context
+## Context and Problem Statement
 
 ### Specification (SPARC-S)
 
@@ -38,7 +43,16 @@ RESULT:
   package.json dependencies reference @sparkleideas/* from our builds
 ```
 
-## Decision
+## Considered Options
+
+* **Do NOT rebuild ruvector packages — depend on the published `@ruvector/*` packages from public npm, do not rename them (chosen).**
+* **Rebuild everything including ruvector** -- Rejected. Adds 2-4 hours to the build, requires Rust toolchain and cross-compilation CI, and solves no problem (ruvector is current). Effort estimate for the full fork project increases from ~1 week to 4-6 weeks.
+* **Fork ruvector but use published binaries** -- Rejected. Forking without rebuilding creates a repo we maintain but never use. If we need ruvector changes in the future, we can fork then.
+* **Vendor ruvector tarballs** -- Rejected. Downloading `.tgz` files and committing them adds 200+ MB to the repo. Standard npm dependency resolution handles this automatically.
+
+## Decision Outcome
+
+Chosen option: "Do NOT rebuild ruvector packages — depend on the published `@ruvector/*` packages from public npm", because ruvector is the most current part of the ecosystem and rebuilding it would impose a Rust/cross-compilation burden that solves no real problem.
 
 ### Architecture (SPARC-A)
 
@@ -56,31 +70,19 @@ Our rebuilt `@sparkleideas/*` packages list `@ruvector/*` as standard npm depend
 
 4. **42 platform-specific binary packages are a maintenance burden.** Each platform target requires a CI runner or cross-compilation setup. Failures in native compilation are harder to debug than TypeScript build failures. This complexity adds no value when the published packages work.
 
-### Considered Alternatives
+### Consequences
 
-1. **Rebuild everything including ruvector** -- Rejected. Adds 2-4 hours to the build, requires Rust toolchain and cross-compilation CI, and solves no problem (ruvector is current). Effort estimate for the full fork project increases from ~1 week to 4-6 weeks.
-
-2. **Fork ruvector but use published binaries** -- Rejected. Forking without rebuilding creates a repo we maintain but never use. If we need ruvector changes in the future, we can fork then.
-
-3. **Vendor ruvector tarballs** -- Rejected. Downloading `.tgz` files and committing them adds 200+ MB to the repo. Standard npm dependency resolution handles this automatically.
-
-## Consequences
-
-### Refinement (SPARC-R)
-
-**Positive:**
-
-- Build pipeline is Node.js-only: `pnpm install && pnpm build` with no Rust, napi-rs, or wasm-pack
-- Build time measured in minutes, not hours
-- No cross-compilation CI matrix (7 platforms x multiple architectures)
-- Fork + publish effort drops from 4-6 weeks to ~1 week
-- Ruvector updates are picked up automatically via standard npm semver resolution
-
-**Negative:**
-
-- If ruvector publishes a breaking change, our packages pick it up automatically. This is mitigated by pinning ruvector versions in `package.json` (exact versions or narrow ranges) rather than using `*` or `latest`.
-- If ruvector becomes stale (it is currently active), we would need to revisit this decision and add Rust toolchain support to the build pipeline.
-- The 2 RED semver conflicts involving ruvector (`@ruvector/ruvllm ^0.2.3` vs published `2.5.1`) remain unresolved. These conflicts exist in upstream source code and are not introduced by our approach. They manifest as peer dependency warnings but do not cause runtime failures.
+* Good, because the build pipeline is Node.js-only: `pnpm install && pnpm build` with no Rust, napi-rs, or wasm-pack.
+* Good, because build time is measured in minutes, not hours.
+* Good, because there is no cross-compilation CI matrix (7 platforms x multiple architectures).
+* Good, because fork + publish effort drops from 4-6 weeks to ~1 week.
+* Good, because ruvector updates are picked up automatically via standard npm semver resolution.
+* Bad, because if ruvector publishes a breaking change, our packages pick it up automatically. This is mitigated by pinning ruvector versions in `package.json` (exact versions or narrow ranges) rather than using `*` or `latest`.
+* Bad, because if ruvector becomes stale (it is currently active), we would need to revisit this decision and add Rust toolchain support to the build pipeline.
+* Bad, because the 2 RED semver conflicts involving ruvector (`@ruvector/ruvllm ^0.2.3` vs published `2.5.1`) remain unresolved. These conflicts exist in upstream source code and are not introduced by our approach. They manifest as peer dependency warnings but do not cause runtime failures.
+* Neutral, because the codemod (ADR-0005) explicitly skips `@ruvector/*` in its rename rules.
+* Neutral, because `npm ls` shows `@ruvector/*` as standard dependencies resolved from public npm -- no special handling visible to users.
+* Neutral, because ruvector is MIT-licensed, so forking remains an option if circumstances change.
 
 **Trade-offs and edge cases:**
 
@@ -88,13 +90,9 @@ Our rebuilt `@sparkleideas/*` packages list `@ruvector/*` as standard npm depend
 - Ruvector's `better-sqlite3` dependency requires `npm rebuild` on Node v24 (`node-v137-linux-x64`). This is a known issue documented in the project memory and affects upstream identically.
 - If we later need to patch ruvector code (not just use it), we would need to either (a) add the Rust rebuild to our pipeline, or (b) patch the compiled `.node` files at the JavaScript wrapper level. Option (b) is viable for small changes.
 
-**Neutral:**
+### Confirmation
 
-- The codemod (ADR-0005) explicitly skips `@ruvector/*` in its rename rules
-- `npm ls` shows `@ruvector/*` as standard dependencies resolved from public npm -- no special handling visible to users
-- ruvector is MIT-licensed, so forking remains an option if circumstances change
-
-### Completion (SPARC-C)
+Completion (SPARC-C):
 
 - [ ] `@ruvector/*` packages resolve correctly from public npm when `ruflo` is installed
 - [ ] No Rust toolchain is required to run the build pipeline

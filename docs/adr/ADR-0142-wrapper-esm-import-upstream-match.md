@@ -1,13 +1,15 @@
-# ADR-0142: Replace npx-redirect wrapper with upstream-pattern ESM import — `@sparkleideas/ruflo` becomes a thin in-process proxy
+---
+status: accepted
+date: 2026-05-04
+tags: [wrapper, pipeline, esm, performance]
+supersedes: []
+depends-on: [ADR-0027]
+implements: []
+---
 
-- **Status**: **Accepted (2026-05-04)** — implemented across 6 commits (`8aba0ad` Pass 6 prerequisite + `d391ef6` G2 + `70ad73e` G3 + `bd7e7c9` Phase 2 commit 4 wrapper pivot + `4bbbb5b` Phase 2 commit 5 pipeline lockstep + commit 6 benchmarks below). All four guards (G1-G4) in place. New wrapper code on disk + committed; will deploy on next bumped release (current release run found no merged PRs and skipped the bump per pipeline normal behavior — no `--force` used to avoid Verdaccio pollution).
-- **Date**: 2026-05-04
-- **Deciders**: Henrik Pettersen
-- **Supersedes**: the architectural choice in commit `c76a727` ("Eliminate staleness: zero-dependency wrapper invokes CLI at runtime", 2026-03-06). Preserves c76a727's bug catalog as historical context; replaces its mitigation strategy.
-- **Related**: ADR-0007 (drop-in replacement UX — user-facing contract unchanged), ADR-0027 (exact `-patch.N` pins — the structural fix that makes upstream's pattern viable for us)
-- **Scope**: `bin/ruflo.mjs` + `package.json` (root, the published `@sparkleideas/ruflo` wrapper) + a small set of test/prepublish guards. Does not touch `scripts/`, codemod, fork source, acceptance harness, or any `@sparkleideas/cli` internals.
+# Replace npx-redirect wrapper with upstream-pattern ESM import — `@sparkleideas/ruflo` becomes a thin in-process proxy
 
-## Context
+## Context and Problem Statement
 
 The current `@sparkleideas/ruflo` wrapper has zero dependencies and shells `execFileSync('npx', ['--yes', '@sparkleideas/cli@latest', ...])` on every invocation. Commit `c76a727` documents three production bugs this pattern fixed:
 
@@ -33,7 +35,18 @@ Each c76a727 bug has a structurally different fix today:
 
 The redirect pattern was the right call in March 2026. ADR-0027 (April 2026) and the pipeline lockstep are now strong enough that upstream's pattern is viable without re-exposing the original bugs — provided four guards are in place (see Decision §Guards).
 
-## Decision
+## Considered Options
+
+* **Replace the npx-redirect wrapper with an upstream-pattern ESM import wrapper, with four regression guards (chosen).**
+* **Option A — Keep current redirect, formalize in ADR (rejected)** — document c76a727's choice as the canonical strategy. Trade upstream-divergence + 10× hot-path latency for offline-zero-dep simplicity. Rejected: hook-firing scenario (30+ tool calls per session) makes the latency cost unacceptable. The freshness benefit is partly mythical (npx packument cache TTL is 5 minutes anyway).
+* **Option B — `--prefer-online` variant of the chosen option (rejected)** — same as Decision but pass `--prefer-online` to npx for the wrapper itself. Rejected: solves a non-problem. The pipeline already bumps wrapper alongside cli; npx invalidates `@latest` on version change. `--prefer-online` adds a 50-200ms HEAD per call without changing freshness semantics. Diverges from upstream for no benefit.
+* **Option C — Collapse: wrapper IS cli (rejected)** — eliminate the two-tier structure; publish `@sparkleideas/ruflo` as a self-contained CLI. Rejected: throws away upstream's two-package architecture entirely; codemod has to merge two publish targets; future upstream merges become much harder. Fastest possible runtime, but the upstream-match constraint dominates.
+* **Option D — Self-updating wrapper (per-call `npm view`) (rejected)** — wrapper checks registry on each invocation, prompts/runs update if stale. Rejected: 200-500ms per-call network — strictly worse than redirect on warm path; surprising auto-mutating UX; not KISS.
+* **Option E — Bundled cli + async background refresh (rejected)** — bundled cli for fast warm path; opportunistic background `npm view` writes a "newer-version-available" sentinel. Rejected: warm runtime equivalent to Decision but adds custom machinery (sentinel files, fork-and-detach, cross-invocation read). Not KISS, not upstream.
+
+## Decision Outcome
+
+Chosen option: "Replace `bin/ruflo.mjs` (npx redirect) with an upstream-pattern ESM import wrapper", because ADR-0027's exact pins + the pipeline lockstep + upstream's direct `bin/cli.js` import are now strong enough to make upstream's pattern viable without re-exposing the c76a727 bugs — provided four guards stay in force.
 
 Replace `bin/ruflo.mjs` (npx redirect) with an upstream-pattern ESM import wrapper. The published `@sparkleideas/ruflo` regains an exact-pinned `@sparkleideas/cli` dependency. Four guards (below) prevent regression to the c76a727 failure modes.
 
@@ -111,48 +124,33 @@ Pin is **exact** (no `^` or `~`) per ADR-0027. The pipeline (`scripts/fork-versi
 | **G3** | **Bin-path-stability assertion**: acceptance check that `node_modules/@sparkleideas/cli/bin/cli.js` exists in a freshly-installed wrapper tree | `lib/acceptance-adr0142-bin-path.sh` (new) | `@sparkleideas/cli` ever restructures (e.g., moves bin to `dist/bin/cli.js`) → wrapper's hard-coded path 404s silently after install |
 | **G4** | **Bug-history citation**: this ADR + `bin/ruflo.mjs` header reference commit `c76a727` and the three original bugs by name | This ADR + comment block in `bin/ruflo.mjs` | Next maintainer sees minimal wrapper, doesn't know about the historical bugs, replays them via "improvement" |
 
-## Consequences
+### Consequences
 
-### Positive
+* Good, because ~2.6× warm-path latency reduction for the wrapper layer (~240ms → ~90ms — measured 2026-05-04, see §"Benchmark results" below). Original estimate of ~10× was for cold/uncached scenarios; npx packument cache (5-min TTL) absorbs more of the redirect cost than initially modeled when both wrapper and cli caches are warm.
+* Good, because single-process invocation — half the RSS, instant signal handling, cleaner stack traces.
+* Good, because the hooks scenario is fixed — 30-tool-call session pays ~2.7s of wrapper overhead instead of ~7.2s (saves ~4.5s/session at observed warm latency).
+* Good, because of upstream-match — `bin/ruflo.mjs` is byte-equivalent to upstream's `ruflo/bin/ruflo.js` modulo (a) `@sparkleideas/cli` scope, (b) deleted dev-tree fallback, (c) added try/catch.
+* Good, because KISS by architecture — 1 process, 1 dynamic import, no spawn machinery, no inter-process coordination.
+* Bad, because cold install cost rises: first `npx @sparkleideas/ruflo@latest` of a new wrapper version downloads cli (~50MB) instead of just the wrapper. Acceptable per user constraint ("startup time is not important").
+* Bad, because of lockstep brittleness: if the pipeline desyncs wrapper.dependencies from cli.version, the wrapper installs a stale cli. Mitigated by Guard G1.
+* Bad, because of path-stability brittleness: hard-coded `node_modules/@sparkleideas/cli/bin/cli.js` assumption. Mitigated by Guard G3.
+* Neutral, because user-facing UX (`npx @sparkleideas/ruflo …`) is unchanged — ADR-0007 contract preserved.
+* Neutral, because codemod behavior is unchanged — wrapper isn't built from /tmp/ruflo-build; it ships ruflo-patch's root verbatim per `publish-verdaccio.sh:149`.
 
-- **~2.6× warm-path latency reduction** for the wrapper layer (~240ms → ~90ms — measured 2026-05-04, see §"Benchmark results" below). Original estimate of ~10× was for cold/uncached scenarios; npx packument cache (5-min TTL) absorbs more of the redirect cost than initially modeled when both wrapper and cli caches are warm.
-- **Single-process invocation** — half the RSS, instant signal handling, cleaner stack traces
-- **Hooks scenario fixed** — 30-tool-call session pays ~2.7s of wrapper overhead instead of ~7.2s (saves ~4.5s/session at observed warm latency)
-- **Upstream-match** — `bin/ruflo.mjs` is byte-equivalent to upstream's `ruflo/bin/ruflo.js` modulo (a) `@sparkleideas/cli` scope, (b) deleted dev-tree fallback, (c) added try/catch
-- **KISS by architecture** — 1 process, 1 dynamic import, no spawn machinery, no inter-process coordination
+### Confirmation
 
-### Negative
+Acceptance criteria:
 
-- **Cold install cost ↑**: first `npx @sparkleideas/ruflo@latest` of a new wrapper version downloads cli (~50MB) instead of just the wrapper. Acceptable per user constraint ("startup time is not important")
-- **Lockstep brittleness**: if the pipeline desyncs wrapper.dependencies from cli.version, the wrapper installs a stale cli. **Mitigated by Guard G1**
-- **Path-stability brittleness**: hard-coded `node_modules/@sparkleideas/cli/bin/cli.js` assumption. **Mitigated by Guard G3**
-
-### Neutral
-
-- User-facing UX (`npx @sparkleideas/ruflo …`) unchanged — ADR-0007 contract preserved
-- Codemod behavior unchanged — wrapper isn't built from /tmp/ruflo-build; it ships ruflo-patch's root verbatim per `publish-verdaccio.sh:149`
-
-## Alternatives considered
-
-### Option A — Keep current redirect, formalize in ADR
-Document c76a727's choice as the canonical strategy. Trade upstream-divergence + 10× hot-path latency for offline-zero-dep simplicity.
-**Rejected**: hook-firing scenario (30+ tool calls per session) makes the latency cost unacceptable. The freshness benefit is partly mythical (npx packument cache TTL is 5 minutes anyway).
-
-### Option B — `--prefer-online` variant of #3
-Same as Decision but pass `--prefer-online` to npx for the wrapper itself.
-**Rejected**: solves a non-problem. The pipeline already bumps wrapper alongside cli; npx invalidates `@latest` on version change. `--prefer-online` adds a 50-200ms HEAD per call without changing freshness semantics. Diverges from upstream for no benefit.
-
-### Option C — Collapse: wrapper IS cli
-Eliminate the two-tier structure; publish `@sparkleideas/ruflo` as a self-contained CLI.
-**Rejected**: throws away upstream's two-package architecture entirely; codemod has to merge two publish targets; future upstream merges become much harder. Fastest possible runtime, but the upstream-match constraint dominates.
-
-### Option D — Self-updating wrapper (per-call `npm view`)
-Wrapper checks registry on each invocation, prompts/runs update if stale.
-**Rejected**: 200-500ms per-call network — strictly worse than redirect on warm path; surprising auto-mutating UX; not KISS.
-
-### Option E — Bundled cli + async background refresh
-Bundled cli for fast warm path; opportunistic background `npm view` writes a "newer-version-available" sentinel.
-**Rejected**: warm runtime equivalent to Decision but adds custom machinery (sentinel files, fork-and-detach, cross-invocation read). Not KISS, not upstream.
+1. **G1 — Lockstep enforced at pipeline time** (not just `prepublishOnly`): `scripts/check-wrapper-cli-lockstep.mjs` invoked directly from `publish-verdaccio.sh` immediately before line 155's `npm publish` call; failing exits non-zero before publish is attempted; `prepublishOnly` also runs it as defence-in-depth
+2. **G2 — No-fallback unit test** (`tests/unit/wrapper-no-fallback.test.mjs`) asserts `bin/ruflo.mjs` does not contain `v3/@claude-flow/cli`, `v3/@sparkleideas/cli`, or any sibling monorepo-relative dev-tree path; asserts a `process.exit(1)` exists in the cli-not-found branch
+3. **G3 — Bin-path acceptance** (`lib/acceptance-adr0142-bin-path.sh`): in a fresh `npx @sparkleideas/ruflo@latest` install, asserts `node_modules/@sparkleideas/cli/bin/cli.js` exists and `node node_modules/.bin/ruflo --version` prints a version. Uses the `_cli_cmd` helper per memory `reference-cli-cmd-helper.md`. Integrated into `scripts/test-acceptance.sh`'s parallel wave
+4. **G4 — Bug-history citation**: ADR-0142 + `bin/ruflo.mjs` header both reference commit `c76a727` and name the three bugs (npx cache staleness, `*` semver mismatch, ESM exports map resolution)
+5. `bin/ruflo.mjs` rewritten per Decision §"New `bin/ruflo.mjs` shape"
+6. Root `package.json` adds exact-pin `dependencies['@sparkleideas/cli']: '<current-cli-version>'`
+7. `scripts/run-fork-version.sh` extended to bump the wrapper's pin in the same invocation that bumps cli; `scripts/fork-version.mjs` exports a new helper `bumpWrapperPin(rootPath, newCliVersion)` for testability
+8. Wrapper-overhead benchmark: `time npx @sparkleideas/ruflo@latest --version` measured before vs after; recorded in benchmark commit; target ≥5× reduction (informational; not a gate)
+9. `npm run release` passes end-to-end including the new G1 + G2 + G3 checks
+10. **Automated** MCP JSON-RPC smoke (`adr0142-mcp-jsonrpc` acceptance check, `lib/acceptance-adr0142-bin-path.sh:check_adr0142_mcp_jsonrpc`): fresh-installs the wrapper from Verdaccio, spawns `node node_modules/.bin/ruflo mcp start` (the same invocation Claude Code uses), sends a JSON-RPC `initialize` request via stdin, asserts a well-formed `{jsonrpc, id, result|error}` response. Per project policy, no manual steps — everything via build/deploy. The "claude mcp add registers" UX half is Claude Code's responsibility, not the wrapper's; the wrapper's contract is "spawn it, it serves JSON-RPC", which this check verifies end-to-end.
 
 ## Adversarial review (per memory `feedback-no-adversarial-review.md` — explicitly user-requested 2026-05-04)
 
@@ -193,19 +191,6 @@ These constrain the execution plan and were confirmed via direct read of the pip
 - **`fork-version.mjs` operates on `FORK_DIRS[]`** (the four fork repos) — it does not currently touch ruflo-patch's root `package.json`. The wrapper-pin-bump is a new concern and must be a separate phase wired into `run-fork-version.sh`, not folded into the existing `bumpAll()`.
 - **The wrapper is published from `${PROJECT_DIR}` directly** (ruflo-patch repo root), not from `/tmp/ruflo-build/`. Codemod doesn't see it. The wrapper's `package.json` IS the published artifact — what's on disk is what npm gets.
 - **`prepublishOnly` already runs `npm run test:unit`** which transitively runs `node scripts/test-runner.mjs tests/unit`. Adding `tests/unit/wrapper-no-fallback.test.mjs` is auto-included; no script wiring needed.
-
-## Acceptance criteria
-
-1. **G1 — Lockstep enforced at pipeline time** (not just `prepublishOnly`): `scripts/check-wrapper-cli-lockstep.mjs` invoked directly from `publish-verdaccio.sh` immediately before line 155's `npm publish` call; failing exits non-zero before publish is attempted; `prepublishOnly` also runs it as defence-in-depth
-2. **G2 — No-fallback unit test** (`tests/unit/wrapper-no-fallback.test.mjs`) asserts `bin/ruflo.mjs` does not contain `v3/@claude-flow/cli`, `v3/@sparkleideas/cli`, or any sibling monorepo-relative dev-tree path; asserts a `process.exit(1)` exists in the cli-not-found branch
-3. **G3 — Bin-path acceptance** (`lib/acceptance-adr0142-bin-path.sh`): in a fresh `npx @sparkleideas/ruflo@latest` install, asserts `node_modules/@sparkleideas/cli/bin/cli.js` exists and `node node_modules/.bin/ruflo --version` prints a version. Uses the `_cli_cmd` helper per memory `reference-cli-cmd-helper.md`. Integrated into `scripts/test-acceptance.sh`'s parallel wave
-4. **G4 — Bug-history citation**: ADR-0142 + `bin/ruflo.mjs` header both reference commit `c76a727` and name the three bugs (npx cache staleness, `*` semver mismatch, ESM exports map resolution)
-5. `bin/ruflo.mjs` rewritten per Decision §"New `bin/ruflo.mjs` shape"
-6. Root `package.json` adds exact-pin `dependencies['@sparkleideas/cli']: '<current-cli-version>'`
-7. `scripts/run-fork-version.sh` extended to bump the wrapper's pin in the same invocation that bumps cli; `scripts/fork-version.mjs` exports a new helper `bumpWrapperPin(rootPath, newCliVersion)` for testability
-8. Wrapper-overhead benchmark: `time npx @sparkleideas/ruflo@latest --version` measured before vs after; recorded in benchmark commit; target ≥5× reduction (informational; not a gate)
-9. `npm run release` passes end-to-end including the new G1 + G2 + G3 checks
-10. **Automated** MCP JSON-RPC smoke (`adr0142-mcp-jsonrpc` acceptance check, `lib/acceptance-adr0142-bin-path.sh:check_adr0142_mcp_jsonrpc`): fresh-installs the wrapper from Verdaccio, spawns `node node_modules/.bin/ruflo mcp start` (the same invocation Claude Code uses), sends a JSON-RPC `initialize` request via stdin, asserts a well-formed `{jsonrpc, id, result|error}` response. Per project policy, no manual steps — everything via build/deploy. The "claude mcp add registers" UX half is Claude Code's responsibility, not the wrapper's; the wrapper's contract is "spawn it, it serves JSON-RPC", which this check verifies end-to-end.
 
 ## Execution plan
 
@@ -383,7 +368,17 @@ Release run on 2026-05-04 (commit `4bbbb5b`) found 3 acceptance failures, all pr
 
 ADR-0142's own check `adr0142-bin-path` passed (Phase 1 transitional state — published wrapper still on Verdaccio is the old npx-redirect form; G3 reports correct transitional message). Will flip to "post-pivot OK" assertion the next time a real release bumps and republishes the wrapper with the new ESM-import code.
 
-## Reference
+## More Information
+
+Original status: **Accepted (2026-05-04)** — implemented across 6 commits (`8aba0ad` Pass 6 prerequisite + `d391ef6` G2 + `70ad73e` G3 + `bd7e7c9` Phase 2 commit 4 wrapper pivot + `4bbbb5b` Phase 2 commit 5 pipeline lockstep + commit 6 benchmarks). All four guards (G1-G4) in place. New wrapper code on disk + committed; will deploy on next bumped release (current release run found no merged PRs and skipped the bump per pipeline normal behavior — no `--force` used to avoid Verdaccio pollution).
+
+This ADR supersedes the architectural choice in commit `c76a727` ("Eliminate staleness: zero-dependency wrapper invokes CLI at runtime", 2026-03-06). It preserves c76a727's bug catalog as historical context; it replaces its mitigation strategy.
+
+This ADR relates to ADR-0007 (drop-in replacement UX — user-facing contract unchanged) and depends on ADR-0027 (exact `-patch.N` pins — the structural fix that makes upstream's pattern viable for us).
+
+Scope: `bin/ruflo.mjs` + `package.json` (root, the published `@sparkleideas/ruflo` wrapper) + a small set of test/prepublish guards. Does not touch `scripts/`, codemod, fork source, acceptance harness, or any `@sparkleideas/cli` internals.
+
+References:
 
 - Original choice: commit `c76a727` (2026-03-06) — "Eliminate staleness: zero-dependency wrapper invokes CLI at runtime"
 - Upstream pattern: `/Users/henrik/source/ruvnet/ruflo/ruflo/bin/ruflo.js`

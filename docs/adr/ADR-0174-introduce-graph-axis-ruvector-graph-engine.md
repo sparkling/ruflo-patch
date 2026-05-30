@@ -1,13 +1,10 @@
 ---
 status: superseded
-completed: true
 date: 2026-05-12
-tags: [graph, ruvector, axis-separation, substrate, hypergraph, three-axis, cypher-executor-patch, ruvector-postgres, fork-freedom]
+tags: [graph, ruvector, axis-separation, hypergraph]
 supersedes: [ADR-0173]
-superseded-by: [ADR-0177]
 depends-on: [ADR-0073, ADR-0166, ADR-0170]
 implements: []
-references-upstream: [ruvnet/ruflo:ADR-027, ruvnet/ruflo:ADR-087, ruvnet/RuVector:ADR-044, ruvnet/RuVector:ADR-080, ruvnet/RuVector:ADR-143, ruvnet/RuVector:ADR-029, ruvnet/agentdb:ADR-007]
 ---
 
 > **Superseded by ADR-0177 (2026-05-12).** ADR-0177 collapses back from three axes (memory_*, agentdb_*, graph_*) to two (memory_*, agentdb_*) following upstream `ruvnet/agentdb`'s framing. Graph data persists within `agentdb_*` via `@ruvector/graph-node` integration in upstream's `db-unified.ts`; no separate `graph_*` substrate axis. See ADR-0177 §"Relationship to ADR-0166 (axis-separation framing)".
@@ -343,6 +340,8 @@ Path Y can deliver: pgvector-compatible vector storage + HNSW + IVFFlat (pgvecto
 - **Cross-axis composition is a controller responsibility.** Now expressible declaratively (Cypher MATCH against `graph_*`) and imperatively, depending on the controller's query shape.
 
 ## More Information
+
+Original metadata: marked `completed: true`; recorded upstream references `ruvnet/ruflo:ADR-027`, `ruvnet/ruflo:ADR-087`, `ruvnet/RuVector:ADR-044`, `ruvnet/RuVector:ADR-080`, `ruvnet/RuVector:ADR-143`, `ruvnet/RuVector:ADR-029`, and `ruvnet/agentdb:ADR-007`. This decision supersedes ADR-0173 and is itself superseded by ADR-0177 (2026-05-12); see the banner at the top for the current graph-workload strategy.
 
 ### Relationship to ADR-0073 (RVF Storage Backend Upgrade)
 
