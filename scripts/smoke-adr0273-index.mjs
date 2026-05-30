@@ -118,6 +118,19 @@ async function main() {
     if (n === 3) pass(`agentdb_hierarchical-query adr/ADR-900* → 3 records (records queryable via live server)`);
     else fail('hquery', `expected 3 from adr/ADR-900*, got ${n}: ${JSON.stringify(qobj).slice(0,200)}`);
 
+    // --purge idempotency: re-index with --purge → still 3 (not 6). Without
+    // purge, HierarchicalMemory's synthetic-id insert would duplicate.
+    const r2 = spawnSync(cli, ['agentdb', 'index', '--dir', adrDir, '--purge'], { cwd: dir, encoding: 'utf8', timeout: 60000, env: { ...process.env, NPM_CONFIG_REGISTRY: REGISTRY } });
+    log(`[smoke] re-index --purge status=${r2.status}`);
+    if (r2.status === 0) pass('re-index --purge ran (no LockHeld)');
+    else fail('reindex-purge', `exit=${r2.status}: ${(r2.stderr||'').slice(0,200)}`);
+    const q2 = spawnSync(cli, ['mcp', 'exec', '--tool', 'agentdb_hierarchical-query', '--params', JSON.stringify({ pathPattern: 'adr/ADR-900*' })],
+      { cwd: dir, encoding: 'utf8', timeout: 30000, env: { ...process.env, NPM_CONFIG_REGISTRY: REGISTRY } });
+    const q2obj = parseResult(`${q2.stdout || ''}\n${q2.stderr || ''}`);
+    const n2 = q2obj && Array.isArray(q2obj.results) ? q2obj.results.length : null;
+    if (n2 === 3) pass(`--purge idempotent: re-index still 3 records (no duplicates)`);
+    else fail('purge-idempotency', `expected 3 after --purge re-index, got ${n2} (duplicates → purge ineffective)`);
+
   } catch (e) {
     fail('main', e?.stack || String(e));
   } finally {
