@@ -869,6 +869,8 @@ adr0268_lib="${PROJECT_DIR}/lib/acceptance-adr0268-checks.sh"
 [[ -f "$adr0268_lib" ]] && source "$adr0268_lib"
 adr0176qk_lib="${PROJECT_DIR}/lib/acceptance-adr0176-query-key.sh"
 [[ -f "$adr0176qk_lib" ]] && source "$adr0176qk_lib"
+adr0274_lib="${PROJECT_DIR}/lib/acceptance-adr0274-checks.sh"
+[[ -f "$adr0274_lib" ]] && source "$adr0274_lib"
 
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
@@ -3692,6 +3694,27 @@ if [[ -f "$adr0176qk_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
   rm -rf "$PARALLEL_DIR" 2>/dev/null
 fi
 _record_phase "phase-adr0176-query-key" "$(_elapsed_ms "$_adr0176qk_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0274: RVF read/write handle split (resolves re-opened ADR-0267). MCP
+# server warms up RVF via a tools/call, then a concurrent CLI write from a
+# separate process must succeed (no LockHeld, no 30s hang). FAILs pre-fix.
+# ════════════════════════════════════════════════════════════════════
+_adr0274_start=$(_ns)
+if [[ -f "$adr0274_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
+  log "── ADR-0274: RVF read/write handle split (concurrent write past MCP warmup) ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+  export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+
+  run_check_bg "adr0274-rvf-rw-split" "ADR-0274 RVF read/write handle split" check_adr0274_rvf_rw_split "adr0274"
+
+  collect_parallel "adr0274" \
+    "adr0274-rvf-rw-split|ADR-0274 RVF read/write handle split"
+
+  unset ADR0255_SMOKE_SHARED_TEMP
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0274-rvf-rw-split" "$(_elapsed_ms "$_adr0274_start" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
 # Results

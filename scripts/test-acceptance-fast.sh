@@ -447,6 +447,17 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0176qk"* || "$_FAST_RUN_GROUPS" == "all" ]]; t
   fi
 fi
 
+if [[ "$_FAST_RUN_GROUPS" == *"adr0274"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0274-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0274-checks.sh"
+    echo "── ADR-0274 (RVF read/write handle split — concurrent write past MCP warmup) ──"
+    export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+    echo "[fast] adr0274 reusing ACCEPT_TEMP: ${ACCEPT_TEMP}"
+    _fast_run "adr0274-rvf-rw-split" check_adr0274_rvf_rw_split
+    unset ADR0255_SMOKE_SHARED_TEMP
+  fi
+fi
+
 if [[ "$_FAST_RUN_GROUPS" == *"adr0245"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
   if [[ -f "$PROJECT_DIR/lib/acceptance-adr0245-checks.sh" ]]; then
     source "$PROJECT_DIR/lib/acceptance-adr0245-checks.sh"
