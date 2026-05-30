@@ -322,7 +322,7 @@ Captured in `[[feedback-trace-bin-entry-before-patching]]`: the very first read 
 
 ## More Information
 
-Original status: proposed 2026-05-27; accepted, implemented, and completed 2026-05-28. Status note (2026-05-28): All three tasks complete.
+Original status: proposed 2026-05-27; accepted, implemented, and marked completed 2026-05-28. **Re-opened 2026-05-30** (see §"Re-opened" amendment above): the 2026-05-28 completion covered only the idle-server path; the held-for-lifetime flock after the first `tools/call` means the reported regression is still live for the real (always-used-server) case. The three 2026-05-28 tasks below were genuinely done for the idle scope; a follow-on resolution is now required.
 
 - **Task #7 (trace)**: root cause identified — MCP server held the RVF kernel flock for its lifetime because `warmUpRvfWithRetry` opened the backend eagerly at startup and `_isPersistent=true` keeps `_storage` cached. ([[feedback-trace-before-hypothesis]] paid off.)
 - **Task #8 (fix)**: Option F — defer `warmUpRvfWithRetry` to first `tools/call`. Three commits before finding the actual entry point (see Revisions 2 + 3): `5c6d12c5f` patched `src/mcp-server.ts` (dead code, reverted in `103514bcc`); `27fbb575b` + `61f453b4d` patched the same file with different shape (still dead code); `39b74674a` patched `bin/mcp-server.js` (also dead code from `ruflo mcp start`); finally `8f4fe15de` patched `bin/cli.js` (THE actual live path — bin/ruflo.mjs proxies to cli.js which handles MCP inline). Lesson captured in [[feedback-trace-bin-entry-before-patching]]: the FIRST read for any CLI fix is `cat <pkg>/package.json | jq .bin` + `ls <pkg>/bin/`.
@@ -365,4 +365,16 @@ Why (verified):
 - `withRouter`'s release branch is gated on `!_isPersistent` (`memory-router.ts:1076` finally-block), so it never runs for the MCP server — and the archivist write path bypasses `withRouter` entirely, pinning `_storage` directly (`archivist-init.ts:1483-1523`).
 - The native `WriterLock` is a struct field of `RvfStore` (`store.rs:105`), acquired once on open (`store.rs:164/311`) and released only on `Drop`/fd-close (`locking.rs:78-84`) — never per-write.
 
-**Practical correction:** the regression is fixed for the *idle* server only. A separate CLI process writing RVF **still blocks ~30 s then fails `LockHeld`** against an MCP server that has served any tool call (`locking.rs:173-203`). The Task #9 smoke passes only because it writes *before* the server's first dispatch (lazy warmup). This does not reopen ADR-0267 (its stated scope — idle-server hold — is genuinely fixed), but the "ongoing tool traffic" explanation overclaims. The residual (CLI-vs-busy-MCP RVF contention) is carried by ADR-0273, which depends-on this ADR and documents the "stop/idle the server before indexing" precondition rather than relying on a per-op release that does not exist.
+**Practical correction:** the regression is fixed for the *idle* server only. A separate CLI process writing RVF **still blocks ~30 s then fails `LockHeld`** against an MCP server that has served any tool call (`locking.rs:173-203`). The Task #9 smoke passes only because it writes *before* the server's first dispatch (lazy warmup). The "ongoing tool traffic" explanation overclaims.
+
+### Re-opened: the idle-only fix does not resolve the reported bug (2026-05-30)
+
+In practice the MCP server **always** has served at least one `tools/call` by the time a user runs a CLI memory op — so the held-for-lifetime flock means the **originally reported regression is still live for the real use case**. Marking ADR-0267 "completed" was premature: it closed the narrow idle-server path while the general problem (any concurrent CLI memory op blocked by a running, used MCP server) remains. The "stop the daemon/server first" workaround is **not acceptable as a standing requirement** — the MCP server is the always-on surface; requiring it stopped to run `memory store` (or to rebuild the ADR index per ADR-0273) defeats the point.
+
+**This ADR needs a genuine resolution** (status → re-opened; not completed). The real fix must make concurrent RVF access work *without* stopping the server. Candidate mechanisms (for the next investigation/decision — not pre-selected):
+
+* **Per-op release on the MCP write path.** Make the MCP server release the flock between operations. Note ADR-0267 Revision 2 already found the naive `setRouterPersistent(false)` insufficient *on its own*, because the archivist pins `_storage` directly (`archivist-init.ts:1483-1523`) — a real fix must also release the archivist's held backend reference, not just flip the router flag.
+* **Cross-process-concurrent RVF.** Change the Rust `WriterLock` model (`store.rs:105`, `locking.rs`) from exclusive-held-until-drop to a coordinated multi-process writer scheme (lease/handoff, or shared-reader + serialized-writer). Deeper, in `forks/ruvector`.
+* **Single-writer-process architecture.** Route all RVF writes through the one process that holds the lock (the MCP server), so no second process ever contends — CLI ops and the ADR-0273 index become server-delegated batch operations. Sidesteps the lock entirely rather than fixing it.
+
+ADR-0273 (scriptable `agentdb index`) is **hard-blocked on this resolution** — it depends-on this ADR for exactly this reason.

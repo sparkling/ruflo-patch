@@ -62,9 +62,18 @@ Chosen option: **"A — Add an `agentdb index` CLI command"**, because the inves
 | (b) causal edge | SQLite-*classified* (`substrate-registry.ts:135`) but **RVF-written** via router fallback today, because ADR-0147 R7 is unimplemented (`causal-edge.ts:22-53`; `memory-router.ts:2486-2492`) | **Yes (today)** |
 | (c) `adr-patterns` | RVF + HNSW (`substrate-registry.ts:77`; `memory-tools.ts:295-305`) | **Yes** |
 
-### Decision: operational shape
+### Decision: operational shape — blocked on a genuine ADR-0267 resolution
 
-The command runs as a **standalone one-shot process** that itself acquires the RVF flock, writes, and exits (releasing it). Its **precondition: no MCP server may be actively holding the RVF lock** — i.e. stop the MCP server, or run before it has served any `tools/call`. The hierarchical SQLite surface (a) is unaffected and can write concurrently; only surfaces (b)+(c) require the precondition (narrowing to just (c) once ADR-0147 R7 moves causal edges to a real SQLite INSERT). Namespace convention: reuse the skill's `adr-patterns` + `adr-edges`; since `recordCausalEdge` hardcodes `causal-edges`, the command calls `routeMemoryOp({namespace:'adr-edges', …})` directly for edges to stay skill-canonical (or the skill is amended to `causal-edges` — a one-line reconciliation to settle at implementation).
+A standalone CLI process writing RVF **cannot** coexist with the running MCP server, and "stop the MCP server before indexing" is **rejected as an operational requirement** — the MCP server is the always-on surface the user interacts with through Claude Code; requiring it to be stopped to rebuild an index is unacceptable. Q1 proved the server holds the exclusive RVF flock for its whole lifetime after its first `tools/call`, so a second writer process is structurally impossible while the server runs.
+
+Therefore the RVF surfaces (b causal-edges, c adr-patterns) require **single-writer coordination**, of which there are two sound forms — and ADR-0273 is **blocked on one of them landing**:
+
+1. **Genuine ADR-0267 resolution (preferred dependency).** Make the MCP server not hold the RVF flock for its lifetime — i.e. release per-op, or make RVF cross-process concurrent. Then a standalone `agentdb index` process writes alongside the running server with no contention and no precondition. This is the real fix ADR-0267 still owes (its current fix covers only the idle server — see the 2026-05-30 amendment there).
+2. **In-lock-holder batch (sidesteps the lock).** Expose the index build as a single server-side batch operation (one `agentdb_index` MCP tool, or a CLI command that delegates to the running server) that loops over all 278 ADRs and writes every surface **inside the process that already holds the lock**. One round-trip, zero contention — it eliminates both the ~780-round-trip problem and the lock problem at once. The standalone (no-server-running) path acquires the lock cleanly for the duration.
+
+The hierarchical SQLite surface (a) is concurrency-safe (WAL) under either form and is never the blocker. Namespace convention: reuse the skill's `adr-patterns` + `adr-edges`; since `recordCausalEdge` hardcodes `causal-edges`, the command calls `routeMemoryOp({namespace:'adr-edges', …})` directly for edges to stay skill-canonical (or the skill is amended to `causal-edges` — a one-line reconciliation to settle at implementation).
+
+**This ADR does not ship until form 1 or form 2 exists.** The dependency on a real ADR-0267 fix is hard, not advisory.
 
 ### Consequences
 
@@ -72,14 +81,14 @@ The command runs as a **standalone one-shot process** that itself acquires the R
 * Good, because in-process controller calls amortize cold-start once (~12–18 s) instead of paying `npx` per record like `import.mjs`.
 * Good, because a single canonical entry point ends the `import.mjs`-vs-skill divergence that produced the stale double entries (purged 2026-05-30).
 * Bad, because it is fork code + a release, not a quick script.
-* Bad, because the RVF flock forces a "stop/idle the MCP server before indexing" precondition for surfaces (b)+(c); the command must detect a held lock and fail loud with that guidance rather than hang 30 s.
+* Bad, because it is **hard-blocked on a genuine ADR-0267 RVF-concurrency fix (or the in-server-batch design)** — it cannot ship while the MCP server holds the flock for its lifetime and stopping the server is off the table.
 * Neutral, because derived-inverse logic must be carried caller-side (ported from `import.mjs`), since neither controller nor router synthesizes inverses.
-* Neutral, because surface (b)'s RVF contention is an ADR-0147-R7 artifact — when R7 lands, causal edges move to SQLite and the precondition narrows to surface (c) only.
+* Neutral, because surface (b)'s RVF contention is an ADR-0147-R7 artifact — when R7 lands, causal edges move to SQLite and only surface (c) remains RVF-bound.
 
 ### Confirmation
 
 * A `scripts/smoke-adr0273-*.mjs` acceptance check builds the index for the 278-ADR corpus and asserts: 278 `adr/<id>` records present (SQLite), edge count + inverses match frontmatter, `adr-patterns` populated (RVF), and `agentdb_hierarchical-query adr/*` returns all records (exercising the ADR-0176 fix).
-* The command fails loud (not a 30 s hang) when the RVF lock is held by a running MCP server, printing the stop-server precondition.
+* The smoke runs **with the MCP server running** (no stop-server step) and passes — proving the chosen single-writer form (real ADR-0267 fix, or in-server batch) actually removed the contention.
 * Wired into the canonical acceptance harness (`run_check_bg` + `collect_parallel`), green in a release.
 
 ## More Information
