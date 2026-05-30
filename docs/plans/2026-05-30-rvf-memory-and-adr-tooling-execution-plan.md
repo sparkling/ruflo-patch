@@ -1,6 +1,26 @@
 # Execution Plan — RVF memory concurrency + ADR tooling (2026-05-30)
 
-Implements the decisions recorded this session: ADR-0176 (amendment), ADR-0271 Phase 3, ADR-0272, ADR-0273, ADR-0274, ADR-0275. Decisions are complete and committed; **none are implemented yet** — this plan sequences the build. Trunk-based; commit fork changes before `npm run release`; wire every smoke into the canonical acceptance harness (`run_check_bg` + `collect_parallel`).
+Implements the decisions recorded this session: ADR-0176 (amendment), ADR-0271 Phase 3, ADR-0272, ADR-0273, ADR-0274, ADR-0275. Trunk-based; commit fork changes before `npm run release`; wire every smoke into the canonical acceptance harness (`run_check_bg` + `collect_parallel`).
+
+## Execution status (2026-05-30, in progress)
+
+| WS | ADR | Status |
+|---|---|---|
+| WS5 | 0272 typecheck gate | ✅ DONE + deployed (agentdb `a864a1c`; `tsconfig.build.json` + `adr0272-typecheck` acceptance check green) |
+| WS0 | 0176 release | ✅ DONE + deployed (agentdb fix live; `adr0176-query-key` discriminating smoke green) |
+| WS1 | 0274 RVF handle split | ✅ DONE + deployed (ruvector `8fb99c02b` peekTxnid + park/unpark; ruflo park/unpark + idle-timer + light-resync; `adr0274-rvf-rw-split` smoke green) |
+| WS2 | 0273 `agentdb index` | ✅ DONE + deployed (ruflo command + `--purge`; `adr0273-index` smoke incl. idempotency green) |
+| WS3 | 0271 Phase 3 corpus index | ✅ DONE — built via `agentdb index --purge` alongside live MCP (no LockHeld): **281 unique adr/* records (0 dups, SQLite-verified), 281 adr-patterns, 432 edges + 432 inverses** |
+| WS4 | 0275 HNSW Layer B | ◑ in progress — ruvector HNSW (rvf-index integration) + napi + TS envelope wiring |
+
+**Key implementation deviations (recorded for the ADRs):**
+- **WS1 chose the single-handle park/unpark model (D5)** over the literal two-object read/write split (D1): every native write funnels through `acquireLock`/`releaseLock`, queries don't, so parking the flock when idle resolves ADR-0267 while queries stay lock-free; same-process read-your-own-writes is automatic.
+- **Witness chain is session-local** (`boot()` never restores `last_witness_hash`) → no global chain to fork; the only integrity hazard is stale-manifest clobber, closed by `unpark_writer`'s O(1) txnid re-validation + a lightweight manifest-only `resync_for_write` (not a full `boot()` reload — avoids O(N²) under N-writer contention).
+- **Park is debounced on a 50ms idle timer** so a write burst holds the flock across the burst (no per-op churn); only true idle releases. This passed the N=6 cross-process stress that per-op cycling failed.
+- **Cross-process content freshness is bounded by the in-memory `entries` Map** (pre-existing architecture limit), documented as the consistency window.
+- **`agentdb index --purge`** added as the canonical deterministic re-index (purge-then-rebuild via the command, not ad-hoc).
+
+Released through `@sparkleideas/*` patch.379; acceptance 723/732, 0 failed across the WS0/1/2/3/5 releases.
 
 ## Dependency graph
 
