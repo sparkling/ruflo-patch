@@ -378,3 +378,5 @@ In practice the MCP server **always** has served at least one `tools/call` by th
 * **Single-writer-process architecture.** Route all RVF writes through the one process that holds the lock (the MCP server), so no second process ever contends — CLI ops and the ADR-0273 index become server-delegated batch operations. Sidesteps the lock entirely rather than fixing it.
 
 ADR-0273 (scriptable `agentdb index`) is **hard-blocked on this resolution** — it depends-on this ADR for exactly this reason.
+
+**Resolution chosen (2026-05-30): ADR-0274** — read/write handle split + per-transaction write release. A 3-agent file:line investigation confirmed: the handle split is feasible (native `open_readonly` already gives a lock-free, fully-queryable read handle; the archivist pins *that*, while writes go through a transient flock-bounded handle); per-op cost is within the >10% bar at realistic corpus sizes; and the daemon-broker alternative is rejected because ADR-0207 deleted the IPC socket on upstream-alignment grounds. This ADR flips to resolved when ADR-0274 lands and its smoke is green.

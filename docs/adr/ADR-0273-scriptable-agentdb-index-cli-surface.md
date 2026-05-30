@@ -75,6 +75,8 @@ The hierarchical SQLite surface (a) is concurrency-safe (WAL) under either form 
 
 **This ADR does not ship until form 1 or form 2 exists.** The dependency on a real ADR-0267 fix is hard, not advisory.
 
+**Unblocked by ADR-0274 (2026-05-30):** ADR-0274 resolves ADR-0267 via form 1 (read/write handle split + per-transaction write release), so a standalone `agentdb index` process can write RVF alongside a running MCP server with no stop-server precondition. This ADR's implementation proceeds once ADR-0274 lands.
+
 ### Consequences
 
 * Good, because one scriptable command builds the full canonical index (all 3 surfaces) — re-indexing stops requiring ~780 MCP calls or silently diverging into the wrong store.
