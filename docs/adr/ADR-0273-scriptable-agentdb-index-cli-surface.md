@@ -107,6 +107,10 @@ The hierarchical SQLite surface (a) is concurrency-safe (WAL) under either form 
 
 **D11 — Index all records including companions; size to the live glob (now 280, not 278).** The record-metadata contract keys off frontmatter (`status`/`date`/`tags`) + the first paragraph of `## Context and Problem Statement` only — it does not require Options/Outcome/Consequences. So the ~26 companion docs (audits/logs/trackers) each get a full record with empty option/consequence fields. All 280 `ADR-*.md` files carry the required fields (verified via `grep -L`). The index must size to `glob(docs/adr/ADR-*.md)`, not a frozen count.
 
+### Amendment: implemented + deployed (2026-05-30)
+
+Shipped the `agentdb index` CLI command in `forks/ruflo` (`commands/agentdb.ts`, registered in `commands/index.ts`) and released. Builds all 3 surfaces in one in-process pass via the memory-router facade: `hierarchicalStore({key:'adr/<id>'})`, `recordCausalEdge`→`causal-edges` (D8), `adr-patterns` via `routeMemoryOp`; derives the 3 inverses caller-side (D10); indexes all `ADR-*.md` incl. companions sized to the live glob (D11). Added a **`--purge`** flag (clears the 3 surfaces first — hierarchical via `getController('hierarchicalMemory').query/forget`, adr-patterns + causal-edges via `routeMemoryOp clearNamespace`) for deterministic, idempotent re-index. The `adr0273-index` acceptance smoke (3 surfaces + `--purge` idempotency, alongside a live MCP server with no stop) is green. The `/adr-index` skill was reconciled (edges live in `causal-edges`, not `adr-edges`). Unblocked once ADR-0274 landed; WS3 (ADR-0271 Phase 3) built the real 281-ADR corpus with it.
+
 ## Swarm Execution Plan
 
 > Coordination model: `swarm_init` + `Agent`-tool fan-out (`run_in_background: true`), orchestrator synthesis. **No hive-mind / consensus.** Depends on ADR-0274 landing (the batch-write primitive + read/write handle split this command writes through).

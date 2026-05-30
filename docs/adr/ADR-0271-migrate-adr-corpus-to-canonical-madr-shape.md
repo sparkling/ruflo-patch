@@ -101,6 +101,12 @@ Operational rules for executing the conversion (the bulk body-restructuring step
 - **Back off concurrency if throttling persists.** If 3 agents still trip the limit, reduce further (2, then serial in the main thread). Convergence beats parallelism.
 - **Never commit partial state.** Conversion edits stay in the working tree until the full corpus passes the `### Confirmation` gate; only then commit.
 
+## Amendments
+
+### Amendment: Phase 3 corpus index built (2026-05-30)
+
+Phase 3 (the AgentDB corpus index) is complete. Built via the canonical `agentdb index --purge` command (ADR-0273) — never ad-hoc — alongside a live MCP server with **no `LockHeld`** (the ADR-0274 handle split working in production): purged 196 stale `adr/*` entries, then wrote **281 hierarchical `adr/<id>` records (281 unique keys, 0 duplicates, verified directly in the `hierarchical_memory` SQLite table), 281 `adr-patterns` entries, and 432 causal edges + 432 derived inverses**. The ADR-0176 `hierarchical-query` key-glob fix (shipped + verified by the `adr0176-query-key` smoke) makes `agentdb_hierarchical-query adr/*` enumerate the records.
+
 ## Swarm Execution Plan
 
 > **Phase 3 only** (build the corpus AgentDB index). The MADR *conversion* is complete; its conversion swarm is recorded under `## Rules` ("Swarm size: 3 agents", rate-limit-capped). Coordination model: `swarm_init` + `Agent`-tool fan-out (`run_in_background: true`), orchestrator synthesis. **No hive-mind / consensus.** Depends on WS0 (ADR-0176 fix released) + WS2 (ADR-0273 `agentdb index` command live).

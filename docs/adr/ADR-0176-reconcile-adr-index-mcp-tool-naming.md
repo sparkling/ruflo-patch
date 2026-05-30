@@ -306,3 +306,7 @@ record; bare `*` still matches.
 - Bears on ADR-0271 Phase 3: purging `adr/*` index entries cannot rely on
   path enumeration until this fix ships; purge by tag/metadata or wipe the
   store instead.
+
+### Amendment: key-glob fix shipped + verified (2026-05-30)
+
+The `hierarchical-query` key-glob fix (`HierarchicalMemory.query()` globs `json_extract(metadata,'$.key')`, not the `content` blob) shipped in `forks/agentdb` and was released (`@sparkleideas/*` patch.376+). A dedicated discriminating smoke (`adr0176-query-key`) — stores a record whose KEY is `adr/...` but whose content is a distinct non-path blob, so it FAILs pre-fix (content-glob → 0) and PASSes post-fix — is green in the acceptance harness. This closes the gap that `adr0178-hquery-e2e` could not catch (it wrote `value == path`). The fix is exercised at corpus scale by ADR-0271 Phase 3 (`agentdb_hierarchical-query adr/*` enumerates all 281 records).

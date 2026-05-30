@@ -66,6 +66,16 @@ Chosen option: **"A — Adopt ADR-033 progressive indexing now, including RVF-na
 * The HNSW segment round-trips crash-safely: kill mid-ingest, reopen, verify the index loads from the committed RootHeader and the witness chain validates.
 * Cross-process correctness (ADR-0274): the persistent read handle serves HNSW search lock-free; the index reflects writes within the ADR-0274 consistency window.
 
+### Amendment: implemented + deployed (2026-05-30)
+
+Implemented and released; `cargo` recall + crash-safety tests pass and the `adr0275-hnsw` JS acceptance smoke (napi `queryWithEnvelope` reports `layerB: true` + recall + quality envelope through the published binding) is green. Implementation notes:
+
+- **Phase 2 (Layer B) — full witnessed/committed INDEX_SEG persistence** (not the build-on-boot fallback), in `forks/ruvector` (`9e4c157f9`). The runtime builds an `rvf_index::HnswGraph` incrementally on `ingest_batch` (deterministic `splitmix64(id)` level RNG — no `rand`/`Math.random`), persists it as an **`Index` segment** (reused the existing `SegmentType::Index = 0x02`) written *before* `write_manifest`→`commit_new_root` flips the RootHeader, so a crash leaves an uncommitted segment the next boot ignores (crash-safe). `boot()` loads the latest committed INDEX_SEG with no rebuild; it rebuilds-from-vectors (loud stderr log) only for legacy files or a decode failure — acceptable because the index is derived data fully reconstructible from the VEC_SEGs (not a silent data-loss fallback). Rebuilt + re-persisted on `compact()`. `query()`/`query_with_envelope()` traverse the HNSW with the brute-force safety net; `layer_b` flips to `true`.
+- **Added a faithful `serialize_graph`/`deserialize_graph`** in `rvf-index` rather than reusing `encode_index_seg`/`IndexSegData` — that codec reconstructs node ids from loop position (assumes contiguous `0..N`) and drops `entry_point`/`max_layer`, so it cannot losslessly round-trip a runtime graph with non-contiguous ids (deletes/COW/external ids). The ADR's note explicitly permitted this.
+- **Recall@10 = 1.0000** (n=500, dim=768, m=23/efC=100/efS=50) vs brute-force exact; crash-safe reopen loads from the committed segment without rebuild; the full rvf-runtime suite (251) + witness e2e (10) stay green.
+- **Phase 1 (envelope wiring)** — `forks/ruflo` cli `@claude-flow/memory` `rvf-backend.ts` `search()` now prefers napi `queryWithEnvelope` (Layer-B base query + budgeted safety net + quality) when the binding exposes it, falling back to bare `query()` on older bindings; the envelope signal is captured (`getLastRvfEnvelope()`). The bare `query()` also traverses HNSW, so the fork search path gets O(log N) transparently.
+- **Phase 3 (quantization / Layer C, upstream ADR-154)** remains out of scope → future ADR.
+
 ## Swarm Execution Plan
 
 > Coordination model: `swarm_init` + `Agent`-tool fan-out (`run_in_background: true`), orchestrator synthesis. **No hive-mind / consensus.** Depends on ADR-0274 (search runs on its persistent read handle; the HNSW graph loads into that handle). Mostly deep Rust in `forks/ruvector/rvf-runtime` + a smaller TS envelope wiring.

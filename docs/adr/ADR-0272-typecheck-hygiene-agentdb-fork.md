@@ -63,6 +63,10 @@ Chosen option: **"Two-tier: gate shipped `src/`, advisory-typecheck dev dirs"**,
 * A CI/release step runs that command and fails the build on non-zero exit (a new acceptance check, mirroring the ADR-0176 tool-name gate).
 * The `agentdb-mcp-server.ts:2266` fix is confirmed by the value being `await`ed before `.toFixed()`.
 
+### Amendment: implemented + deployed (2026-05-30)
+
+Shipped in `forks/agentdb` (`a864a1c`) + released. The 6 shipped-`src/` errors are fixed (incl. the real `agentdb-mcp-server.ts:2266` missing-`await` bug; `AgentDB.ts` dup-`database` getter removed; `HierarchicalMemory.ts:339` `tiers` annotated `MemoryTier[]`; `SyncCoordinator.ts:120` `sync(ctx?)` made optional since stores can't mint their own `MutationContext`; `quic-sync-example.ts` excluded). Added `tsconfig.build.json` scoped to `src/` (excl. `src/examples/**`); the `adr0272-typecheck` acceptance check runs `tsc --noEmit -p tsconfig.build.json` and gates on exit 0 (green). The full `tsc` still emits `dist/` despite dev-dir errors (`noEmitOnError` left false, by design).
+
 ## Swarm Execution Plan
 
 > Coordination model: `swarm_init` + `Agent`-tool fan-out (`run_in_background: true`), orchestrator synthesis. **No hive-mind / consensus.** Independent of the other workstreams — can start immediately.
