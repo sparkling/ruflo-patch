@@ -2,7 +2,10 @@
 
 Implements the decisions recorded this session: ADR-0176 (amendment), ADR-0271 Phase 3, ADR-0272, ADR-0273, ADR-0274, ADR-0275. Trunk-based; commit fork changes before `npm run release`; wire every smoke into the canonical acceptance harness (`run_check_bg` + `collect_parallel`).
 
-## Execution status (2026-05-30, in progress)
+## Execution status (2026-05-30, COMPLETE)
+
+**All six workstreams implemented, acceptance-green (724/733, 0 failed, 9 skip_accepted), and deployed** (`@sparkleideas/*` patch.382; fork bumps pushed to sparkling). All five ADRs (0271/0272/0273/0274/0275) carry implementation amendments; ADR-0267 resolved by 0274; ADR-0176 key-glob fix shipped + verified.
+
 
 | WS | ADR | Status |
 |---|---|---|
@@ -11,7 +14,7 @@ Implements the decisions recorded this session: ADR-0176 (amendment), ADR-0271 P
 | WS1 | 0274 RVF handle split | ✅ DONE + deployed (ruvector `8fb99c02b` peekTxnid + park/unpark; ruflo park/unpark + idle-timer + light-resync; `adr0274-rvf-rw-split` smoke green) |
 | WS2 | 0273 `agentdb index` | ✅ DONE + deployed (ruflo command + `--purge`; `adr0273-index` smoke incl. idempotency green) |
 | WS3 | 0271 Phase 3 corpus index | ✅ DONE — built via `agentdb index --purge` alongside live MCP (no LockHeld): **281 unique adr/* records (0 dups, SQLite-verified), 281 adr-patterns, 432 edges + 432 inverses** |
-| WS4 | 0275 HNSW Layer B | ◑ in progress — ruvector HNSW (rvf-index integration) + napi + TS envelope wiring |
+| WS4 | 0275 HNSW Layer B | ✅ DONE + deployed (ruvector `9e4c157f9` HNSW via rvf-index, witnessed INDEX_SEG, recall@10=1.0, crash-safe; napi `queryWithEnvelope`; ruflo Phase 1 envelope wiring; `adr0275-hnsw` smoke green — `layerB=true`) |
 
 **Key implementation deviations (recorded for the ADRs):**
 - **WS1 chose the single-handle park/unpark model (D5)** over the literal two-object read/write split (D1): every native write funnels through `acquireLock`/`releaseLock`, queries don't, so parking the flock when idle resolves ADR-0267 while queries stay lock-free; same-process read-your-own-writes is automatic.
@@ -19,8 +22,9 @@ Implements the decisions recorded this session: ADR-0176 (amendment), ADR-0271 P
 - **Park is debounced on a 50ms idle timer** so a write burst holds the flock across the burst (no per-op churn); only true idle releases. This passed the N=6 cross-process stress that per-op cycling failed.
 - **Cross-process content freshness is bounded by the in-memory `entries` Map** (pre-existing architecture limit), documented as the consistency window.
 - **`agentdb index --purge`** added as the canonical deterministic re-index (purge-then-rebuild via the command, not ad-hoc).
+- **WS4 reused the existing `rvf-index` HNSW kit** (HnswGraph + a new faithful `serialize_graph` — the legacy codec assumed contiguous ids); persisted as a **witnessed `Index` segment** written before the RootHeader commit (crash-safe), loaded on `boot()` (no rebuild); recall@10=1.0; the bare `query()` also traverses HNSW so the fork search path gets O(log N) transparently.
 
-Released through `@sparkleideas/*` patch.379; acceptance 723/732, 0 failed across the WS0/1/2/3/5 releases.
+Released through `@sparkleideas/*` patch.382; final acceptance 724/733 passed, 0 failed, 9 skip_accepted; fork bumps pushed to sparkling.
 
 ## Dependency graph
 
