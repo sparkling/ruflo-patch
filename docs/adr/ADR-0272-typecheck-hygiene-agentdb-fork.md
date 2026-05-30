@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-05-30
 tags: [agentdb, typescript, build, ci, tech-debt]
 supersedes: []
