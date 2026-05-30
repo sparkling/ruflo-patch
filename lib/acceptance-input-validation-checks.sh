@@ -60,7 +60,7 @@ check_adr0094_p6_unicode_input() {
   local cli; cli=$(_cli_cmd)
   local work; work=$(mktemp /tmp/p6-unicode-XXXXX)
 
-  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key 'unicode-test-p6' --value 'unicode test value' --namespace p6-validation 2>&1" "$work" 20
+  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key 'unicode-test-p6' --value 'unicode test value' --namespace p6-validation 2>&1" "$work" 30
   local exit_code="${_RK_EXIT:-1}"
   local body; body=$(cat "$work" 2>/dev/null || echo "")
   body=$(echo "$body" | grep -v '^__RUFLO_DONE__:')

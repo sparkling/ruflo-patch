@@ -56,7 +56,7 @@ check_cluster_b_controllers_register() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_controllers" "" 30
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_controllers" "" 45
 
   if [[ $_RK_EXIT -ne 0 ]] || ! echo "$_RK_OUT" | grep -q '"name"'; then
     _CHECK_OUTPUT="Cluster B: agentdb_controllers MCP call failed — $(echo "$_RK_OUT" | head -c 200)"

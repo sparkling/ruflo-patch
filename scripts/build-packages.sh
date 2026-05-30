@@ -141,6 +141,13 @@ run_build() {
         log "    cache invalidated for ${pkg_name} (source newer than .tsbuildinfo)"
       fi
     fi
+    # dist-skip guard: if dist/ was wiped but .tsbuildinfo is fresh, tsc
+    # --incremental sees no work to do and emits nothing → consumers hit
+    # ERR_MODULE_NOT_FOUND. Drop the buildinfo so tsc re-emits the dist.
+    if [[ -f "$_buildinfo" ]] && ! compgen -G "${pkg_dir}/dist/*.js" >/dev/null 2>&1; then
+      rm -f "$_buildinfo"
+      log "    cache invalidated for ${pkg_name} (dist empty/missing — forcing re-emit)"
+    fi
     local _incr_flags="--incremental --tsBuildInfoFile ${_buildinfo}"
     if "$tsc_bin" -p "$tmp_tsconfig" --skipLibCheck $_incr_flags 2>"$tsc_log"; then
       ok=1; fallback_level=0
@@ -260,7 +267,12 @@ run_build() {
       [[ -d "$pkg_dir" ]] || continue
       [[ -f "$pkg_dir/tsconfig.json" ]] || continue
 
-      if [[ "$selective_build" == "true" && -z "${changed_set[$pkg_name]:-}" ]]; then
+      # Selective-build skip: only skip an unchanged package if its dist/ is
+      # already populated. If dist/ was wiped but the package isn't in the
+      # changed_set, skipping would leave consumers with ERR_MODULE_NOT_FOUND,
+      # so fall through and rebuild. Fail-safe widening: never skips less.
+      if [[ "$selective_build" == "true" && -z "${changed_set[$pkg_name]:-}" ]] \
+         && compgen -G "${pkg_dir}/dist/*.js" >/dev/null 2>&1; then
         skipped=$((skipped + 1))
         continue
       fi

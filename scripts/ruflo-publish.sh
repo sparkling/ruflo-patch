@@ -13,12 +13,85 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
+# Aborted runs must tear down their own process group so backgrounded
+# children (sleep/tee that inherit fd 9 via `exec 9>`) don't outlive the
+# parent holding the flock. `kill -- -$$` only signals THIS process's own
+# group — no cross-process risk. Mirrors scripts/test-acceptance.sh.
+trap 'kill -- -$$ 2>/dev/null; exit 143' INT TERM
+
 # Concurrency guard — prevent overlapping timer + manual deploy runs
 LOCKFILE="/tmp/ruflo-pipeline.lock"
+
+# Reap orphaned lock holders: if a previous run was aborted, its backgrounded
+# sleep/tee children may still hold the flock (fd 9 inherited via `exec 9>`)
+# even though the owning pipeline is dead. Reap them ONLY IF none of the
+# holders has a LIVE ruflo-publish.sh ancestor — otherwise a legitimately
+# concurrent (e.g. timer-triggered) release holds the lock and we must NOT
+# touch it. Without lsof we cannot inspect holders, so we skip the reaper
+# and behave exactly as before (hard-fail on contention).
+_reap_orphan_lock_holders() {
+  command -v lsof >/dev/null 2>&1 || return 1   # no lsof → don't guess
+  local holders
+  # Our own `exec 9>` keeps the lockfile open on fd 9 even though flock failed,
+  # so $$ appears in lsof as a holder. Exclude it — otherwise the reap loop
+  # below would `kill -TERM $$` and the pipeline would terminate itself in the
+  # all-orphan path (the exact case this reaper exists to recover).
+  holders=$(lsof -t "${LOCKFILE}" 2>/dev/null | grep -vx "$$" || true)
+  [[ -n "$holders" ]] || return 1               # nobody else holds it
+  local pid
+  for pid in $holders; do
+    if _pid_has_live_publish_ancestor "$pid"; then
+      # A live pipeline owns this lock — do NOT reap.
+      return 1
+    fi
+  done
+  # All holders are orphans (no live ruflo-publish.sh ancestor) — reap them.
+  for pid in $holders; do
+    kill -TERM "$pid" 2>/dev/null
+  done
+  return 0
+}
+
+# Walk a PID's ancestry (macOS `ps` syntax) toward pid 1, returning success
+# if any ancestor — including the pid itself — is a live ruflo-publish.sh.
+# NOTE: the pipeline runs as `bash .../ruflo-publish.sh`, so `ps -o comm=`
+# reports the *executable* (`bash`), NOT the script. We must inspect the full
+# command line (`ps -o command=`) to see the script path. Matching on comm=
+# alone would never fire → a live pipeline's children would look orphaned and
+# get reaped, killing a legitimately-concurrent release. So match command=.
+# A bounded walk (max 64 hops) guards against any cycle/weird ppid.
+_pid_has_live_publish_ancestor() {
+  local pid="$1" hops=0 cmd ppid
+  while [[ -n "$pid" && "$pid" != "0" && "$pid" != "1" ]] && (( hops < 64 )); do
+    # Skip our own pid — we are the live pipeline asking the question;
+    # counting ourselves would make every reap a no-op. (Continue the walk
+    # upward so a parent ruflo-publish.sh, if any, is still detected.)
+    if [[ "$pid" == "$$" ]]; then
+      pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
+      hops=$((hops + 1))
+      continue
+    fi
+    cmd=$(ps -o command= -p "$pid" 2>/dev/null)
+    case "$cmd" in
+      *ruflo-publish.sh|*ruflo-publish.sh\ *) return 0 ;;
+    esac
+    ppid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
+    [[ -n "$ppid" && "$ppid" != "$pid" ]] || return 1
+    pid="$ppid"
+    hops=$((hops + 1))
+  done
+  return 1
+}
+
 exec 9>"${LOCKFILE}"
 if ! flock -n 9; then
-  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] publish: another pipeline run holds ${LOCKFILE} — exiting" >&2
-  exit 0
+  # Contended. Try to reap orphaned holders, then retry once.
+  if _reap_orphan_lock_holders && flock -n 9; then
+    echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] publish: reaped orphaned lock holders on ${LOCKFILE} — acquired" >&2
+  else
+    echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] publish: another pipeline run holds ${LOCKFILE} — exiting" >&2
+    exit 0
+  fi
 fi
 
 STATE_FILE="${SCRIPT_DIR}/.last-build-state"
