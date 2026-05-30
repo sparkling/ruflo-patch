@@ -355,3 +355,14 @@ This ADR is proposed-only. To advance:
 4. **Release** via `npm run release`; verdict via canonical harness; ADR-0267 flips `completed: false` → `true`; `implemented: <date>` set.
 
 Until step 4, CLI memory operations remain blocked when the daemon is running. Workaround for the interim: stop the daemon (`ruflo daemon stop`) before running CLI memory ops, then restart (`ruflo daemon start`) after.
+
+## Amendment: Revision 3 lock-release claim is inaccurate (2026-05-30, ADR-0273 investigation)
+
+A file:line trace during the ADR-0273 investigation found that **Revision 3's claim — "`withRouter`'s `_isPersistent` semantics handle the release/re-acquire cycle correctly for ongoing tool traffic" — is wrong.** The Option F fix (defer `warmUpRvfWithRetry` to first `tools/call`) is real and correct for the *idle* server, but it only **defers** the flock acquisition; it does **not** make the lock per-op. Once the MCP server serves its first `tools/call`, the exclusive `flock(LOCK_EX)` on `<path>.rvf.lock` is held for the server's entire remaining lifetime.
+
+Why (verified):
+- `_isPersistent` defaults `true` (`memory-router.ts:199`) and is set `false` **only** in the daemon (`worker-daemon.ts:961-962`), never in the MCP-mode path (`bin/cli.js`).
+- `withRouter`'s release branch is gated on `!_isPersistent` (`memory-router.ts:1076` finally-block), so it never runs for the MCP server — and the archivist write path bypasses `withRouter` entirely, pinning `_storage` directly (`archivist-init.ts:1483-1523`).
+- The native `WriterLock` is a struct field of `RvfStore` (`store.rs:105`), acquired once on open (`store.rs:164/311`) and released only on `Drop`/fd-close (`locking.rs:78-84`) — never per-write.
+
+**Practical correction:** the regression is fixed for the *idle* server only. A separate CLI process writing RVF **still blocks ~30 s then fails `LockHeld`** against an MCP server that has served any tool call (`locking.rs:173-203`). The Task #9 smoke passes only because it writes *before* the server's first dispatch (lazy warmup). This does not reopen ADR-0267 (its stated scope — idle-server hold — is genuinely fixed), but the "ongoing tool traffic" explanation overclaims. The residual (CLI-vs-busy-MCP RVF contention) is carried by ADR-0273, which depends-on this ADR and documents the "stop/idle the server before indexing" precondition rather than relying on a per-op release that does not exist.
