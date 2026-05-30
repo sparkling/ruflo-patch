@@ -88,6 +88,17 @@ Collision resolution (oldest keeps bare number; later files sub-lettered). All r
 
 Plus: 58 bare `NNNN-slug.md` files → `ADR-NNNN-slug.md` (number unchanged).
 
+## Rules
+
+Operational rules for executing the conversion (the bulk body-restructuring step):
+
+- **Swarm size: 3 agents (reduced from 15).** The first attempt spawned 15 concurrent subagents and tripped a transient server-side Claude API rate limit (`API Error: Server is temporarily limiting requests · not your usage limit`) that killed 14 of 15 at launch; only one batch completed. High launch concurrency is the trigger, so the conversion runs **at most 3 concurrent agents**, each handling a proportionally larger batch.
+- **Throttling is transient and server-side.** A rate-limit error that says "not your usage limit" is Anthropic capacity throttling, not account quota. It is retryable — never treat it as a hard failure or abandon the file.
+- **Retry policy.** On a rate-limit error, the agent retries the *same* file with brief backoff rather than skipping it. If an agent dies mid-run, the coordinator re-runs only the remainder — never the whole corpus.
+- **Idempotent re-runs.** Re-partition only the *un-converted* remainder: classify every file with the strict validator (decision mode, or `--companion` for known companion docs); a file that already PASSes is skipped. This makes any number of throttled restarts safe and convergent.
+- **Back off concurrency if throttling persists.** If 3 agents still trip the limit, reduce further (2, then serial in the main thread). Convergence beats parallelism.
+- **Never commit partial state.** Conversion edits stay in the working tree until the full corpus passes the `### Confirmation` gate; only then commit.
+
 ## More Information
 
 - Implements ADR-0157 (canonical MADR adoption + migration path outline); ADR-0157 is itself one of the non-conformant files and is migrated under this plan.
