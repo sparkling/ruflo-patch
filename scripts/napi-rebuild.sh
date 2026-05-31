@@ -93,6 +93,17 @@ detect_rust_changes() {
     napi_parse_entry "$entry" || continue
     if [[ "$NAPI_FORK_DIR" == "$fork_dir" ]]; then
       pathspecs+=("${NAPI_CRATE_PATH}/**/*.rs" "${NAPI_CRATE_PATH}/**/Cargo.toml" "${NAPI_CRATE_PATH}/Cargo.toml")
+      # A napi crate statically links its in-workspace path-dependencies, so a
+      # change in a SIBLING lib crate must also trigger a .node rebuild. The
+      # rvf-node binding links the whole rvf workspace (rvf-runtime, rvf-index,
+      # …); watching only crates/rvf/rvf-node/ would miss a fix in rvf-runtime
+      # and publish a stale .node — the ADR-0095 t3-2 concurrent-write trap
+      # (a WriterLock fix in rvf-runtime that never reaches the CLI). Watch the
+      # whole crates/rvf tree for any rvf-workspace napi crate. Over-rebuilding
+      # is safe; under-rebuilding ships stale binaries.
+      if [[ "$NAPI_CRATE_PATH" == crates/rvf/* ]]; then
+        pathspecs+=("crates/rvf/**/*.rs" "crates/rvf/**/Cargo.toml")
+      fi
     fi
   done
 

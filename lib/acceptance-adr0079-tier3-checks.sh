@@ -171,6 +171,7 @@ check_t3_2_rvf_concurrent_writes() {
   # Count CLI success markers (for diagnostics — entry count is authoritative)
   local cli_ok=0
   local cli_err=0
+  local err_sample=""
   for i in $(seq 1 "$N"); do
     local log="$log_dir/store-$i.log"
     [[ -f "$log" ]] || continue
@@ -178,6 +179,14 @@ check_t3_2_rvf_concurrent_writes() {
       cli_ok=$((cli_ok + 1))
     elif grep -qiE 'error|fatal|crash|unhandled' "$log"; then
       cli_err=$((cli_err + 1))
+      # Preserve a sample of the FIRST failing writer's output. The real error
+      # (e.g. `RVF error 0x0300: LockHeld`) is otherwise lost when log_dir is
+      # rm'd on the failure branches below — that blind spot is exactly why the
+      # t3-2 RVF concurrent-write regression was hard to diagnose in CI. Surface
+      # it in _CHECK_OUTPUT so the next failure is self-diagnosing.
+      if [[ -z "$err_sample" ]]; then
+        err_sample=$(grep -iE 'error|fatal|crash|unhandled|LockHeld|RVF error|0x0[0-9a-f]+' "$log" | head -3 | tr '\n' '|' | cut -c1-300)
+      fi
     fi
   done
 
@@ -293,9 +302,9 @@ check_t3_2_rvf_concurrent_writes() {
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="T3-2: ${N}/${N} RVF concurrent writers persisted (header=${entry_count}, cli_ok=${cli_ok})"
   elif [[ "$ns_hits" -eq 0 ]]; then
-    _CHECK_OUTPUT="T3-2: zero entries persisted after ${N} concurrent stores (entryCount=${entry_count}, cli_ok=${cli_ok}, cli_err=${cli_err}) — lock acquisition broken"
+    _CHECK_OUTPUT="T3-2: zero entries persisted after ${N} concurrent stores (entryCount=${entry_count}, cli_ok=${cli_ok}, cli_err=${cli_err}) — lock acquisition broken${err_sample:+ | first-err: ${err_sample}}"
   else
-    _CHECK_OUTPUT="T3-2: only ${ns_hits}/${N} RVF concurrent writers persisted (entryCount=${entry_count}, cli_ok=${cli_ok}, cli_err=${cli_err}) — partial writes / lock serialization regression"
+    _CHECK_OUTPUT="T3-2: only ${ns_hits}/${N} RVF concurrent writers persisted (entryCount=${entry_count}, cli_ok=${cli_ok}, cli_err=${cli_err}) — partial writes / lock serialization regression${err_sample:+ | first-err: ${err_sample}}"
   fi
 
   rm -rf "$iso" "$log_dir" 2>/dev/null
