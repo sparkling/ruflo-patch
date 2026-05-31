@@ -1,0 +1,64 @@
+# ADR-0281 — CI stanza for the hierarchical keyed upsert + delete-by-key smoke.
+#
+# Per `feedback-always-wire-tests-into-cicd`: the smoke is wired into the
+# standard runner (scripts/test-acceptance.sh, adr0281-hierarchical-upsert-delete
+# check) AND here. It drives the live loop against an installed CLI:
+# agentdb_hierarchical-store (same adr/<id> key x2) -> agentdb_hierarchical-query
+# (asserts exactly 1 entry — keyed upsert, not append) -> agentdb_hierarchical-delete
+# (real delete, '/' key accepted) -> query again (0). Single job. Per
+# `feedback-no-tail-tests`: log to SMOKE_LOG_DIR.
+
+name: ADR-0281 hierarchical keyed upsert/delete
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'forks/agentdb/src/controllers/HierarchicalMemory.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts'
+      - 'scripts/smoke-adr0281-hierarchical-upsert-delete.mjs'
+      - 'lib/acceptance-adr0281-checks.sh'
+  pull_request:
+    paths:
+      - 'forks/agentdb/src/controllers/HierarchicalMemory.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts'
+      - 'scripts/smoke-adr0281-hierarchical-upsert-delete.mjs'
+      - 'lib/acceptance-adr0281-checks.sh'
+
+env:
+  REGISTRY: http://localhost:4873
+  CLI_PKG: '@sparkleideas/ruflo'
+  SMOKE_LOG_DIR: ${{ github.workspace }}/smoke-logs
+
+jobs:
+  hierarchical-keyed-upsert-delete:
+    name: hierarchical keyed upsert + delete-by-key (ADR-0281)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Start local Verdaccio + publish fork packages
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/ruflo-publish.sh 2>&1 | tee "${SMOKE_LOG_DIR}/publish.log"
+
+      - name: Run ADR-0281 hierarchical keyed upsert/delete smoke via fast runner
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/test-acceptance-fast.sh adr0281 2>&1 | tee "${SMOKE_LOG_DIR}/adr0281.log"
+
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs-hierarchical-keyed
+          path: ${{ env.SMOKE_LOG_DIR }}

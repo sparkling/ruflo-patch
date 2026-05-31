@@ -885,6 +885,8 @@ adr0279_lib="${PROJECT_DIR}/lib/acceptance-adr0279-checks.sh"
 [[ -f "$adr0279_lib" ]] && source "$adr0279_lib"
 adr0280_lib="${PROJECT_DIR}/lib/acceptance-adr0280-checks.sh"
 [[ -f "$adr0280_lib" ]] && source "$adr0280_lib"
+adr0281_lib="${PROJECT_DIR}/lib/acceptance-adr0281-checks.sh"
+[[ -f "$adr0281_lib" ]] && source "$adr0281_lib"
 
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
@@ -3888,6 +3890,29 @@ if [[ -f "$adr0280_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
   rm -rf "$PARALLEL_DIR" 2>/dev/null
 fi
 _record_phase "phase-adr0280-routing-action-uplift" "$(_elapsed_ms "$_adr0280_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0281: hierarchical keyed upsert + delete-by-key. Stores the same
+# adr/<id> key twice → query returns exactly 1 (keyed upsert, not append);
+# delete-by-key removes it (real delete, '/' accepted) → query returns 0.
+# FAILs pre-impl (append-only store + native-unsupported delete +
+# '/'-rejecting validation), PASSes after ADR-0281 lands.
+# ════════════════════════════════════════════════════════════════════
+_adr0281_start=$(_ns)
+if [[ -f "$adr0281_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
+  log "── ADR-0281: hierarchical keyed upsert + delete-by-key ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+  export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+
+  run_check_bg "adr0281-hierarchical-upsert-delete" "ADR-0281 hierarchical keyed upsert + delete-by-key" check_adr0281_hierarchical_upsert_delete "adr0281"
+
+  collect_parallel "adr0281" \
+    "adr0281-hierarchical-upsert-delete|ADR-0281 hierarchical keyed upsert + delete-by-key"
+
+  unset ADR0255_SMOKE_SHARED_TEMP
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0281-hierarchical-upsert-delete" "$(_elapsed_ms "$_adr0281_start" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
 # Results
