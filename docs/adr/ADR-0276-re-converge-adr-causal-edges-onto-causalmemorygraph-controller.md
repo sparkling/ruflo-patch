@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-05-30
 tags: [agentdb, causal, mcp, memory, upstream-convergence, adr-index]
 supersedes: []
@@ -62,6 +62,21 @@ All references read from `origin/main` (working trees are stale): **agentdb `@17
 Chosen option: **"A — re-converge the ADR graph onto the controller (layer 1), with a durable numeric-ID map, migrating KV → controller and keeping KV as a transitional fallback"**, because it is the only option that fulfils upstream's *applicable* vision (the graph + explainability layer, U5) for ADR edges while honouring their structural-not-statistical nature (rejecting C) and upstream's numeric-ID model (rejecting D's lossy abstract-edge shape). B is rejected because it permanently forfeits the controller's value and entrenches a fork-only divergence that upstream's own docs (U4) say should be controller-backed.
 
 **Scope boundary (the honest tension, recorded):** ADR structural edges go through the **graph layer only**. `confidence` defaults to `1.0` (a declared dependency is certain), `uplift` is left null, and no experiment/treatment rows are synthesised. Layer 2 (do-calculus uplift, A/B experiments, policy learning — U2/U5) remains available for episode/skill memories where a real statistical signal exists; forcing ADR edges through it would be misuse, not fulfilment.
+
+### Ratification + upstream three-controller mapping (2026-05-31)
+
+Ratified at **Layer 1** (`status: proposed → accepted`). Grounding: upstream offers **one model**, not a layer switch — `frontier-schema.sql` carries `uplift`/`confidence`/`sample_size`/`experiment_ids` as nullable columns on every edge, the only causal ADR (agentdb `ADR-009`) is an empty placeholder, and the `agentdb-causal` plugin frames ADR `supersedes`/`depends-on` as typed **links** (relation + optional confidence) while pointing uplift/the investigator at episode/outcome memories.
+
+The clarifying frame: each upstream controller has a **structural half** (works on any typed edge) and a **statistical half** (needs outcomes). Layer 1 = the structural halves; the statistical halves stay dormant for ADRs (which carry no outcomes).
+
+| Upstream controller / feature | Structural half — Layer 1, ADR-0276 lands this | Statistical half — Layer 2, dormant for ADRs |
+|---|---|---|
+| **CausalMemoryGraph** | edge rows + 1-hop `queryCausalEffects`/`getCausalChain` + cascade-delete | uplift-weighted ranking |
+| **CausalRecall** | forward/backward/**multi-hop** chains (supersession / transitive deps) | **counterfactual** probabilities |
+| **ExplainableRecall** | narrate *why* two ADRs connect (relation path) | confidence intervals (degenerate at `confidence=1`) |
+| uplift / experiments / `agentdb-investigator` | — | did-it-help / A/B / root-cause-by-uplift (needs episode outcomes) |
+
+R1–R6 wire **CausalMemoryGraph** (graph + 1-hop + cascade); the multi-hop (CausalRecall) and path-explanation (ExplainableRecall) halves then operate on that graph for free, but exposing them as ADR-facing MCP tools is a fast-follow, not core R1–R6. ADR writes use `confidence=1`, `uplift=null`. **Note:** this graph wiring is also the substrate the broader upstream *agent causal-learning* vision (episode→outcome→uplift→decision) would need — ADR-0276 is the structural foundation either way; whether to pursue that broader loop is a separate, larger decision under evaluation.
 
 ### Consequences
 
