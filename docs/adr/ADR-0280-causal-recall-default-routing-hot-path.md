@@ -77,23 +77,30 @@ to pre-0280.
   blends `β·actionUplift(patternAction, taskType)` into the SORT only; the cosine
   `score` stays the relevance FLOOR (threshold filters on cosine; returned
   `confidence` echoes cosine) so uplift reranks *within* the relevant set but
-  never admits a sub-threshold candidate. β via `RUFLO_ROUTE_ACTION_UPLIFT` (0 =
-  off, default).
+  never admits a sub-threshold candidate. **β default 0.2 (ON)**; override via
+  `RUFLO_ROUTE_ACTION_UPLIFT`, set 0 to disable.
 * **R4 — consumer A-coupling (ModelRouter).** `selectModel` scales each sampled
   score by `(1 + γ·actionUplift(model, taskType))` (clamped ≥ 0) — complementary
-  to the router's own online prior (ADR-0278). γ via `ModelRouterConfig.actionUpliftGamma`
-  (0 = off, default).
+  to the router's own online prior (ADR-0278). **γ default 0.3 (ON)** via
+  `ModelRouterConfig.actionUpliftGamma`; set 0 to disable.
+* **R5 — on by default, self-inert without data.** Both blends ship ON (not
+  dormant-flagged: a feature gated off by default never gets turned on). They are
+  *self-inert* until the learner persists `.swarm/action-values.json` — with no
+  data `actionUplift` returns 0, so the rerank/factor is a no-op identical to
+  pre-0280. The de-confounding self-activates exactly when there is signal.
 
 ### Consequences
 
 * Good: the default routing/retrieval rank de-confounds — causal recall on the
   hot path, the last ADR-0277 follow-on, closed.
-* Good: bounded blast radius — flag-gated (both default off → identical
-  behavior), small β/γ, cosine/prior as the floor; the blend is unit-proven.
+* Good: bounded blast radius — small β/γ, cosine/prior as the floor, and
+  *self-inert until data exists* (no `action-values.json` → uplift 0 → identical
+  to pre-0280); the blend is unit-proven. ON by default so it actually activates
+  once the learner has run — not a dormant flag that never gets enabled.
 * Good: one substrate serves both consumers; cross-process via a cheap cached
   file (no hot-path MCP round-trip).
-* Neutral: implement-ahead until the flags are enabled in a deployment; the
-  signal and the blend ship, gated off.
+* Neutral: self-activating — inert on a fresh install, de-confounding kicks in as
+  the learner accrues action-values; set the flag/config to 0 to opt out.
 * Bad: a stale `.swarm/action-values.json` (learner not run recently) blends old
   uplift — bounded by the TTL re-read and that uplift only *reranks* within the
   cosine-relevant set; never overrides the floor.

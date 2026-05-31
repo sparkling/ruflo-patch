@@ -158,7 +158,7 @@ function finish() {
   log(`Results: ${passed} passed, ${failed} failed`);
   perf.emitJson();
   if (failed > 0) { log(`\nSmoke FAILED — ADR-0280 routing bridge not effective (action-values.json not persisted, or missing de-confounded uplift).\n`); process.exit(1); }
-  log(`\nSmoke PASSED — ADR-0280 WIRED: the learner persists de-confounded action-value uplift to .swarm/action-values.json so the routing hot path (ModelRouter A-coupling + LocalReasoningBank rerank, both flag-gated + unit-tested) can de-confound selection.\n`);
+  log(`\nSmoke PASSED — ADR-0280 WIRED: the learner persists de-confounded action-value uplift to .swarm/action-values.json so the routing hot path (ModelRouter A-coupling + LocalReasoningBank rerank, ON by default, self-inert until this data exists, unit-tested) de-confounds selection.\n`);
   process.exit(0);
 }
 
