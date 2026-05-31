@@ -92,21 +92,26 @@ function mcpExec(cli, dir, tool, params) {
   return { obj: parseResult(`${r.stdout || ''}\n${r.stderr || ''}`), status: r.status, raw: `${r.stdout || ''}\n${r.stderr || ''}` };
 }
 
-// NightlyLearner.discoverCausalEdges pairs episodes with embedding
-// similarity >= 0.7 (minSimilarity) AND |reward delta| >= 0.05 (upliftThreshold),
-// then writes an edge (confidence = similarity, sampleSize = 1 — no extra gate).
-// So the signal must be the SAME task text observed with VARIED reward (an
-// action that sometimes succeeds, sometimes fails): identical text → similarity
-// ~1.0, and its high/low-reward instances pair into uplift edges. Different text
-// per outcome (a prior fixture) DECOUPLES similarity from the reward delta — the
-// similar episodes then have ~no delta and the high-delta episodes aren't
-// similar — so no pair satisfies both gates and zero edges are discovered.
+// NightlyLearner.discoverCausalEdges (the doubly-robust path run() uses) writes
+// an edge for an episode pair iff: (a) SAME session, (b) temporally ordered
+// (e2.ts > e1.ts, within 1h), (c) |doublyRobustEstimate| >= 0.05, and (d)
+// confidence = min(N/100,1)·min(|uplift|/0.5,1) >= 0.6 where N = same-task count.
+// To satisfy all four with a synthetic fixture: ONE task observed many times
+// with a strong success/failure reward split + DISTINCT increasing timestamps
+// (ADR-0277 added a `ts` param to agentdb_reflexion-store for exactly this —
+// without it, fast writes share strftime('now') and form zero temporal pairs).
+// 80 samples → confidence sampleFactor 0.8; reward split 0.95/0.05 makes the
+// doubly-robust estimate for low-reward-ending pairs ≈ -0.9 (effectSize 1.0) →
+// confidence 0.8 >= 0.6 → edges discovered.
+const TS_BASE = 1_700_000_000; // fixed unix-seconds base; +i gives distinct, increasing, same-session ts.
 const EPISODES = [];
-for (let i = 0; i < 8; i++) {
-  EPISODES.push({ task: 'deploy the payment service to production', success: true,  reward: 0.92 });
-  EPISODES.push({ task: 'deploy the payment service to production', success: false, reward: 0.08 });
-  EPISODES.push({ task: 'run the schema migration on the primary database', success: true,  reward: 0.88 });
-  EPISODES.push({ task: 'run the schema migration on the primary database', success: false, reward: 0.12 });
+for (let i = 0; i < 80; i++) {
+  EPISODES.push({
+    task: 'deploy the payment service to production',
+    success: i % 2 === 0,
+    reward: i % 2 === 0 ? 0.95 : 0.05,
+    ts: TS_BASE + i,
+  });
 }
 
 function isNonNullUplift(v) {
@@ -132,7 +137,7 @@ async function main() {
     let wrote = 0;
     for (const ep of EPISODES) {
       const { obj } = mcpExec(cli, dir, 'agentdb_reflexion-store', {
-        session_id: sid, task: ep.task, success: ep.success, reward: ep.reward,
+        session_id: sid, task: ep.task, success: ep.success, reward: ep.reward, ts: ep.ts,
       });
       if (obj?.success) wrote++;
     }
@@ -153,50 +158,54 @@ async function main() {
     log(`[smoke] learner_run → edgesDiscovered=${edgesDiscovered} avgUplift=${avgUplift} skillsCreated=${skillsCreated} (status=${lr.status})`);
     log(`  report: ${JSON.stringify(report).slice(0, 400)}`);
 
-    // ── Step 3: HARD GATE — the autonomous path ran the REAL NightlyLearner. ──
-    // This is the ADR-0277 I2 regression guard, and it is deterministic. The
-    // loop's producer is the doubly-robust NightlyLearner; the controller-registry
-    // factory used to PREFER the MemoryConsolidator (skills, zero uplift) — the
-    // I2 bug. `report.controller === 'nightlyLearner'` proves the bypass resolves
-    // the real learner. (Pre-fix this was 'consolidator'/skills-only.)
+    // ── Step 3: the autonomous path ran the REAL NightlyLearner AND it
+    //   discovered uplift edges from the temporally-ordered episode stream. ──
     const learnerController = lr.obj?.controller ?? lr.obj?.report?.controller ?? report?.controller ?? '(none)';
-    log(`[smoke] learner controller=${learnerController}`);
+    log(`[smoke] learner controller=${learnerController} edgesDiscovered=${edgesDiscovered} avgUplift=${avgUplift} skillsCreated=${skillsCreated}`);
+    // 3a — ADR-0277 I2 regression guard: the real NightlyLearner ran, not the
+    // MemoryConsolidator the controller-registry factory used to prefer.
     if (learnerController === 'nightlyLearner') {
-      pass(`autonomous learner path resolves the REAL NightlyLearner (controller=${learnerController}, not the MemoryConsolidator) — ADR-0277 I2 regression guard`);
-    } else if (skillsCreated > 0) {
-      fail('learner-is-consolidator', `controller=${learnerController}, skillsCreated=${skillsCreated} — the scheduled path ran the MemoryConsolidator, NOT the NightlyLearner. ADR-0277 I2 factory-resolution not landed`);
+      pass(`autonomous learner path resolves the REAL NightlyLearner (controller=${learnerController}, not the MemoryConsolidator) — ADR-0277 I2`);
     } else {
-      fail('learner-run', `learner_run did not resolve the NightlyLearner (controller=${learnerController})`);
+      fail('learner-is-consolidator', `controller=${learnerController} skillsCreated=${skillsCreated} — ran the MemoryConsolidator, NOT the NightlyLearner (ADR-0277 I2 not landed)`);
     }
-
-    // Informational (not a hard gate): end-to-end edge DISCOVERY. The doubly-robust
-    // NightlyLearner discovers edges only from episode pairs that are (a) same
-    // session, (b) temporally ordered (e2.ts > e1.ts, within 1h), and (c) backed
-    // by enough same-task samples for confidence = min(N/100,1)·min(|uplift|/0.5,1)
-    // ≥ 0.6 (~60+ samples). The `agentdb_reflexion-store` MCP tool accepts no `ts`
-    // param, so a fast synthetic smoke cannot give episodes distinct timestamps →
-    // no temporal pairs → 0 edges. This is a production-data property of the
-    // learner, NOT a gap in the wiring (Step 3 proves the wiring). In production,
-    // as real temporally-distinct episodes accumulate, the same scheduled learner
-    // produces uplift edges that flow to causal-recall.
-    log(`[smoke] (info) edgesDiscovered=${edgesDiscovered} avgUplift=${avgUplift} — synthetic fixtures do not exercise discovery (no ts control; see note). Wiring proven above.`);
+    // 3b — the producer discovered causal edges with real (non-null) uplift from
+    // the temporally-ordered, reward-split episodes (ts param + 80 samples).
     if (edgesDiscovered > 0 && isNonNullUplift(avgUplift)) {
-      pass(`BONUS: learner discovered ${edgesDiscovered} uplift edge(s) (avgUplift=${avgUplift}) — full end-to-end closure on this run`);
+      pass(`NightlyLearner discovered ${edgesDiscovered} causal edge(s) with non-null uplift (avgUplift=${avgUplift}) — episodes → uplift causal_edges`);
+    } else {
+      fail('learner-produced-uplift', `edgesDiscovered=${edgesDiscovered} avgUplift=${avgUplift} — no uplift edges discovered from ${EPISODES.length} temporally-ordered episodes (loop did not close at the producer)`);
     }
 
-    // ── Step 4: HARD GATE — the causal-recall CONSUMER resolves and answers. ──
-    // The uplift-ranked reranker is the loop's consumer; it must resolve a real
-    // controller and answer without error. A cold (0-result) set is acceptable
-    // here because the synthetic episodes don't trigger discovery (Step 3 note) —
-    // the gate is reachability of the consumer, not synthetic content.
+    // ── Step 4: causal-recall returns the uplift edges, uplift-ranked. ──
     const recall = mcpExec(cli, dir, 'agentdb_causal-recall', { query: 'deploy the payment service to production', k: 5, include_evidence: true });
     const rr = Array.isArray(recall.obj?.results) ? recall.obj.results : [];
     const recallCtrl = recall.obj?.controller ?? '(none)';
     log(`[smoke] causal-recall → count=${rr.length} controller=${recallCtrl}`);
-    if (recall.obj && recallCtrl !== '(none)' && recall.obj.error == null) {
-      pass(`causal-recall consumer reachable (controller=${recallCtrl}, ${rr.length} result(s)) — the uplift reranker resolves and answers`);
+    log(`  results: ${JSON.stringify(rr).slice(0, 400)}`);
+    if (rr.length === 0) {
+      fail('causal-recall-cold', `causal-recall returned 0 results — the uplift edges did not flow to the reranker (loop did not close at the consumer)`);
     } else {
-      fail('causal-recall-unreachable', `causal-recall did not resolve a controller or errored: ${JSON.stringify(recall.obj ?? {}).slice(0, 200)}`);
+      const upliftOf = (r) => {
+        for (const k of ['uplift', 'causalUplift', 'causal_uplift', 'score', 'rerankScore', 'causalScore']) {
+          const v = r?.[k];
+          if (typeof v === 'number' && Number.isFinite(v)) return v;
+        }
+        return null;
+      };
+      const seq = rr.map(upliftOf);
+      const anyUplift = seq.some((v) => v !== null && v !== 0);
+      let ranked = true;
+      let prev = Infinity;
+      for (const v of seq) { if (v === null) continue; if (v > prev + 1e-9) { ranked = false; break; } prev = v; }
+      log(`[smoke] recall uplift sequence: [${seq.join(', ')}]`);
+      if (anyUplift && ranked) {
+        pass(`causal-recall returned ${rr.length} uplift-ranked result(s) — full loop closed: episodes → uplift → ranked recall`);
+      } else if (!anyUplift) {
+        fail('causal-recall-uplift', `causal-recall returned ${rr.length} results but none carry non-zero uplift`);
+      } else {
+        fail('causal-recall-ranking', `causal-recall results not uplift-ranked: [${seq.join(', ')}]`);
+      }
     }
 
   } catch (e) {
