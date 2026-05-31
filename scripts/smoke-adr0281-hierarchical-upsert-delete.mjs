@@ -53,8 +53,30 @@ function mcpExec(cli, dir, tool, params) {
   return `${r.stdout || ''}\n${r.stderr || ''}`;
 }
 
-/** Parse a `cli mcp exec` response: take the body after `Result:`, unwrap a
- *  {content:[{text}]} envelope if present, return the parsed object or null. */
+/** Extract the first balanced {...} object from `s` (ignores braces inside
+ *  strings). Robust to pretty-printed multi-line JSON AND any trailing
+ *  daemon/stderr output after the object — unlike JSON.parse(body.slice(start)),
+ *  which throws on trailing noise and whose single-line fallback can't match
+ *  multi-line JSON (that was the parallel-run `s1=null` failure). */
+function extractBalanced(s, from = 0) {
+  const start = s.indexOf('{', from);
+  if (start < 0) return null;
+  let depth = 0, inStr = false, esc = false;
+  for (let i = start; i < s.length; i++) {
+    const c = s[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === '\\') esc = true;
+      else if (c === '"') inStr = false;
+    } else if (c === '"') inStr = true;
+    else if (c === '{') depth++;
+    else if (c === '}') { depth--; if (depth === 0) return s.slice(start, i + 1); }
+  }
+  return null;
+}
+
+/** Parse a `cli mcp exec` response: take the body after `Result:`, extract the
+ *  balanced JSON object, unwrap a {content:[{text}]} envelope if present. */
 function parseResult(raw) {
   if (/tool.+not found|not registered|unknown tool|no such tool|method .* not found|invalid tool/i.test(raw)) {
     return { __toolNotFound: true };
@@ -62,19 +84,10 @@ function parseResult(raw) {
   let body = raw;
   const idx = raw.search(/^Result:/m);
   if (idx >= 0) body = raw.slice(idx).replace(/^Result:/m, '');
-  const start = body.indexOf('{');
-  if (start < 0) return null;
+  const json = extractBalanced(body, 0);
+  if (json === null) return null;
   let obj;
-  try {
-    obj = JSON.parse(body.slice(start));
-  } catch {
-    for (const line of body.split(/\n/)) {
-      const s = line.indexOf('{');
-      if (s < 0) continue;
-      try { obj = JSON.parse(line.slice(s)); break; } catch { /* keep trying */ }
-    }
-    if (!obj) return null;
-  }
+  try { obj = JSON.parse(json); } catch { return null; }
   if (obj && Array.isArray(obj.content) && obj.content[0] && typeof obj.content[0].text === 'string') {
     try { obj = JSON.parse(obj.content[0].text); } catch { /* leave as-is */ }
   }
