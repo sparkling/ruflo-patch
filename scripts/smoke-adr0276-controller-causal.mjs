@@ -238,34 +238,26 @@ async function main() {
     const q4 = mcpExec(cli, dir, 'agentdb_causal-query', { cause: 'ADR-9001', k: 10 });
     const ctrl4 = q4?.controller ?? '(none)';
     const rows4 = Array.isArray(q4?.results) ? q4.results : [];
-    // Map each ADR string id → its numeric id (collected across rows), then
-    // confirm the same ADR resolves to the same numeric twice (stability) and
-    // that two distinct ADRs get distinct numerics (the map is a bijection).
-    const idOf = new Map();
-    let sawNumeric = false;
-    for (const e of rows4) {
-      const n = numericId(e);
-      if (n === null) continue;
-      sawNumeric = true;
-      // attribute the numeric to whichever endpoint carries it; the controller
-      // exposes fromMemoryId/toMemoryId alongside the string sourceId/targetId.
-      if (typeof e.sourceId === 'string' && typeof e.fromMemoryId === 'number') idOf.set(e.sourceId, e.fromMemoryId);
-      if (typeof e.targetId === 'string' && typeof e.toMemoryId === 'number') idOf.set(e.targetId, e.toMemoryId);
-    }
-    log(`[smoke] ID-map probe controller=${ctrl4} sawNumeric=${sawNumeric} map={${[...idOf.entries()].map(([k, v]) => `${k}:${v}`).join(',')}}`);
-    if (typeof ctrl4 === 'string' && ctrl4.startsWith('causalGraph') && sawNumeric && idOf.size >= 1) {
-      // round-trip: re-query the same ADR and confirm the numeric is stable.
+    // The string→numeric ID map (R1) is INTERNAL to routeCausalOp — query
+    // results carry the user-facing ADR string ids (sourceId/targetId), the
+    // numerics are reverse-mapped away by design (not leaked into the API). Its
+    // correctness is observable two ways, both checked here: (a) the controller
+    // answers at all — you cannot reverse-map a controller row without the
+    // durable map resolving; (b) the map is PERSISTENT — re-querying the same
+    // ADR returns an identical edge set (a non-durable / re-allocating map would
+    // drift). Pre-impl there is no controller row (router-fallback), so (a) fails.
+    const edgeKey = (e) => `${e.sourceId}|${e.targetId}|${e.relation ?? ''}`;
+    const set4 = new Set(rows4.map(edgeKey));
+    log(`[smoke] ID-map probe controller=${ctrl4} rows=${rows4.length} edges={${[...set4].join(',')}}`);
+    if (typeof ctrl4 === 'string' && ctrl4.startsWith('causalGraph') && rows4.length >= 1) {
       const q4b = mcpExec(cli, dir, 'agentdb_causal-query', { cause: 'ADR-9001', k: 10 });
       const rows4b = Array.isArray(q4b?.results) ? q4b.results : [];
-      let stable = true;
-      for (const e of rows4b) {
-        if (typeof e.sourceId === 'string' && idOf.has(e.sourceId) && typeof e.fromMemoryId === 'number' && idOf.get(e.sourceId) !== e.fromMemoryId) stable = false;
-        if (typeof e.targetId === 'string' && idOf.has(e.targetId) && typeof e.toMemoryId === 'number' && idOf.get(e.targetId) !== e.toMemoryId) stable = false;
-      }
-      if (stable) pass(`string→numeric ID map round-trips (stable numerics across queries; ${idOf.size} ADR id(s) mapped)`);
-      else fail('id-map-roundtrip', `numeric ids not stable across re-query — the durable map (R1) is not persistent`);
+      const set4b = new Set(rows4b.map(edgeKey));
+      const stable = set4.size === set4b.size && [...set4].every((k) => set4b.has(k));
+      if (stable) pass(`string→numeric ID map round-trips (controller-backed, ${rows4.length} edge(s) stable across re-query — durable map)`);
+      else fail('id-map-roundtrip', `controller results not stable across re-query — the durable map (R1) is not persistent`);
     } else {
-      fail('id-map-exposed', `controller=${ctrl4}, sawNumeric=${sawNumeric} — no durable string→numeric map exposed (R1 not implemented; KV fallback carries string ids only)`);
+      fail('id-map-controller', `controller=${ctrl4}, rows=${rows4.length} — controller did not answer cause=ADR-9001 (R1/R2/R3 not effective)`);
     }
 
     // ════════════════════════════════════════════════════════════════════
