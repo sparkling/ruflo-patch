@@ -480,6 +480,17 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0281"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
   fi
 fi
 
+if [[ "$_FAST_RUN_GROUPS" == *"adr0282"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0282-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0282-checks.sh"
+    echo "── ADR-0282/0276/0273 (agentdb CLI surface fixes) ──"
+    export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+    echo "[fast] adr0282 reusing ACCEPT_TEMP: ${ACCEPT_TEMP}"
+    _fast_run "adr0282-agentdb-surface-fixes" check_adr0282_agentdb_surface_fixes
+    unset ADR0255_SMOKE_SHARED_TEMP
+  fi
+fi
+
 if [[ "$_FAST_RUN_GROUPS" == *"adr0176qk"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
   if [[ -f "$PROJECT_DIR/lib/acceptance-adr0176-query-key.sh" ]]; then
     source "$PROJECT_DIR/lib/acceptance-adr0176-query-key.sh"

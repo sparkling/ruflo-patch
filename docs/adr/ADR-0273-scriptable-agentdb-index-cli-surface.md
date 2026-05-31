@@ -145,3 +145,27 @@ Shipped the `agentdb index` CLI command in `forks/ruflo` (`commands/agentdb.ts`,
 - Surfaced during ADR-0271 Phase 3 (the ADR-corpus MADR migration), when the 278-record index rebuild hit the MCP-only scale wall.
 - Investigation conducted by a 3-agent swarm (2026-05-30); all findings file:line-verified and folded into §Pre-flight above. Status flipped `proposed → accepted` on completion of that gate.
 - Implementation (the `agentdb index` command + smoke + harness wiring) is separate follow-up work in `forks/ruflo`.
+
+## Amendment — `--dry-run` was not dry; it performed the full index write (2026-05-31)
+
+`agentdb index --dry-run` is documented "Parse + report without writing" but
+MUTATED all three surfaces. Field evidence (during the ADR-0281 index
+remediation): a `.swarm/memory.db` with 223 `adr/*` hierarchical rows + 0
+`causal_edges` became **287 rows + 890 edges** after a single `--dry-run`.
+
+Root cause: the CLI parser normalizes kebab flags to camelCase (`parser.ts`
+`normalizeKey`), so `--dry-run` lands in `ctx.flags` as `dryRun`. The handler
+read only `ctx.flags['dry-run']` (`commands/agentdb.ts`), permanently `undefined`
+→ `dryRun` was always `false` and the dry-run early-return never fired; every
+`--dry-run` fell through to the write loop. (`--purge`, single-word, was
+unaffected.)
+
+Fix (fork-only, `commands/agentdb.ts`): read both keys, matching the existing
+defensive pattern in `daemon.ts`/`hive-mind.ts` —
+`const dryRun = ctx.flags.dryRun === true || ctx.flags['dry-run'] === true;`
+
+Tests: `__tests__/agentdb-index-dry-run.test.ts` (mocks the three write surfaces;
+asserts a dry-run reaches ZERO of them and a real run reaches all three —
+verified to FAIL on the pre-fix line) + the `adr0282-agentdb-surface-fixes`
+acceptance smoke (G3, end-to-end: a synthetic ADR indexed under `--dry-run` is
+never written).

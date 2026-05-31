@@ -124,3 +124,28 @@ Implemented and acceptance-green (`adr0276-controller-causal` PASS); shipped `@s
 - **R4 — `memory_type` widened to `'adr'`** (type-only; no DB CHECK).
 - **R5 — cascade-delete.** Added `deleteNode({cascade})` + `deleteEdgesByEndpoints` to `CausalMemoryGraph` (the cli bridges previously no-op'd as `native-unsupported`); the cli node-delete also clears the KV `causal-edges` dual-write copies so cascade is visible through the dual-read.
 - **Commits:** agentdb `ea627b1`+`59851d8`; ruflo `5288d0477`+`6c1ead219`. Because `queryCausalCauses` now backs `effect=`, R7 (KV retirement) is achievable for both directions.
+
+## Amendment — edge-delete KV residual (2026-05-31)
+
+R5 added the node-delete KV clear, but the EDGE-delete path
+(`bridgeDeleteCausalEdge`, `mcp-tools/agentdb-tools.ts`) still cleared only the
+SQLite `causal_edges` row, not the KV dual-write copy. Because
+`routeCausalOp({type:'query'})` merges the KV namespace-list unconditionally, a
+deleted edge was resurrectable from KV: `causal-query {cause}` still returned it
+with `controller:"router-fallback"` and a `weight` field — i.e. reading the
+surviving KV copy, not the (deleted) SQLite row. Found during the ADR-0281 index
+remediation.
+
+KV key format (confirmed at the write site, `memory-router.ts` `routeCausalOp`):
+key = `${sourceId}→${targetId}` (arrow U+2192); `relation`/`weight` live in the
+JSON value, not the key (`upsert:true` ⇒ one KV copy per endpoint pair).
+
+Fix: after the SQLite delete succeeds, `bridgeDeleteCausalEdge` now calls a new
+`clearCausalEdgeKv(sourceId, targetId, relation?)` helper (mirrors the node-delete
+loop) — list `causal-edges`, delete the `${sourceId}→${targetId}` key, scoping to
+the stored `relation` when provided. KV deletions are counted into `kvDeleted`;
+the edge-delete `controller` is now `"causalGraph+kv"` (was `"bridge-fallback"`).
+
+Tests: `__tests__/agentdb-causal-edge-delete-kv-residual.test.ts` (real router
+round-trip: store edge → query 1 → clear → query 0) + the
+`adr0282-agentdb-surface-fixes` acceptance smoke (G2, end-to-end).

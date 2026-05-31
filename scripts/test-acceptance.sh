@@ -887,6 +887,8 @@ adr0280_lib="${PROJECT_DIR}/lib/acceptance-adr0280-checks.sh"
 [[ -f "$adr0280_lib" ]] && source "$adr0280_lib"
 adr0281_lib="${PROJECT_DIR}/lib/acceptance-adr0281-checks.sh"
 [[ -f "$adr0281_lib" ]] && source "$adr0281_lib"
+adr0282_lib="${PROJECT_DIR}/lib/acceptance-adr0282-checks.sh"
+[[ -f "$adr0282_lib" ]] && source "$adr0282_lib"
 
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
@@ -3913,6 +3915,29 @@ if [[ -f "$adr0281_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
   rm -rf "$PARALLEL_DIR" 2>/dev/null
 fi
 _record_phase "phase-adr0281-hierarchical-upsert-delete" "$(_elapsed_ms "$_adr0281_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0282/0276/0273: three agentdb-CLI-surface honesty fixes found during the
+# ADR-0281 index remediation — hierarchical-query honors an explicit `limit`
+# (was clamped to 100), causal-edge-delete clears the KV dual-write copy (was
+# resurrectable via router-fallback), and `agentdb index --dry-run` no longer
+# mutates (kebab flag was never read). FAILs pre-impl, PASSes after.
+# ════════════════════════════════════════════════════════════════════
+_adr0282_start=$(_ns)
+if [[ -f "$adr0282_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
+  log "── ADR-0282/0276/0273: agentdb CLI surface fixes (limit · causal-edge KV · dry-run) ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+  export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+
+  run_check_bg "adr0282-agentdb-surface-fixes" "ADR-0282/0276/0273 agentdb CLI surface fixes" check_adr0282_agentdb_surface_fixes "adr0282"
+
+  collect_parallel "adr0282" \
+    "adr0282-agentdb-surface-fixes|ADR-0282/0276/0273 agentdb CLI surface fixes"
+
+  unset ADR0255_SMOKE_SHARED_TEMP
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0282-agentdb-surface-fixes" "$(_elapsed_ms "$_adr0282_start" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
 # Results

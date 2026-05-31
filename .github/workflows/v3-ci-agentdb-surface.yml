@@ -1,0 +1,65 @@
+# ADR-0282/0276/0273 — CI stanza for the agentdb CLI surface fixes found during
+# the ADR-0281 index remediation.
+#
+# Per `feedback-always-wire-tests-into-cicd`: the smoke is wired into the standard
+# runner (scripts/test-acceptance.sh, adr0282-agentdb-surface-fixes check) AND
+# here. It drives a live loop against an installed CLI:
+#   - agentdb_hierarchical-query honors limit:200 over 101 records → 101 (ADR-0282)
+#   - agentdb_causal-edge-delete clears the KV copy → causal-query 1→0 (ADR-0276)
+#   - agentdb index --dry-run does not write the synthetic ADR (ADR-0273)
+# Per `feedback-no-tail-tests`: log to SMOKE_LOG_DIR.
+
+name: ADR-0282/0276/0273 agentdb surface fixes
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/commands/agentdb.ts'
+      - 'scripts/smoke-adr0282-agentdb-surface-fixes.mjs'
+      - 'lib/acceptance-adr0282-checks.sh'
+  pull_request:
+    paths:
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/commands/agentdb.ts'
+      - 'scripts/smoke-adr0282-agentdb-surface-fixes.mjs'
+      - 'lib/acceptance-adr0282-checks.sh'
+
+env:
+  REGISTRY: http://localhost:4873
+  CLI_PKG: '@sparkleideas/ruflo'
+  SMOKE_LOG_DIR: ${{ github.workspace }}/smoke-logs
+
+jobs:
+  agentdb-surface-fixes:
+    name: agentdb CLI surface fixes (ADR-0282/0276/0273)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Start local Verdaccio + publish fork packages
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/ruflo-publish.sh 2>&1 | tee "${SMOKE_LOG_DIR}/publish.log"
+
+      - name: Run ADR-0282/0276/0273 agentdb surface smoke via fast runner
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/test-acceptance-fast.sh adr0282 2>&1 | tee "${SMOKE_LOG_DIR}/adr0282.log"
+
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs-agentdb-surface
+          path: ${{ env.SMOKE_LOG_DIR }}
