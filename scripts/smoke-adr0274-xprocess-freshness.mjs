@@ -27,27 +27,25 @@
  *
  * FAIL pre-fix, PASS post-fix — the ADR-0274 D3/D4 confirmation gate.
  *
- * Resolution: loads the fork's freshly-built `@claude-flow/memory` dist and the
- * freshly-built `@ruvector/rvf-node` crate (the units under change). The backend
- * resolves the binding relative to its own location, so if it is not already
- * resolvable from the memory package's node_modules, a temporary symlink to the
- * built crate is created there and removed on exit. This keeps the smoke
- * deterministic and pinned to the fork code being verified (per fork test
- * discipline) rather than a published/codemod-renamed install.
+ * Resolution: loads `RvfBackend` from an INSTALLED `@sparkleideas/memory`
+ * (`dist/rvf-backend.js`, which carries `_maybeReloadFromDisk` since patch.383)
+ * with the `@sparkleideas/ruvector-rvf-node` binding resolved as the real
+ * transitive optional dep (no symlink — the dist `import()`s the bare specifier
+ * and Node resolves it from the install's node_modules). When the acceptance
+ * harness exports `ADR0255_SMOKE_SHARED_TEMP` (= ACCEPT_TEMP), the shared
+ * install is reused; otherwise the smoke creates a local temp and installs
+ * `@sparkleideas/memory@latest` from the registry. This exercises the SHIPPED
+ * artifact (matching the sibling smoke-adr0274-rvf-rw-split), not fork source.
  */
 import { spawnSync } from 'node:child_process';
 import {
-  mkdtempSync, mkdirSync, rmSync, existsSync, writeFileSync, symlinkSync, appendFileSync,
+  mkdtempSync, mkdirSync, rmSync, existsSync, writeFileSync, appendFileSync,
 } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const FORK_ROOT = '/Users/henrik/source/forks';
-const MEMORY_PKG = join(FORK_ROOT, 'ruflo/v3/@claude-flow/memory');
-const MEMORY_DIST = join(MEMORY_PKG, 'dist/rvf-backend.js');
-const RVF_NODE_CRATE = join(FORK_ROOT, 'ruvector/crates/rvf/rvf-node');
+const REGISTRY = process.env.REGISTRY || 'http://localhost:4873';
 
 const LOG_DIR = process.env.SMOKE_LOG_DIR || tmpdir();
 const LOG_FILE = join(LOG_DIR, `smoke-adr0274-freshness-${process.pid}.log`);
@@ -59,37 +57,58 @@ function pass(label) { passed++; log(`  PASS  ${label}`); }
 function fail(label, reason) { failed++; log(`  FAIL  ${label}: ${reason}`); }
 
 /**
- * Resolve the path to load RvfBackend from + ensure `@ruvector/rvf-node` is
- * resolvable from that location. Returns { backendUrl, cleanup }.
+ * Resolve `@sparkleideas/memory/dist/rvf-backend.js` under an installed package
+ * tree, asserting the dist carries the D3/D4 fix and the native binding resolves
+ * transitively. Throws with a clear message if either is missing.
+ */
+function resolveDistInInstall(installDir) {
+  const dist = join(installDir, 'node_modules/@sparkleideas/memory/dist/rvf-backend.js');
+  if (!existsSync(dist)) {
+    throw new Error(`installed @sparkleideas/memory dist missing: ${dist}`);
+  }
+  // The dist `await import('@sparkleideas/ruvector-rvf-node')`s the bare
+  // specifier; Node resolves it from the install's node_modules. Assert it is
+  // resolvable from the dist's own location (no symlink — real transitive dep).
+  try {
+    createRequire('file://' + dist).resolve('@sparkleideas/ruvector-rvf-node');
+  } catch (e) {
+    throw new Error(`@sparkleideas/ruvector-rvf-node not resolvable from ${dist}: ${e.message}`);
+  }
+  return dist;
+}
+
+/**
+ * Resolve the path to load RvfBackend from the INSTALLED `@sparkleideas/memory`.
+ * Reuses ADR0255_SMOKE_SHARED_TEMP (= ACCEPT_TEMP) when the harness set it;
+ * otherwise creates a smoke-local temp and installs the package from REGISTRY.
+ * Returns { backendUrl, cleanup }.
  */
 function resolveBackend() {
-  // Load the fork's built dist. The backend resolves `@ruvector/rvf-node`
-  // relative to its OWN location, so the binding must be present under the
-  // memory package's node_modules. Symlink the freshly-built crate there if it
-  // isn't already resolvable.
-  if (!existsSync(MEMORY_DIST)) {
-    throw new Error(`fork dist missing: ${MEMORY_DIST} (run \`npm run build\` in the memory package)`);
+  const shared = process.env.ADR0255_SMOKE_SHARED_TEMP;
+  if (shared) {
+    const dist = resolveDistInInstall(shared);
+    log(`[setup] reusing shared install: ${shared}`);
+    return { backendUrl: dist, cleanup: () => {} };
   }
-  const linkDir = join(MEMORY_PKG, 'node_modules/@ruvector');
-  const linkPath = join(linkDir, 'rvf-node');
-  let created = false;
-  if (!existsSync(linkPath)) {
-    if (!existsSync(RVF_NODE_CRATE)) {
-      throw new Error(`built rvf-node crate missing: ${RVF_NODE_CRATE}`);
-    }
-    mkdirSync(linkDir, { recursive: true });
-    symlinkSync(RVF_NODE_CRATE, linkPath);
-    created = true;
-    log(`[setup] symlinked built @ruvector/rvf-node → memory/node_modules (standalone)`);
+
+  // Standalone: create a local temp and install @sparkleideas/memory. A scoped
+  // pkg install no-ops without a package.json in the dir, so write one first.
+  const installDir = mkdtempSync(join(tmpdir(), 'adr0274-freshness-install-'));
+  writeFileSync(join(installDir, 'package.json'),
+    JSON.stringify({ name: 'adr0274-freshness-smoke', version: '1.0.0', private: true }));
+  writeFileSync(join(installDir, '.npmrc'), `registry=${REGISTRY}\n`);
+  log(`[setup] installing @sparkleideas/memory@latest into ${installDir} (registry ${REGISTRY})…`);
+  const r = spawnSync('npm', [
+    'install', '@sparkleideas/memory@latest',
+    '--registry', REGISTRY, '--no-audit', '--no-fund',
+  ], { cwd: installDir, encoding: 'utf8', timeout: 180000 });
+  if (r.status !== 0) {
+    throw new Error(`npm install @sparkleideas/memory failed (status=${r.status}): ${(r.stderr || '').slice(0, 400)}`);
   }
+  const dist = resolveDistInInstall(installDir);
   return {
-    backendUrl: MEMORY_DIST,
-    cleanup: () => {
-      if (created) {
-        try { rmSync(linkPath, { force: true }); } catch {}
-        try { rmSync(linkDir, { recursive: false, force: true }); } catch {}
-      }
-    },
+    backendUrl: dist,
+    cleanup: () => { try { rmSync(installDir, { recursive: true, force: true }); } catch {} },
   };
 }
 
