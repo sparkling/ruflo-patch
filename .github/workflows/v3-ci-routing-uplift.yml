@@ -1,0 +1,67 @@
+# ADR-0280 — CI stanza for the routing-hot-path action-uplift bridge smoke.
+#
+# Per `feedback-always-wire-tests-into-cicd`: the smoke is wired into the
+# standard runner (scripts/test-acceptance.sh, adr0280-routing-action-uplift
+# check) AND here. It drives the live loop against an installed CLI:
+# agentdb_reflexion-store x N (action-tagged) -> agentdb_learner_run, asserting
+# the run persists de-confounded action-value uplift to .swarm/action-values.json
+# (the cross-process bridge the ModelRouter A-coupling + LocalReasoningBank
+# rerank consume). Single job. Per `feedback-no-tail-tests`: log to SMOKE_LOG_DIR.
+
+name: ADR-0280 routing action-uplift
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'forks/ruflo/v3/@claude-flow/cli/src/learning/action-values.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/memory/intelligence.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/ruvector/model-router.ts'
+      - 'scripts/smoke-adr0280-routing-action-uplift.mjs'
+      - 'lib/acceptance-adr0280-checks.sh'
+  pull_request:
+    paths:
+      - 'forks/ruflo/v3/@claude-flow/cli/src/learning/action-values.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/memory/intelligence.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/ruvector/model-router.ts'
+      - 'scripts/smoke-adr0280-routing-action-uplift.mjs'
+      - 'lib/acceptance-adr0280-checks.sh'
+
+env:
+  REGISTRY: http://localhost:4873
+  CLI_PKG: '@sparkleideas/ruflo'
+  SMOKE_LOG_DIR: ${{ github.workspace }}/smoke-logs
+
+jobs:
+  routing-action-uplift:
+    name: routing-hot-path action-uplift bridge (ADR-0280)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Start local Verdaccio + publish fork packages
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/ruflo-publish.sh 2>&1 | tee "${SMOKE_LOG_DIR}/publish.log"
+
+      - name: Run ADR-0280 routing action-uplift smoke via fast runner
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/test-acceptance-fast.sh adr0280 2>&1 | tee "${SMOKE_LOG_DIR}/adr0280.log"
+
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs-routing-uplift
+          path: ${{ env.SMOKE_LOG_DIR }}

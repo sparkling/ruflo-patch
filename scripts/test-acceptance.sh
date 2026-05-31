@@ -883,6 +883,8 @@ adr0278_lib="${PROJECT_DIR}/lib/acceptance-adr0278-checks.sh"
 [[ -f "$adr0278_lib" ]] && source "$adr0278_lib"
 adr0279_lib="${PROJECT_DIR}/lib/acceptance-adr0279-checks.sh"
 [[ -f "$adr0279_lib" ]] && source "$adr0279_lib"
+adr0280_lib="${PROJECT_DIR}/lib/acceptance-adr0280-checks.sh"
+[[ -f "$adr0280_lib" ]] && source "$adr0280_lib"
 
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
@@ -3863,6 +3865,29 @@ if [[ -f "$adr0279_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
   rm -rf "$PARALLEL_DIR" 2>/dev/null
 fi
 _record_phase "phase-adr0279-episodes-action-dimension" "$(_elapsed_ms "$_adr0279_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0280 — causal recall on the default routing hot path. Write action-tagged
+# episodes, run agentdb_learner_run, assert the run persisted de-confounded
+# action-value uplift to .swarm/action-values.json (the cross-process bridge the
+# ModelRouter A-coupling + LocalReasoningBank rerank consume). FAILs pre-impl
+# (action-values never persisted), PASSes after ADR-0280 lands.
+# ════════════════════════════════════════════════════════════════════
+_adr0280_start=$(_ns)
+if [[ -f "$adr0280_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
+  log "── ADR-0280: causal recall on the default routing hot path (action-value uplift bridge) ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+  export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+
+  run_check_bg "adr0280-routing-action-uplift" "ADR-0280 routing action-uplift bridge" check_adr0280_routing_action_uplift "adr0280"
+
+  collect_parallel "adr0280" \
+    "adr0280-routing-action-uplift|ADR-0280 routing action-uplift bridge"
+
+  unset ADR0255_SMOKE_SHARED_TEMP
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0280-routing-action-uplift" "$(_elapsed_ms "$_adr0280_start" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
 # Results
