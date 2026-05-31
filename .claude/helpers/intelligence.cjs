@@ -146,7 +146,11 @@ function readJSON(filePath) {
 
 function writeJSON(filePath, data) {
   ensureDataDir();
-  const tmp = filePath + '.tmp';
+  // Per-process-unique temp: a fixed filePath+'.tmp' races when parallel writers
+  // share a data dir (one renames the tmp away → ENOENT on another's rename).
+  // pid-scoped temp + atomic rename is collision-free (last writer wins on the
+  // target; POSIX rename is atomic).
+  const tmp = filePath + '.' + process.pid + '.tmp';
   fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf-8');
   fs.renameSync(tmp, filePath);
 }

@@ -131,12 +131,21 @@ check_adr0094_p4_browser_session() { # adr0097-l2-delegator: flag set inside _br
 # Check 2: browser_eval — eval "1+1" returns "2"
 # ════════════════════════════════════════════════════════════════════
 check_adr0094_p4_browser_eval() { # adr0097-l2-delegator: flag set inside _browser_invoke_tool
+  # browser_eval spawns a fresh Playwright launch to evaluate the script; a cold
+  # launch is ~13s idle and 17s+ under load (the eval itself is instant). The old
+  # 15s budget was barely above the idle launch time, so any load tipped it into
+  # a timeout-kill — which yields NO output and is NOT caught by the launch-failed
+  # skip bucket, so it surfaced as a flaky FAIL (passed in 2.9s in patch.365,
+  # killed at 15s under load in patch.366). Size the budget to the operation's
+  # real worst-case so the result is determined by browser correctness, not
+  # wall-clock contention. A fast launch still returns immediately — the headroom
+  # only applies when the launch is genuinely slow.
   _browser_invoke_tool \
     "browser_eval" \
     '{"script":"1+1"}' \
     '2|result' \
     "browser_eval" \
-    15
+    60
 }
 
 # ════════════════════════════════════════════════════════════════════
