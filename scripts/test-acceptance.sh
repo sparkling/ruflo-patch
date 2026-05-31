@@ -875,6 +875,10 @@ adr0273_lib="${PROJECT_DIR}/lib/acceptance-adr0273-checks.sh"
 [[ -f "$adr0273_lib" ]] && source "$adr0273_lib"
 adr0275_lib="${PROJECT_DIR}/lib/acceptance-adr0275-checks.sh"
 [[ -f "$adr0275_lib" ]] && source "$adr0275_lib"
+adr0276_lib="${PROJECT_DIR}/lib/acceptance-adr0276-checks.sh"
+[[ -f "$adr0276_lib" ]] && source "$adr0276_lib"
+adr0277_lib="${PROJECT_DIR}/lib/acceptance-adr0277-checks.sh"
+[[ -f "$adr0277_lib" ]] && source "$adr0277_lib"
 
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
@@ -3762,6 +3766,52 @@ if [[ -f "$adr0275_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
   rm -rf "$PARALLEL_DIR" 2>/dev/null
 fi
 _record_phase "phase-adr0275-hnsw" "$(_elapsed_ms "$_adr0275_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0276: re-converge ADR causal edges onto the CausalMemoryGraph controller.
+# agentdb index builds a synthetic ADR corpus alongside a live MCP server, then
+# the SQLite controller (not the KV router-fallback) must answer inbound queries,
+# a 2-hop chain, a cascade-delete, and a round-tripping string→numeric ID map.
+# FAILs pre-impl (router-fallback / native-unsupported cascade / no numeric map).
+# ════════════════════════════════════════════════════════════════════
+_adr0276_start=$(_ns)
+if [[ -f "$adr0276_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
+  log "── ADR-0276: ADR causal edges via CausalMemoryGraph controller (not KV fallback) ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+  export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+
+  run_check_bg "adr0276-controller-causal" "ADR-0276 ADR causal edges via controller" check_adr0276_controller_causal "adr0276"
+
+  collect_parallel "adr0276" \
+    "adr0276-controller-causal|ADR-0276 ADR causal edges via controller"
+
+  unset ADR0255_SMOKE_SHARED_TEMP
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0276-controller-causal" "$(_elapsed_ms "$_adr0276_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0277: close the autonomous causal-learning loop. Write N varied-reward
+# episodes, trigger the scheduled learner (agentdb_learner_run), then assert
+# causal_edges gains rows with non-null uplift (real NightlyLearner, not the
+# consolidator) and causal-recall returns them uplift-ranked. FAILs pre-impl
+# (factory prefers consolidator → 0 uplift edges; causal-recall cold-start).
+# ════════════════════════════════════════════════════════════════════
+_adr0277_start=$(_ns)
+if [[ -f "$adr0277_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
+  log "── ADR-0277: autonomous causal-learning loop (episodes → uplift → ranked recall) ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+  export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+
+  run_check_bg "adr0277-causal-learning-loop" "ADR-0277 autonomous causal-learning loop" check_adr0277_causal_learning_loop "adr0277"
+
+  collect_parallel "adr0277" \
+    "adr0277-causal-learning-loop|ADR-0277 autonomous causal-learning loop"
+
+  unset ADR0255_SMOKE_SHARED_TEMP
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0277-causal-learning-loop" "$(_elapsed_ms "$_adr0277_start" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
 # Results
