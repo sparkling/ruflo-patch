@@ -436,6 +436,17 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0268"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
   fi
 fi
 
+if [[ "$_FAST_RUN_GROUPS" == *"adr0278"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0278-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0278-checks.sh"
+    echo "── ADR-0278 (ModelRouter contextual-uplift bandit) ──"
+    export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+    echo "[fast] adr0278 reusing ACCEPT_TEMP: ${ACCEPT_TEMP}"
+    _fast_run "adr0278-model-contextual-bandit" check_adr0278_model_contextual_bandit
+    unset ADR0255_SMOKE_SHARED_TEMP
+  fi
+fi
+
 if [[ "$_FAST_RUN_GROUPS" == *"adr0176qk"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
   if [[ -f "$PROJECT_DIR/lib/acceptance-adr0176-query-key.sh" ]]; then
     source "$PROJECT_DIR/lib/acceptance-adr0176-query-key.sh"

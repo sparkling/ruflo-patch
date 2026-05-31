@@ -879,6 +879,8 @@ adr0276_lib="${PROJECT_DIR}/lib/acceptance-adr0276-checks.sh"
 [[ -f "$adr0276_lib" ]] && source "$adr0276_lib"
 adr0277_lib="${PROJECT_DIR}/lib/acceptance-adr0277-checks.sh"
 [[ -f "$adr0277_lib" ]] && source "$adr0277_lib"
+adr0278_lib="${PROJECT_DIR}/lib/acceptance-adr0278-checks.sh"
+[[ -f "$adr0278_lib" ]] && source "$adr0278_lib"
 
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
@@ -3812,6 +3814,30 @@ if [[ -f "$adr0277_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
   rm -rf "$PARALLEL_DIR" 2>/dev/null
 fi
 _record_phase "phase-adr0277-causal-learning-loop" "$(_elapsed_ms "$_adr0277_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0278 — ModelRouter contextual-uplift bandit. Record outcomes for two
+# task-types where different models win (via hooks_model-outcome), then read
+# the per-(task_type,model) priors back (hooks_model-stats) and assert the
+# winner flips per task-type while the pooled marginal cannot — the de-
+# confounding. FAILs pre-impl (no contextualPriors surface; one marginal prior
+# can't flip the winner), PASSes after ADR-0278 lands.
+# ════════════════════════════════════════════════════════════════════
+_adr0278_start=$(_ns)
+if [[ -f "$adr0278_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
+  log "── ADR-0278: ModelRouter contextual-uplift bandit (per-(task_type,model) priors de-confound selection) ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+  export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+
+  run_check_bg "adr0278-model-contextual-bandit" "ADR-0278 ModelRouter contextual-uplift bandit" check_adr0278_model_contextual_bandit "adr0278"
+
+  collect_parallel "adr0278" \
+    "adr0278-model-contextual-bandit|ADR-0278 ModelRouter contextual-uplift bandit"
+
+  unset ADR0255_SMOKE_SHARED_TEMP
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0278-model-contextual-bandit" "$(_elapsed_ms "$_adr0278_start" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
 # Results

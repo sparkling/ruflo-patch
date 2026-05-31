@@ -1,0 +1,65 @@
+# ADR-0278 — CI stanza for the ModelRouter contextual-uplift bandit smoke.
+#
+# Per `feedback-always-wire-tests-into-cicd`: the smoke is wired into the
+# standard runner (scripts/test-acceptance.sh, adr0278-model-contextual-bandit
+# check) AND here. The smoke drives the live MCP surface against an installed
+# CLI: hooks_model-outcome x N (two task-types where different models win) ->
+# hooks_model-stats (read per-(task_type,model) priors), asserting the winner
+# flips per task-type while the pooled marginal cannot represent it. Single job.
+# Per `feedback-no-tail-tests`: the smoke writes its log to SMOKE_LOG_DIR.
+
+name: ADR-0278 model contextual bandit
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'forks/ruflo/v3/@claude-flow/cli/src/ruvector/model-router.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/learning/derive-task-type.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts'
+      - 'scripts/smoke-adr0278-model-contextual-bandit.mjs'
+      - 'lib/acceptance-adr0278-checks.sh'
+  pull_request:
+    paths:
+      - 'forks/ruflo/v3/@claude-flow/cli/src/ruvector/model-router.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts'
+      - 'scripts/smoke-adr0278-model-contextual-bandit.mjs'
+      - 'lib/acceptance-adr0278-checks.sh'
+
+env:
+  REGISTRY: http://localhost:4873
+  CLI_PKG: '@sparkleideas/ruflo'
+  SMOKE_LOG_DIR: ${{ github.workspace }}/smoke-logs
+
+jobs:
+  contextual-bandit:
+    name: ModelRouter contextual-uplift bandit (ADR-0278)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Start local Verdaccio + publish fork packages
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/ruflo-publish.sh 2>&1 | tee "${SMOKE_LOG_DIR}/publish.log"
+
+      - name: Run ADR-0278 contextual-bandit smoke via fast runner
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/test-acceptance-fast.sh adr0278 2>&1 | tee "${SMOKE_LOG_DIR}/adr0278.log"
+
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs-contextual-bandit
+          path: ${{ env.SMOKE_LOG_DIR }}
