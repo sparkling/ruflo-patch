@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-05-31
 tags: [hierarchical-memory, mcp-tools, adr-index, idempotency, upstream-convergence, fix]
 supersedes: []
@@ -143,3 +143,48 @@ removes by key; keyless experience writes are untouched.
 - Evidence: live ADR-index audit (2026-05-31) — append-on-rerun verified by
   probe; delete `native-unsupported` + `/`-rejection verified; 281 (hierarchical)
   vs 283 (`adr-patterns`) vs 286 (disk) drift measured.
+
+## Amendment: implemented + shipped (2026-05-31, ruflo patch.365 / agentdb patch.403)
+
+Implemented across both forks and shipped to Verdaccio:
+
+- **agentdb** (`HierarchicalMemory.ts`, patch.403): public `delete(key, {tier?})`
+  resolving by raw id OR `metadata.key`, reusing `forget()` (R1); keyed upsert in
+  `store()` — a re-store of an existing `metadata.key` deletes the prior entry
+  before INSERT (R2). Keyless stores keep append semantics.
+- **ruflo cli** (`agentdb-tools.ts`, wrapper patch.365): dropped the
+  `validateIdentifier` guard on `agentdb_hierarchical-delete` so `adr/<id>` keys
+  with `/` reach the backend, symmetric with store (R3).
+
+Verified end-to-end against the deployed artifact (not just unit tests):
+
+- **Keyed upsert** — storing the same `adr/<id>` key twice yields exactly **1**
+  entry, latest value wins; cross-tier re-store moves rather than duplicates.
+- **Delete-by-key** — `agentdb_hierarchical-delete adr/<id>` returns
+  `deleted:true` (controller `bridge-fallback`, no longer `native-unsupported`);
+  delete by raw `mem-*` id, tier-filtered delete, and multi-segment `/` keys all
+  work.
+- **30/30 comprehensive validation** across store/upsert, path-glob query,
+  semantic recall, `adr-patterns` search, causal edge/query/recall, every delete
+  form, cross-surface integrity, and idempotency-at-scale.
+
+**Index remediation (the payoff).** The live index carried an un-removable
+`adr/ADR-0276` duplicate (284 rows / 283 distinct) and was missing
+ADR-0278–0281. With the fix, a reindex on top of the existing store produced
+exactly **287 distinct / 287 rows — zero duplicates** (pre-fix this would have
+appended to 510+), then a `--purge` rebuild brought all three surfaces
+(hierarchical + `adr-patterns` + causal) to the canonical 287, eliminating the
+0276 dupe and the stale-value `adr-patterns` conflicts.
+
+The acceptance check `adr0281-hierarchical-upsert-delete` is wired into the
+standard runner (`run_check_bg` + `collect_parallel`), the fast runner, and a
+dedicated CI workflow. The patch.365 acceptance run surfaced a parse bug in the
+smoke's *own* harness (multi-line `Result:` JSON + trailing daemon output broke
+`JSON.parse(body.slice(start))`); fixed by switching `parseResult` to
+balanced-brace extraction (the adr0280 pattern) — green on re-run (5/5).
+
+A separate **ADR-0276 follow-up** is noted: `agentdb_causal-edge-delete` clears
+the SQLite `causal_edges` row but leaves the KV `causal-edges` dual-write copy
+(`bridgeDeleteCausalNode` clears it; `bridgeDeleteCausalEdge` does not), so
+`causal-query` can resurrect a deleted edge via `router-fallback`. Out of scope
+here; tracked for ADR-0276.
