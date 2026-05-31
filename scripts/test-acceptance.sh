@@ -341,6 +341,21 @@ _cache_bust_bumped_packages
 }
 _record_phase "install" "$(_elapsed_ms "$_p" "$(_ns)")"
 
+# ADR-0283: start the P4 browser checks from a CLEAN agent-browser session.
+# agent-browser (used by browser_eval) runs a PERSISTENT per-session browser
+# daemon (~/.agent-browser/<session>.sock + .pid). A stale/stuck `default`
+# session left by a prior run makes `agent-browser eval` HANG connecting to it
+# → `spawnSync npx ETIMEDOUT` (60s) → a flaky FAIL. Verified: a stale session
+# hangs 90s+, a fresh one returns `{"result":2}` in ~2s. Kill any lingering
+# daemon and clear the session so each run starts fresh. (Best-effort; affects
+# only the test's `default` session.)
+( kill "$(cat "$HOME/.agent-browser/default.pid" 2>/dev/null)" 2>/dev/null; rm -f "$HOME"/.agent-browser/default.* 2>/dev/null; true )
+# Secondary: pre-warm the agent-browser npx cache so the on-demand
+# `npx --yes agent-browser` resolution is a cache-hit (not a cold download that
+# can ETIMEDOUT under load). `--version` prints + exits — no browser launch, no
+# session created. Background + best-effort; done long before the P4 checks.
+( NPM_CONFIG_REGISTRY="$REGISTRY" timeout 120 npx --yes agent-browser --version >/dev/null 2>&1 || true ) &
+
 # Phase: Shared wrapper-solo install (started in BACKGROUND, joined
 # before parallel wave). Three wrapper-install checks each previously
 # did `npm install @sparkleideas/ruflo --cache=<isolated>` (~82-93s

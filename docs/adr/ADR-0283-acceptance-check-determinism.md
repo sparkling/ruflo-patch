@@ -30,12 +30,19 @@ creates.
    two-writer interleaving reproduces it: shared temp → `ENOENT`; per-process
    temp → `OK`.
 
-2. **`browser_eval` — an under-provisioned timeout.** The check evaluates `1+1`
-   in a browser, which spawns a **fresh Playwright launch** (~13s idle, 17s+
-   under load; the eval itself is instant). The budget was **15s** — barely above
-   the idle launch time — so any load tipped it into a timeout-kill, which yields
-   no output and is not caught by the "launch failed" skip bucket, surfacing as a
-   flaky FAIL (2.9s pass in patch.365 → killed at 15s in patch.366).
+2. **`browser_eval` — a stale persistent browser-session daemon.** `agent-browser`
+   (which `browser_eval` shells out to) runs a **persistent per-session browser
+   daemon** over a UNIX socket (`~/.agent-browser/<session>.sock` + `.pid`); the
+   browser tools use the `default` session. A **stale/stuck `default` session**
+   left by a prior run makes `agent-browser eval` HANG connecting to it; the cli's
+   60s tool timeout then fires as `spawnSync npx ETIMEDOUT`, no result, a flaky
+   FAIL. It passed in 2.9s in patch.365 (fresh session); the budget appeared to
+   grow 15s→17s→60s+ across the patch.366 retries as the **stale session
+   persisted** — the npx/timeout was the symptom. Verified directly: a stale
+   session hangs 90s+; a fresh one returns `{"result":2}` in ~2s. (Secondary
+   contributor: agent-browser is provisioned via on-demand `npx --yes
+   agent-browser` — not installed — whose resolution can also ETIMEDOUT on a cold
+   cache under load. agent-browser@0.27.0 is available on npm + Verdaccio.)
 
 ## Decision Drivers
 
@@ -66,11 +73,15 @@ Chosen option: **"C — fix the determinism at the cause."**
   generator `init/helpers-generator.ts` (`generateIntelligenceStub`, which the
   published cli deploys) **and** the patch repo's tracked full helper
   `.claude/helpers/intelligence.cjs`.
-* **R2 — size the browser_eval budget to the launch cost.** `browser_eval`'s
-  `_browser_invoke_tool` timeout is **60s** (was 15s), comfortably above a cold
-  Playwright launch under load. A fast launch still returns immediately — the
-  headroom only applies when the launch is genuinely slow, so the result is
-  determined by browser correctness, not wall-clock contention.
+* **R2 — clean agent-browser session per run (primary); warm its npx cache.** The
+  acceptance setup kills any lingering agent-browser daemon and clears the
+  `default` session (`~/.agent-browser/default.*`) so each run starts fresh,
+  eliminating the stuck-session hang. It also pre-warms the agent-browser npx
+  cache (`npx --yes agent-browser --version`, background, best-effort — no browser
+  launch, no session created) so the on-demand resolution is a cache-hit. The
+  `browser_eval` check timeout is raised 15s→60s as headroom. With a fresh
+  session browser_eval is a ~2s pass; the verdict is determined by browser
+  correctness, not leftover session state.
 
 ### Consequences
 
@@ -88,8 +99,11 @@ Chosen option: **"C — fix the determinism at the cause."**
 * **R1**: deterministic two-writer interleaving — shared temp throws `ENOENT`
   (the production crash), per-pid temp returns `OK`. The rebuilt generator emits
   the per-pid temp; cli unit tests stay green.
-* **R2**: the 15s→60s budget exceeds the observed 17s loaded launch with headroom;
-  the eval is instant, so the pass path is unchanged.
+* **R2**: clearing the stale `~/.agent-browser/default.*` session makes
+  `agent-browser --session default eval 1+1` return
+  `{"success":true,"data":{"result":2}}` in ~2s — it hung 90s+ against the stale
+  session. agent-browser@0.27.0 is present on npm + Verdaccio; the npx warm-up
+  removes the secondary cold-cache timeout.
 
 ## More Information
 
