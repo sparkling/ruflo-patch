@@ -118,7 +118,7 @@ async function main() {
     let wrote = 0;
     for (const ep of EPISODES) {
       const { obj } = mcpExec(cli, dir, 'agentdb_reflexion-store', {
-        session_id: sid, task: ep.task, action: ep.action, reward: ep.reward, success: ep.success, ts: ep.ts,
+        session_id: sid, task: ep.task, task_type: 'deploy', action: ep.action, reward: ep.reward, success: ep.success, ts: ep.ts,
       });
       if (obj?.success) wrote++;
     }
