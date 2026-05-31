@@ -1,0 +1,73 @@
+# ADR-0279 — CI stanza for the episodes action-dimension smoke.
+#
+# Per `feedback-always-wire-tests-into-cicd`: the smoke is wired into the
+# standard runner (scripts/test-acceptance.sh, adr0279-episodes-action-dimension
+# check) AND here. The smoke drives the live loop against an installed CLI:
+# agentdb_reflexion-store x N (action-tagged episodes) -> agentdb_learner_run
+# (read report.learned.actionValues), asserting the per-(action, task_type)
+# value reflects the actions with de-confounded uplift. Single job. Per
+# `feedback-no-tail-tests`: the smoke writes its log to SMOKE_LOG_DIR.
+
+name: ADR-0279 episodes action dimension
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'forks/agentdb/src/schemas/schema.sql'
+      - 'forks/agentdb/src/core/AgentDB.ts'
+      - 'forks/agentdb/src/controllers/ReflexionMemory.ts'
+      - 'forks/agentdb/src/controllers/NightlyLearner.ts'
+      - 'forks/agentdb/src/archivist/capabilities.ts'
+      - 'forks/agentdb/src/archivist/handlers/agentdb/reflexion-store.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/memory/archivist-init.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts'
+      - 'scripts/smoke-adr0279-episodes-action-dimension.mjs'
+      - 'lib/acceptance-adr0279-checks.sh'
+  pull_request:
+    paths:
+      - 'forks/agentdb/src/controllers/NightlyLearner.ts'
+      - 'forks/agentdb/src/controllers/ReflexionMemory.ts'
+      - 'forks/agentdb/src/schemas/schema.sql'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts'
+      - 'scripts/smoke-adr0279-episodes-action-dimension.mjs'
+      - 'lib/acceptance-adr0279-checks.sh'
+
+env:
+  REGISTRY: http://localhost:4873
+  CLI_PKG: '@sparkleideas/ruflo'
+  SMOKE_LOG_DIR: ${{ github.workspace }}/smoke-logs
+
+jobs:
+  episode-action-dimension:
+    name: episodes carry an action dimension (ADR-0279)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Start local Verdaccio + publish fork packages
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/ruflo-publish.sh 2>&1 | tee "${SMOKE_LOG_DIR}/publish.log"
+
+      - name: Run ADR-0279 episode action-dimension smoke via fast runner
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/test-acceptance-fast.sh adr0279 2>&1 | tee "${SMOKE_LOG_DIR}/adr0279.log"
+
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs-episode-action
+          path: ${{ env.SMOKE_LOG_DIR }}

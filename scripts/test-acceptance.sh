@@ -881,6 +881,8 @@ adr0277_lib="${PROJECT_DIR}/lib/acceptance-adr0277-checks.sh"
 [[ -f "$adr0277_lib" ]] && source "$adr0277_lib"
 adr0278_lib="${PROJECT_DIR}/lib/acceptance-adr0278-checks.sh"
 [[ -f "$adr0278_lib" ]] && source "$adr0278_lib"
+adr0279_lib="${PROJECT_DIR}/lib/acceptance-adr0279-checks.sh"
+[[ -f "$adr0279_lib" ]] && source "$adr0279_lib"
 
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
@@ -3838,6 +3840,29 @@ if [[ -f "$adr0278_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
   rm -rf "$PARALLEL_DIR" 2>/dev/null
 fi
 _record_phase "phase-adr0278-model-contextual-bandit" "$(_elapsed_ms "$_adr0278_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0279 — episodes carry an action dimension. Write action-tagged episodes
+# (agentdb_reflexion-store with `action`), run agentdb_learner_run, assert
+# report.learned.actionValues carries the per-(action, task_type) value with
+# de-confounded uplift. FAILs pre-impl (no action column/param; cli adapter
+# drops the field; no aggregate), PASSes after ADR-0279 lands.
+# ════════════════════════════════════════════════════════════════════
+_adr0279_start=$(_ns)
+if [[ -f "$adr0279_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
+  log "── ADR-0279: episodes carry an action dimension (E[reward | action, task_type] aggregate) ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+  export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+
+  run_check_bg "adr0279-episodes-action-dimension" "ADR-0279 episodes action dimension" check_adr0279_episodes_action_dimension "adr0279"
+
+  collect_parallel "adr0279" \
+    "adr0279-episodes-action-dimension|ADR-0279 episodes action dimension"
+
+  unset ADR0255_SMOKE_SHARED_TEMP
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0279-episodes-action-dimension" "$(_elapsed_ms "$_adr0279_start" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
 # Results

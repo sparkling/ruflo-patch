@@ -447,6 +447,17 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0278"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
   fi
 fi
 
+if [[ "$_FAST_RUN_GROUPS" == *"adr0279"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0279-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0279-checks.sh"
+    echo "── ADR-0279 (episodes carry an action dimension) ──"
+    export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+    echo "[fast] adr0279 reusing ACCEPT_TEMP: ${ACCEPT_TEMP}"
+    _fast_run "adr0279-episodes-action-dimension" check_adr0279_episodes_action_dimension
+    unset ADR0255_SMOKE_SHARED_TEMP
+  fi
+fi
+
 if [[ "$_FAST_RUN_GROUPS" == *"adr0176qk"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
   if [[ -f "$PROJECT_DIR/lib/acceptance-adr0176-query-key.sh" ]]; then
     source "$PROJECT_DIR/lib/acceptance-adr0176-query-key.sh"
