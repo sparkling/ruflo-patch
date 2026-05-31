@@ -113,3 +113,14 @@ R1–R6 wire **CausalMemoryGraph** (graph + 1-hop + cascade); the multi-hop (Cau
 - **Depends on ADR-0273** (`agentdb index`) — the command that writes ADR causal edges; this ADR redirects its edge writes from the KV shortcut (ADR-0273 D8/D9) onto the controller, and R6 reuses its `--purge` rebuild for the migration. The ADR-0273 causal-edge key-collision caveat is dissolved by the controller's row model.
 - **Relates to ADR-0271** (the corpus the edges are derived from) and **ADR-0177** (RVF-first / upstream-aligned implement-ahead posture — this ADR builds ahead of upstream's not-yet-shipped `'adr'` path, U4).
 - **Upstream provenance** (all `origin/main`): agentdb `@1776223`, agentic-flow `@6a06854`, ruflo `@367cb82ad` — see the §"Upstream intent" table (U1–U7) for per-reference paths, summaries, and analysis. Per `feedback-no-upstream-donate-backs`, this convergence stays fork-only.
+
+## Amendment: implemented + deployed (2026-05-31, patch.388)
+
+Implemented and acceptance-green (`adr0276-controller-causal` PASS); shipped `@sparkleideas/*` patch.388.
+
+- **R1 — durable id-map.** `allocAdrNodeId` (`memory-router.ts` `routeCausalOp`) allocates a stable numeric `memory_id` per ADR id into the shared-DB `adr_node_ids` table, in a **reserved high range (`>= 1<<30`)** so ADR ids never collide with episode/skill ids in the controller's type-less multi-hop traversals (`getCausalChain`/`getCausalChainWithAttention`/`calculateCausalGain` match by numeric id alone — a probe-verified pre-flight finding; one even reads `episodes WHERE id=?`, so a low ADR id would embed wrong content). Idempotent; purge-rebuildable.
+- **R2 — write arm.** Dead `addEdge` typo guard replaced with `await addCausalEdge({fromMemoryType:'adr', similarity:0, confidence:1, …})` (no uplift → NULL); KV `causal-edges` dual-write **retained** (a b5 acceptance probe enforces it).
+- **R3 — both directions controller-backed.** `cause=` → `queryCausalEffects`; `effect=` → a **new `queryCausalCauses`** (the pre-flight found `getCausalChain` is point-to-point, no "all-inbound" semantics). `queryCausalEffects` made **NULL-tolerant on uplift** (`uplift IS NULL OR ABS(uplift) >= ?`) so uplift-less ADR edges return. KV dual-read merge retained.
+- **R4 — `memory_type` widened to `'adr'`** (type-only; no DB CHECK).
+- **R5 — cascade-delete.** Added `deleteNode({cascade})` + `deleteEdgesByEndpoints` to `CausalMemoryGraph` (the cli bridges previously no-op'd as `native-unsupported`); the cli node-delete also clears the KV `causal-edges` dual-write copies so cascade is visible through the dual-read.
+- **Commits:** agentdb `ea627b1`+`59851d8`; ruflo `5288d0477`+`6c1ead219`. Because `queryCausalCauses` now backs `effect=`, R7 (KV retirement) is achievable for both directions.

@@ -73,3 +73,13 @@ Chosen option: **"C — close the autonomous loop minimally"**, because the prod
 - **ADR-0177** — implement-ahead posture (the basis for completing a built-ahead loop rather than deferring it).
 - **Follow-ons (separate decisions):** (a) put causal recall on the default memory-search hot path (`database-provider.ts:245`/`LocalReasoningBank`); (b) contextualize the `ModelRouter` Thompson bandit with per-`(model, task_type)` uplift (`ruvector/model-router.ts`).
 - Evidence: corrected closure audit + upstream consumer check + ADR-0276 pre-flight (2026-05-31), all file:line/probe-verified.
+
+## Amendment: implemented + deployed (2026-05-31, patch.388)
+
+Implemented and acceptance-green (`adr0277-causal-learning-loop` PASS); shipped `@sparkleideas/*` patch.388. **The autonomous loop genuinely closes end-to-end** — verified against the deployed artifact: 80 temporally-ordered episodes → the real `NightlyLearner` discovers **1000 causal edges** (`avgUplift 0.45`, `avgConfidence 0.73`) → `agentdb_causal-recall` returns 5 uplift-ranked results.
+
+- **I1 — scheduled producer.** `worker-daemon` `learn` worker (60 min, low priority, `enabled:true` but guarded — the learner no-ops below `minSampleSize`) → `runLearnWorker` → `routeLearningOp({type:'run'})`.
+- **I2 — real learner, not the consolidator.** `routeLearningOp({type:'run'})` bypasses the `controller-registry:1692` `MemoryConsolidator` preference to resolve the real `NightlyLearner`; `agentdb_learner_run` (the manual MCP surface) delegates to the same path. Pre-fix both ran the consolidator (`skillsCreated`, zero uplift).
+- **Discovery enabler — `ts` on `reflexion-store` (the chosen-(b) capability).** `discoverCausalEdges` needs temporally-ordered episode pairs (`e2.ts > e1.ts`) + confidence `= min(N/100,1)·min(|uplift|/0.5,1) >= 0.6`. The `episodes.ts` column defaulted to `strftime('now')` and the INSERT omitted it, so fast writes shared one second → zero pairs → no discovery on demand. Added an optional `ts` (unix seconds) threaded through `agentdb_reflexion-store` → `ReflexionStoreWriter` → the SQLite INSERT, so callers (tests/replay/backfill) control episode time. A probe (80 same-task, reward-split, distinct-ts episodes) confirmed **503 edges discovered directly** (uplift −0.904, confidence 0.8); the full smoke confirmed **1000 via the MCP/daemon path**.
+- **Commits:** agentdb `ea627b1`/`59851d8`/`8291240`; ruflo `5288d0477`/`6c1ead219`/`3e9d36e17`.
+- **Follow-ons (unchanged, separate decisions):** causal recall on the default memory-search hot path; ModelRouter contextual-uplift.
