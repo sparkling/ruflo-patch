@@ -152,9 +152,12 @@ async function main() {
     // ── Step 2: trigger the scheduled learner path (direct invocation). ──
     const lr = mcpExec(cli, dir, 'agentdb_learner_run', {});
     const report = lr.obj?.report ?? {};
-    const edgesDiscovered = typeof report.edgesDiscovered === 'number' ? report.edgesDiscovered : 0;
-    const avgUplift = typeof report.avgUplift === 'number' ? report.avgUplift : 0;
-    const skillsCreated = typeof report.skillsCreated === 'number' ? report.skillsCreated : 0;
+    // routeLearningOp({type:'run'}) wraps the NightlyLearner metrics under
+    // `report.learned` ({success, controller, learned:{edgesDiscovered, avgUplift, ...}}).
+    const learned = report.learned ?? report;
+    const edgesDiscovered = typeof learned.edgesDiscovered === 'number' ? learned.edgesDiscovered : 0;
+    const avgUplift = typeof learned.avgUplift === 'number' ? learned.avgUplift : 0;
+    const skillsCreated = typeof learned.skillsCreated === 'number' ? learned.skillsCreated : 0;
     log(`[smoke] learner_run → edgesDiscovered=${edgesDiscovered} avgUplift=${avgUplift} skillsCreated=${skillsCreated} (status=${lr.status})`);
     log(`  report: ${JSON.stringify(report).slice(0, 400)}`);
 
