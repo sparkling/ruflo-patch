@@ -17,14 +17,24 @@ on:
     paths:
       - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts'
       - 'forks/ruflo/v3/@claude-flow/cli/src/commands/agentdb.ts'
+      - 'forks/agentdb/src/controllers/CausalMemoryGraph.ts'
+      - 'forks/agentdb/src/controllers/CausalRecall.ts'
+      - 'forks/agentdb/src/archivist/handlers/agentdb/causal-recall.ts'
       - 'scripts/smoke-adr0282-agentdb-surface-fixes.mjs'
+      - 'scripts/smoke-adr0285-causal-crud-and-purge.mjs'
       - 'lib/acceptance-adr0282-checks.sh'
+      - 'lib/acceptance-adr0285-checks.sh'
   pull_request:
     paths:
       - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts'
       - 'forks/ruflo/v3/@claude-flow/cli/src/commands/agentdb.ts'
+      - 'forks/agentdb/src/controllers/CausalMemoryGraph.ts'
+      - 'forks/agentdb/src/controllers/CausalRecall.ts'
+      - 'forks/agentdb/src/archivist/handlers/agentdb/causal-recall.ts'
       - 'scripts/smoke-adr0282-agentdb-surface-fixes.mjs'
+      - 'scripts/smoke-adr0285-causal-crud-and-purge.mjs'
       - 'lib/acceptance-adr0282-checks.sh'
+      - 'lib/acceptance-adr0285-checks.sh'
 
 env:
   REGISTRY: http://localhost:4873
@@ -62,4 +72,36 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: smoke-logs-agentdb-surface
+          path: ${{ env.SMOKE_LOG_DIR }}
+
+  causal-crud-and-purge:
+    name: causal CRUD + recall + idempotent purge (ADR-0285)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Start local Verdaccio + publish fork packages
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/ruflo-publish.sh 2>&1 | tee "${SMOKE_LOG_DIR}/publish.log"
+
+      - name: Run ADR-0285 causal CRUD + recall + purge smoke via fast runner
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/test-acceptance-fast.sh adr0285 2>&1 | tee "${SMOKE_LOG_DIR}/adr0285.log"
+
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs-causal-crud-and-purge
           path: ${{ env.SMOKE_LOG_DIR }}

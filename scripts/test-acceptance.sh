@@ -906,6 +906,8 @@ adr0281_lib="${PROJECT_DIR}/lib/acceptance-adr0281-checks.sh"
 [[ -f "$adr0281_lib" ]] && source "$adr0281_lib"
 adr0282_lib="${PROJECT_DIR}/lib/acceptance-adr0282-checks.sh"
 [[ -f "$adr0282_lib" ]] && source "$adr0282_lib"
+adr0285_lib="${PROJECT_DIR}/lib/acceptance-adr0285-checks.sh"
+[[ -f "$adr0285_lib" ]] && source "$adr0285_lib"
 
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
@@ -3978,6 +3980,31 @@ if [[ -f "$adr0282_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
   rm -rf "$PARALLEL_DIR" 2>/dev/null
 fi
 _record_phase "phase-adr0282-agentdb-surface-fixes" "$(_elapsed_ms "$_adr0282_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0285: repair the ADR-index causal + recall surfaces and complete `--purge`.
+# Causal CRUD round-trip on '/'-bearing ids (create/query/edge-delete/node-delete,
+# delete handlers accept '/' symmetric with create — ADR-0281 R3), non-erroring
+# hierarchical-recall + causal-recall, and an idempotent `agentdb index --purge`
+# that reconciles all surfaces (edges==inverses, hierarchical==adr-patterns==count;
+# no edge/record growth across two runs). Runs alongside a live MCP server (no
+# stop). FAILs pre-impl (delete rejects '/'; causal/recall/purge surfaces broken).
+# ════════════════════════════════════════════════════════════════════
+_adr0285_start=$(_ns)
+if [[ -f "$adr0285_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
+  log "── ADR-0285: causal CRUD round-trip + non-erroring recall + idempotent purge ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+  export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+
+  run_check_bg "adr0285-causal-crud-and-purge" "ADR-0285 causal CRUD + recall + idempotent purge" check_adr0285_causal_crud_and_purge "adr0285"
+
+  collect_parallel "adr0285" \
+    "adr0285-causal-crud-and-purge|ADR-0285 causal CRUD + recall + idempotent purge"
+
+  unset ADR0255_SMOKE_SHARED_TEMP
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0285-causal-crud-and-purge" "$(_elapsed_ms "$_adr0285_start" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
 # Results

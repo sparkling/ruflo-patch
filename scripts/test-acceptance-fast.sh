@@ -491,6 +491,17 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0282"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
   fi
 fi
 
+if [[ "$_FAST_RUN_GROUPS" == *"adr0285"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0285-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0285-checks.sh"
+    echo "── ADR-0285 (causal CRUD round-trip + non-erroring recall + idempotent purge) ──"
+    export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+    echo "[fast] adr0285 reusing ACCEPT_TEMP: ${ACCEPT_TEMP}"
+    _fast_run "adr0285-causal-crud-and-purge" check_adr0285_causal_crud_and_purge
+    unset ADR0255_SMOKE_SHARED_TEMP
+  fi
+fi
+
 if [[ "$_FAST_RUN_GROUPS" == *"adr0176qk"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
   if [[ -f "$PROJECT_DIR/lib/acceptance-adr0176-query-key.sh" ]]; then
     source "$PROJECT_DIR/lib/acceptance-adr0176-query-key.sh"
