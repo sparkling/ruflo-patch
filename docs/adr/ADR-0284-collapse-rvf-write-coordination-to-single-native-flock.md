@@ -383,28 +383,22 @@ override lives in prose, narrowing it is a prose edit, not a frontmatter-graph c
    the pure-Rust path's generous retry budget _absorbs_ the bug; the `.jslock` doesn't
    exist in Rust. A green `cargo test` is necessary-but-not-sufficient. **Nobody may
    treat a green Rust run as proof; the CLI-level K×N t3-2 is the sole release gate.**
-2. **Could the 11→16 residual be a visibility artifact rather than a lock bug?**
-   The DA raised that the vectors-visibility gap (`rvf-backend.ts:2766-2780`;
-   `iter_metadata_with_vectors` filters `self.vectors.get(id)?`, `store.rs:1825-1832`)
-   touches neither lock, so deleting the `.jslock` could treat the wrong layer.
-   **Largely closed for the repro workload (rvf-integrity, traced):** the t3-2 repro
-   stores _vector-bearing_ entries — `repro2.sh:29` `memory store … --value` →
-   `store.ts:119-124` with `generateEmbedding` defaulting true (`memory-router.ts:1178`)
-   → `scorer.embed()` → `rvf.insertAsync` (`store.ts:223`) → `ingestBatch` lands the
-   vector in `self.vectors` (`store.rs:507-509`). Such entries are present in
-   `self.vectors` after `boot()`, so the `iter_metadata_with_vectors` filter does **not**
-   drop them; the ADR-0163 gap only affects metadata-only (`ingestMetadataOnly`,
-   ADR-0164 δ+) entries, and its trigger (`:2766-2780`: "adapter stores without
-   embedding under concurrent load") is itself a `.jslock` failure with an
-   already-shipped vectorless-recovery fix (`:2797-2822`). The repro's shortfall is
-   therefore a **clobber** — the loser's `write_manifest` commits segment IDs the
-   winner's `resync_for_write` didn't absorb, so the segment is absent from the
-   committed manifest (lost, not invisible; no `boot()` finds it) — which is exactly
-   what the single native flock eliminates. So the count is a clean loss signal for
-   _this_ workload. **Residual = confirm the t3-2 _acceptance check_ stores
-   vector-bearing entries on the same path (it routes through the same CLI/defaults, so
-   almost certainly yes) — folded into Condition 0 as cheap insurance, no longer a
-   likely halt.**
+2. **The success metric — challenged as confounded, then cleared (fact 2 _retracted_).**
+   The DA argued the t3-2 count conflated durable loss with a vectors-visibility gap
+   (`iter_metadata_with_vectors` filters `self.vectors.get(id)?`, `store.rs:2120`). On
+   tracing, the DA itself **withdrew** this and three lines of evidence converge: (i)
+   `memory list` reads `query()` → `this.entries` (`rvf-backend.ts:736`), not the
+   filtered iterator; (ii) the filter is only in the _load_ path and is neutralized
+   before the count by the ADR-0163 recovery pass (`:2797-2823`, which enumerates the
+   unfiltered `listMetadataIds()` and re-adds dropped entries); (iii) the t3-2 repro
+   stores _vector-bearing_ entries anyway (`store.ts:119-124`, `generateEmbedding`
+   default true) which the filter never drops. So on a fresh-boot count a miss is **real
+   durable loss** — the residual the gate measures is a true serialization clobber (the
+   loser's `write_manifest` segments unabsorbed by the winner's `resync`), exactly what
+   the single flock eliminates. **Remaining sliver, not a blocker:** the recovery pass
+   is `try/catch` + silent-fallthrough (`:2810-2816`), so a direct `listMetadataIds()`
+   durable count rides _alongside_ `memory list` as belt-and-suspenders (Q5 C1) to catch
+   a silent recovery-pass throw under load.
 3. **The init scope-down revert (`§353-372`) re-touches code that closed a _different_
    t3-2 hang** (`rvf-backend.ts:361-365`, the 2026-05-01 ADR-0095 amendment). The
    INIT-WRAP + sync-park-after-init must be verified not to reopen it — and it is only
@@ -417,40 +411,45 @@ Adopt Option A's _end state_ (single native flock as sole cross-process serializ
 `.jslock` removed; synchronous envelope-boundary park; INIT-WRAP), **but re-order the
 work to measure-then-delete** and gate ratification on the following, in order:
 
-- **Condition 0 (gating, do _before_ deleting the `.jslock`): deconfounding check.**
-  The repro confound is already evidenced-against (Risk 2 — the repro stores
-  vector-bearing entries that the visibility filter does not drop), so this is now
-  cheap confirmation rather than a likely halt. Confirm the t3-2 _acceptance check_
-  stores vector-bearing entries on the same `store.ts` path. The deconfounding is then
-  made _permanent_ — not a one-time net — by **condition C1′**: every t3-2 round
-  asserts both a **durable** count (`nativeDb.listMetadataIds().length`) and a
-  **visible** count (`memory list`) = N. If durable = N while visible < N →
-  **stop — the residual is a read-path/visibility regression; fix `resync_for_write`/
-  the metric, not the lock** (deleting the `.jslock` would not help). If durable < N
-  (real serialization loss — the expected case per Risk 2) the collapse proceeds. Pin
-  the `memory list` → backend count call-edge file:line here for the record.
-- **Then implement Option A** in `rvf-backend.ts` (the `§120-133` surface), keeping
+- **Step 1 — deconfound on the CURRENT (pre-delete) tree (cheap diagnostic that can
+  redirect the whole fix).** Before touching the lock, run a warm + cold N=16 round
+  splitting a **durable** count (`listMetadataIds()`, `lib.rs:739` → unfiltered
+  `iter_metadata`, `store.rs:2088`) from the **visible** count (`memory list` →
+  `query()` → `this.entries`, `rvf-backend.ts:736`). If durable = N while visible < N →
+  **stop — the residual is a read-path/recovery-pass regression; fix that, not the
+  lock** (Option A would treat the wrong layer). If durable < N → confirmed serialization
+  loss → Option A is warranted (the expected case per Risk 2). This is a pre-code
+  go/redirect gate, not just a safety net.
+- **Step 2 — implement Option A** in `rvf-backend.ts` (the `§120-133` surface), keeping
   NB-poll + the 30 s timeout (no Rust change expected), with Q1/Q2 conditions
   C1 (init sync-park-after-`loadFromDisk`), C2 (envelope-duration load-test ≪ 30 s),
-  C3 (keep both depth counters), and the auto-persist-timer bracketing audit.
-- **Prove it** on an Option-A build with a one-shot **K=10 × N=16 → 10/10 durable**
-  (warm + cold), plus the daemon-scenario `lsof`-empty + 8/8 check and the
-  crash-recovery WAL-replay probe. Any loss ⇒ residual native race ⇒ trace
-  `resync_for_write` before shipping (do not mask).
-- **Wire the guard** (Q5): rewrite t3-2 to K×N break-on-shortfall; add the daemon +
-  crash-recovery checks; add `v3-ci-rvf-lock.yml` running cargo (pre-gate) **and** CLI
-  t3-2 (gate), path-filtered; state in the ADR that cargo is necessary-not-sufficient.
-  No `skip_accepted`.
-- **Then ratify the ADR vehicle** (Q6): flip the frontmatter to supersede the named
-  parts of 0095 + 0274, add `## Supersession scope:` + `### Consequences` +
-  `### Confirmation`, keep 0167 in `depends-on`.
+  C3 (keep both depth counters), and the auto-persist-timer bracketing audit. (Optional,
+  in-spirit: bracket the pre-existing unguarded `delete()`/`bulkDelete()` `.wal` truncate
+  in the same stroke.)
+- **Step 3 — prove it** on an Option-A build: one-shot **K=10 × N=16 → 10/10**, warm +
+  cold, with durable == 16 **and** visible == 16 every round; plus the two-owner
+  no-hold check (worker-daemon **and** MCP-server: `lsof` lock-empty between ops, 8/8,
+  survives) and one crash-recovery (window-β) pass. **Any loss ⇒ PIVOT** — residual
+  native race, re-trace `resync_for_write` (`store.rs:1414-1457`) before shipping (do
+  not mask).
+- **Step 4 — wire the standing guard** (Q5): the three probes (P1 K×N warm+cold / P2
+  daemon+MCP hold / P3 crash-recovery), each a `run_check_bg` id **and** a
+  `collect_parallel` spec entry; `v3-ci-rvf-lock.yml` running cargo (necessary-not-
+  sufficient pre-gate) **and** the CLI t3-2 group (real gate), path-filtered. No
+  `skip_accepted`.
+- **Step 5 — ratify the ADR vehicle** (Q6): keep `supersedes: []`; `depends-on:
+  [ADR-0095, ADR-0167, ADR-0202, ADR-0207, ADR-0274]` (drop 0267); add the
+  `## Supersession scope:` prose + `## Amendments` cross-links in 0095/0274 (both stay
+  `accepted`); add `### Consequences` + `### Confirmation`.
 
 This honours every hard constraint (flock load-bearing/ADR-0167; no broker/ADR-0207;
 not lock-free; ADR-0267-safe), removes _both_ failure modes if the residual is a real
 loss, ends with one lock instead of two, and refuses to delete the masking layer before
-the native-layer question is closed by measurement. Confidence in the end-state design:
-high (three independent experts concur on Q1–Q3). Confidence that the delete alone
-reaches 16/16: deferred to Condition 0 by design — which is the point.
+Step 1 closes the native-layer question by measurement. **What the council certifies:
+no surviving structural / deadlock / metric objection to Option A's end-state (three
+independent experts concur on Q1–Q3; the skeptic collapsed to ACCEPT). What it does NOT
+certify: that the delete reaches 16/16 — that is the unrun experiment Steps 1+3 exist
+to settle.**
 
 ## References
 
