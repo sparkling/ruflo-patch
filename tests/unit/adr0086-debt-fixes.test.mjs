@@ -117,22 +117,36 @@ describe('ADR-0086 debt: H1/H3 — advisory WAL locking', () => {
       'shutdown must unlink the lock file');
   });
 
-  it('lock uses { flag: "wx" } for atomic create (O_CREAT | O_EXCL)', () => {
-    assert.ok(rvfSrc.includes("'wx'") || rvfSrc.includes('"wx"'),
-      'lock acquisition must use flag "wx" for atomic create');
+  // ADR-0284 single-flock collapse: the JS `.jslock` advisory lock (wx-create +
+  // process.pid stale-detection steal) is REMOVED. The native kernel flock
+  // (rvf-runtime WriterLock) is now the SOLE cross-process write serializer, and
+  // acquireLock/releaseLock drive it via unpark/park. These contracts replace the
+  // old wx/PID ones (which encoded the broken design — the .jslock failed to
+  // serialize at high concurrency, the t3-2 silent-loss root cause #2).
+  // NOTE: use the FULL `private async acquireLock` signature — the bare token
+  // 'acquireLock' also appears in other methods' comments/call-sites, and this
+  // file's comment-greedy extractMethod would mis-anchor on those.
+  it('acquireLock UNPARKS the native flock (single-flock collapse, no JS .jslock wx-create)', () => {
+    const acquireBody = extractMethod(rvfSrc, 'private async acquireLock');
+    assert.ok(acquireBody, 'acquireLock method must exist');
+    assert.ok(acquireBody.includes('unparkNativeWriter'),
+      'acquireLock must re-acquire (unpark) the native flock — the cross-process serializer');
+    assert.ok(!/\{\s*flag:\s*['"]wx['"]\s*\}/.test(acquireBody),
+      'acquireLock must NOT wx-create a JS .jslock (ADR-0284 removed it)');
   });
 
-  it('lock contains PID for stale detection (process.pid)', () => {
-    // The lock file content should include process.pid for stale lock detection
-    const acquireBody = extractMethod(rvfSrc, 'acquireLock');
-    if (acquireBody) {
-      assert.ok(acquireBody.includes('process.pid'),
-        'acquireLock must write process.pid for stale detection');
-    } else {
-      // Check globally — acquireLock might be inlined or named differently
-      assert.ok(rvfSrc.includes('process.pid'),
-        'rvf-backend.ts must reference process.pid for stale lock detection');
-    }
+  it('releaseLock PARKS the native flock synchronously at the envelope boundary', () => {
+    const releaseBody = extractMethod(rvfSrc, 'private async releaseLock');
+    assert.ok(releaseBody, 'releaseLock method must exist');
+    assert.ok(releaseBody.includes('parkNativeWriter'),
+      'releaseLock must park (release) the native flock at the envelope boundary');
+  });
+
+  it('the .jslock PID-liveness steal is gone (no process.kill stale-holder preemption)', () => {
+    const acquireBody = extractMethod(rvfSrc, 'private async acquireLock');
+    assert.ok(acquireBody, 'acquireLock method must exist');
+    assert.ok(!acquireBody.includes('process.kill'),
+      'acquireLock must NOT steal a lock via process.kill liveness check (ADR-0284 removed the .jslock steal)');
   });
 
   it('fdatasync or datasync present in persist path (debt 12 fix)', () => {
