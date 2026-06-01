@@ -65,6 +65,10 @@ Chosen option: **"Option 1 — read/write handle split + per-transaction write r
 
 ## Amendments
 
+### Amendment: revisited by ADR-0284 (proposed, 2026-06-01)
+
+ADR-0284 (*"Collapse RVF write coordination to a single native flock"*) revisits this ADR's **debounced per-transaction park** (`_scheduleNativePark`): on acceptance it replaces the debounce with a **synchronous** envelope-boundary park and makes the native flock the sole cross-process write serializer (eliminating the JS `.jslock`). ADR-0274's read/write handle split + per-transaction release are **retained, not superseded**. Encoded as prose (no `supersedes:` flip — see ADR-0284 §Supersession scope). Targets the t3-2 high-concurrency silent-loss flake — distinct from this ADR's lifetime-hold/`LockHeld` problem (verified fixed). Council record: `docs/council/2026-06-01-rvf-lock-council-transcript.md`.
+
 ### Amendment: design decisions resolved (2026-05-30, analysis swarm + include-out-of-scope rule)
 
 A 3-agent file:line analysis resolved the open implementation decisions. The project rule applied throughout: a thing is "out of scope" only with a *real* reason — neither "nobody uses it now" nor "it would take too long" qualifies; default is to include.

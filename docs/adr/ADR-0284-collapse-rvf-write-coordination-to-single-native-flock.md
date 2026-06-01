@@ -451,8 +451,58 @@ independent experts concur on Q1–Q3; the skeptic collapsed to ACCEPT). What it
 certify: that the delete reaches 16/16 — that is the unrun experiment Steps 1+3 exist
 to settle.**
 
+## Supersession scope
+
+Encoded as **prose, not frontmatter**: the strict `adr-index` contract requires every
+`supersedes:` target to carry `status: superseded`, so `supersedes: []` stays empty and
+ADR-0095/ADR-0274 remain `accepted` (Q6). On acceptance, ADR-0284 overrides — and only —
+these mechanisms:
+- **ADR-0274:** the debounced per-transaction park (`_scheduleNativePark`) → replaced by a
+  **synchronous** envelope-boundary park. ADR-0274's read/write handle split + per-transaction
+  release are **retained**.
+- **ADR-0095:** the JS `.jslock` advisory-lock design (item d13 — wx-create + PID-liveness
+  steal + re-entrant depth counter) and the 2026-05-01 init-scope-down → both removed; the
+  native flock becomes the sole serializer. ADR-0095's load-bearing native invariants —
+  **d11 (fsync-before-rename), d12 (`flock(LOCK_EX)`), d14 (`create_new` after `flock`)** —
+  are **retained**.
+- **ADR-0167** is **affirmed, not superseded** (it forbids *replacing* the flock; ADR-0284
+  makes the flock the *sole* serializer — the opposite act); stays in `depends-on`.
+
+## Consequences
+
+- **Good:** one cross-process lock instead of two; AB-BA impossible by construction (Q2); the
+  `.wal`/`.meta` writes become flock-serialized (closes the Part C window); fewer moving parts;
+  a fair blocking flock becomes possible later.
+- **Bad / residual risk:** cross-process liveness rests solely on the 30 s
+  `RVF_LOCK_ACQUIRE_TIMEOUT_MS` (envelope duration must stay ≪ 30 s — Q2/C2); the init-scope-down
+  revert re-touches code that closed a *different* t3-2 hang and is only AB-BA-safe *because* the
+  `.jslock` is removed in the same change (Risk 3); the delete-path `.wal` truncate
+  (`delete()`/`bulkDelete()`) is unbracketed **today** and stays so (parked to a separate ticket
+  — pre-existing, no new exposure).
+- **Neutral:** NB-poll + 30 s timeout retained as-is; **zero Rust change expected**
+  (`park`/`unpark`/`resync_for_write` already exist).
+
+## Confirmation
+
+Per Q5 — **no `skip_accepted`**, and a green `cargo test` is **necessary-but-not-sufficient**
+(the pure-Rust retry budget absorbs the bug; the `.jslock` does not exist in Rust), so the
+CLI-level K×N t3-2 is the **sole release gate**:
+1. **Step 1 (pre-code go/redirect gate):** deconfound durable (`nativeDb.listMetadataIds().length`)
+   vs visible (`memory list`) count at N=16 (warm+cold) on the *current* tree. `durable<16` → real
+   loss → proceed; `durable=16 & visible<16` → visibility regression → fix `resync_for_write`/the
+   metric, **not** the lock.
+2. **Prove on an Option-A build:** K=10 × N=16 → 10/10 durable **and** visible (warm+cold).
+3. **Two-owner non-regression:** `lsof memory.rvf.lock` empty between ticks + 8/8 for **both** the
+   worker-daemon **and** the MCP-server-persistent path (where park is load-bearing).
+4. **Crash-recovery:** kill a writer in the WAL window (`rvf-backend.ts:580`→`:586`); a fresh
+   process must recover it via WAL replay.
+5. **CICD:** new path-filtered `v3-ci-rvf-lock.yml` running the cargo stress (fast pre-gate)
+   **and** the CLI K×N t3-2 group (real gate); rewrite t3-2 from single-shot N=6 to K×N
+   break-on-shortfall. Any loss on an Option-A build ⇒ trace `resync_for_write` before shipping.
+
 ## References
 
+- **Council transcript** (verbatim deliberation, 123 messages): [`docs/council/2026-06-01-rvf-lock-council-transcript.md`](../council/2026-06-01-rvf-lock-council-transcript.md)
 - Session handover: `docs/SESSION-HANDOVER-2026-06-01-rvf-lock-CORRECTED.md`
 - ADR-0274 (read/write handle split), ADR-0267 (lifetime-hold), ADR-0095 (`.jslock`
   + flock WriterLock), ADR-0167 (flock load-bearing), ADR-0207 (broker deleted).
