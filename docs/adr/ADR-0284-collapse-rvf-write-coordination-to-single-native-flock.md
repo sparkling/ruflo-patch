@@ -500,6 +500,10 @@ CLI-level K×N t3-2 is the **sole release gate**:
    **and** the CLI K×N t3-2 group (real gate); rewrite t3-2 from single-shot N=6 to K×N
    break-on-shortfall. Any loss on an Option-A build ⇒ trace `resync_for_write` before shipping.
 
+### Step 1 result — GATE: GO (2026-06-01, warm-start deconfound)
+
+Ran the deconfound on the current tree (`@sparkleideas/cli` **patch.394** = NB-poll + `.jslock`, invoked directly at `bin/cli.js` to bypass the `ruflo` wrapper's *nested* patch.395 build), warm-start, N=16, no artificial load. Sequential calibration clean (`durableDelta=16 visible=16`). Concurrent: **6/8 perfect, 2/8 real-loss** (`durableDelta=2 visible=2`; `durableDelta=1 visible=1`), **`visibility-gap=0`**. When loss fires, the durable count (`listMetadataIds` delta, read fresh via `open_readonly`) and the visible count (`memory list`) **drop together** — so it is genuine serialization write-loss (the committed manifest is missing entries), **not** the Risk-2 visibility artifact. **GATE: GO** — empirically confirms the council's analytical conclusion; the collapse proceeds to implementation. Harness: `/tmp/rvf-fix/step1-deconfound.sh` + `durable.cjs` (to be formalised into `scripts/` per Step 4/5). Note: the race needed **warm-start** to surface (no-load cold-start was 16/16 on this idle machine); artificial CPU/IO load generators were explicitly removed.
+
 ## References
 
 - **Council transcript** (verbatim deliberation, 123 messages): [`docs/council/2026-06-01-rvf-lock-council-transcript.md`](../council/2026-06-01-rvf-lock-council-transcript.md)
