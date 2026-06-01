@@ -1,5 +1,74 @@
 # Session Handover — 2026-06-01 — RVF concurrent-write regression (+ what shipped)
 
+## ⚠️ CORRECTION (later 2026-06-01 session) — Part 1's prescribed fix is WRONG
+
+A follow-up session implemented the prescribed fix (blocking `flock(LOCK_EX)` +
+per-path mutex), tested it at the CLI level under load, and proved it wrong, then
+found the actual root cause. **Read this before touching the lock.**
+
+**1. Blocking flock DEADLOCKS the CLI path — do NOT ship it.**
+There are TWO cross-process locks on the `.rvf`: the JS `.jslock` (PID-file
+advisory lock in `@claude-flow/memory/src/rvf-backend.ts`) AND the native `.lock`
+flock. They are acquired in INCONSISTENT orders — `store()`: `.jslock`→native;
+`init/tryNativeInit`: native→`.jslock` (init was deliberately scoped OUT of the
+`.jslock` by the 2026-05-01 ADR-0095 amendment, rvf-backend.ts:353-372). A
+no-timeout blocking flock turns that inversion into a hard AB-BA deadlock (writers
+wedge in `unpark_writer → WriterLock::acquire → flock`; all peers then exhaust the
+`.jslock` 60s budget → "Failed to acquire advisory lock after 100 attempts"). The
+old NB-poll 30s timeout was MASKING this. **Reverted to NB-poll in ruvector
+`adab9fc36`.**
+
+**2. The REAL root cause of the t3-2 silent loss is the JS `.jslock`, NOT the native lock.**
+The `.jslock` PID-file lock FAILS TO SERIALIZE concurrent writers at high
+concurrency. Measured directly (`RVF_DIAG=1` trace + overlap detection on the
+store critical sections, warm-start, no artificial load):
+  - N=4 concurrent stores → perfect serialization, **4/4** persist.
+  - N=16 concurrent stores → **6–10 OVERLAPPING critical sections** → concurrent
+    native ingests clobber → **7–10/16** persist (silent, zero errors).
+  - 16 SEQUENTIAL stores → **16/16** (native write path is FINE; the bug is purely
+    cross-process serialization).
+  - Loss is genuine (stable across 15s of re-listing — NOT read-after-write lag).
+  Two `.jslock` defects: (a) the dead-holder steal (`if (parseSuccessful &&
+  !holderAlive) unlink+continue`, ~line 2103) steals from live holders — disabling
+  it improved N=16 ~7→~10/16 but did NOT fix it; (b) a deeper wx-create/unlink race
+  still yields 6 overlaps at N=16 with the steal disabled. The wx-file + PID-steal
+  design is fundamentally racy.
+
+**3. Partial improvements found (reduce loss, do NOT fully fix) — NOT shipped:**
+  - SYNC-PARK: in `releaseLock()`, replace the debounced `_scheduleNativePark()`
+    with a synchronous `parkNativeWriter()` (native flock released BEFORE `.jslock`;
+    invariant "native flock ⊂ `.jslock`"). Correct + beneficial standalone.
+  - INIT-WRAP: wrap `tryNativeInit` + `loadFromDisk` under ONE `acquireLock(180s)`
+    (reverts the 353-372 scope-down) so init keeps the same `.jslock`⊃native order.
+  - NB-poll + both → N=16 cold-start 3/16 → 11/16. Still lossy (the `.jslock` itself
+    doesn't serialize). Both were reverted to leave a clean tree; re-apply as part
+    of the real fix.
+
+**4. The proper fix (NOT done — needs a design decision / sign-off):**
+Replace the fragile `.jslock` (wx-file + PID-steal) with a ROBUST cross-process
+lock. Strong candidate: make the native kernel `flock` the SOLE cross-process
+serializer, held across the whole store/init (incl. JS WAL/meta) — one lock means
+no AB-BA, and kernel flock auto-releases on process death (no stale-PID detection).
+This overrides ADR-0274 (debounce park), the `.jslock` design, and ADR-0095
+§353-372, so it should be ratified, not hacked in.
+
+**5. State after this session:**
+  - ruvector: blocking flock REVERTED → NB-poll (`adab9fc36`); source is deadlock-safe.
+  - ⚠️ **PUBLISHED REGRESSION:** `@sparkleideas/cli@3.7.0-alpha.10-patch.395` on
+    Verdaccio was built from the blocking-flock state (a release ran far enough to
+    publish before being interrupted) → `@latest` currently DEADLOCKS under load.
+    A clean release (now NB-poll) overwrites it; do that before relying on `@latest`.
+  - ruflo-patch `53e9d3c` KEPT (genuine fixes): `napi-rebuild.sh` now rebuilds
+    `rvf-node` when a SIBLING lib crate (`rvf-runtime`) changes — the pathspec
+    previously only watched the napi crate's own dir, so a `locking.rs` fix would
+    publish a stale `.node`; + t3-2 now preserves the first failing writer's error
+    in `_CHECK_OUTPUT`.
+  - Reliable CLI repro: `/tmp/rvf-fix/repro2.sh` (bash; find-delete cold-start;
+    counts via `memory list` — native RVFROOT has NO `.rvf.meta`, so `list` is the
+    authoritative count, matching how the t3-2 check treats native).
+
+---
+
 This session started as "implement ADR-0281" and expanded. **Two things in here:**
 1. **OPEN / unfinished:** a real **RVF concurrent-write regression** (the `t3-2-concurrent`
    acceptance flake). Root-caused with a **reliable reproduction** + actual errors. NOT fixed.
