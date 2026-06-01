@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-06-01
 tags: [agentdb, adr-index, causal-memory, recall, mcp, rvf, sqlite, idempotency, fix]
 supersedes: []
@@ -221,3 +221,100 @@ trailer on forks) → ADR-0285 + smoke in ruflo-patch → `npm run release -- --
 * Test session source: live op-matrix probes via `mcp__ruflo__*` (patch.398 daemon) +
   isolated patch.398 CLI `agentdb index` against this project's `.swarm`; ground-truth
   cross-checked against SQLite (`.swarm/memory.db`).
+
+## Amendment — implemented + shipped (2026-06-01)
+
+Implemented by a 6-agent swarm (4 fixers + tester + reviewer), built, reviewed,
+and shipped green. **Published: `agentdb@3.0.0-alpha.14-patch.412`,
+`cli@3.7.0-alpha.10-patch.400`, `ruflo@3.1.0-alpha.14-patch.374`.** Acceptance:
+**734/743 passed, 0 failed, 9 skip_accepted**; the `adr0285-causal-crud-and-purge`
+gate is green; agentdb fork unit/regression suites 34/34.
+
+### Root-cause refinement (the inventory's suspected sources were partly wrong)
+
+Implementation found that **P4 and P6 are ONE bug, and it is not in the controllers
+the inventory named.** The live MCP daemon boots on the **sql.js (WASM) fallback**
+(native better-sqlite3 failed to load at startup — a packaging mismatch: hoisted
+bsq@12 vs agentdb's private bsq@11). The sql.js compatibility wrapper
+(`agentdb/src/db-fallback.ts`) bound better-sqlite3-style NAMED params
+(`stmt.all({minConfidence,limit})` — a single bare-keyed object) **positionally**,
+so sql.js threw the non-Error string `Wrong API use : tried to bind a value of an
+unknown type (...)`, and the cli's `sanitizeError()` flattened that to a generic
+`Internal error`. That is the true source of:
+
+* **P6** (`hierarchical-recall` + `causal-recall` `Internal error`) — both route
+  through the shared SQLite substrate `stmt.all(namedObject)` path; `memory_search`
+  (RVF/HNSW) was unaffected, which is why it always worked.
+* **P4** (`causal-node-delete` undefined bind) — the undefined POSITIONAL variant of
+  the same wrapper gap.
+
+Fix: `bindSqlJsParams()` in `db-fallback.ts` (single plain object → sigil-keyed
+NAMED; array/scalars → POSITIONAL; none → `bind()`) + fail-loud `assertNumericId()`
+guards in `CausalMemoryGraph.ts`. This also explains the live-vs-fresh-install
+discrepancy in the original report: the live daemon ran sql.js (bug visible); the
+acceptance smoke's fresh install loads native better-sqlite3 (which silently coerces
+the bad binds), so P4/P6 are covered by the **sql.js fork unit tests**, not the smoke.
+
+* **P1/P2/P8** (`commands/agentdb.ts` + `memory-router.ts`): `--purge` now clears the
+  SQLite `causal_edges` + `adr_node_ids` tables (not just the RVF namespaces) and the
+  command fail-loud-reconciles (duplication/shortfall gated to `--purge`, missing
+  node-id unconditional, driving `exitCode:1`).
+* **P5/P7** (`agentdb-tools.ts`): `validateIdentifier` charset gate dropped from
+  `causal-edge-delete` + `causal-node-delete` (mirrors ADR-0281 R3); `normalizeAdrId()`
+  strips a leading `adr/` so a probe-form id resolves the real node instead of minting
+  a phantom. `sanitizeError()` hardened to surface `String(error)` (the masking-catch).
+* **P3** (savepoint desync): **no separate patch.** The savepoint machinery
+  (`archivist/staging-substrate.ts`) is correct in source; the live `no such savepoint`
+  was a *downstream symptom* of the sql.js bind throw aborting the staging transaction.
+  Confirmed closed by the green `adr0285` smoke (A1a creates an edge end-to-end).
+
+### Reviewer verdict: SHIP-WITH-NITS — residuals (non-blocking)
+
+1. The bare (non-`--purge`) re-index path catches the "node-id present but edge row
+   absent" drop variant only via the `--purge`-gated shortfall check; on a bare
+   re-index it is invisible (mitigated: the swallow still `console.error`s and the
+   sql.js fix removes the throw that variant needed).
+2. `detectNamedSigil` applies the first placeholder's sigil to all re-keyed keys; a
+   statement mixing `@a`+`:b` would mis-key. Not present in the corpus; the single-
+   convention assumption is documented in the helper.
+
+### Collateral fixed during release
+
+The first release run tripped the ADR-0084 forbidden-substring gate because the new
+`sanitizeError` comment literally contained `sql.js`; reworded to "the WASM SQLite
+fallback" (no behaviour change). The `e2e-0059-no-collisions` failure in that run was
+a load flake in the unrelated `intelligence.cjs` consolidate path (green on re-run);
+not an ADR-0285 regression.
+
+### Live re-verification (2026-06-01, patch.400 cli vs this project's real `.swarm`)
+
+After shipping, the original failing probes were re-run live against the real
+291-ADR / 910-edge store (via `cli mcp exec`, the fixed build):
+
+* ✅ `causal-recall` → `success:true` (was `Internal error`).
+* ✅ `hierarchical-recall` → `success:true` with results (was `Internal error`).
+* ✅ `causal-edge` create on `/`-keys → `success:true` (was `no such savepoint`).
+* ✅ `causal-edge-delete` on `/`-keys → `success:true, deleted:true` (was rejected).
+* ✅ `agentdb index --purge` on the real corpus → 291/291 hierarchical, **910 edges
+  total == 910 distinct** (vs the pre-fix 1745/890 duplication); the new P8
+  reconciliation line printed `expected 910` and matched — **P1/P2/P8 confirmed on
+  real data**.
+
+* ⚠️ **Follow-up (new, not an ADR-0285 contract regression): `causal-query` cold-process
+  2s timeout on large stores.** The P7 id-resolution is fixed (`adr/ADR-0274` now
+  resolves the real node instead of a phantom). That exposed a latent perf path: the
+  query handler's `Promise.race` 2s guard (`agentdb-tools.ts:1326`) wraps an
+  always-run RVF `causal-edges` namespace-list dual-read merge; in a COLD `cli mcp
+  exec` process loading the 72 MB `memory.rvf` for the first time, that merge exceeds
+  2s and the guard rejects. The underlying SQLite query is fast (`idx_causal_edges_from`,
+  ~5 ms). Before the fix this path never ran (phantom node → 0 results → instant). A
+  warm daemon (RVF preloaded) is expected to be fast; the fix is to raise/scope the
+  guard for cold large-store reads or make the namespace dual-read lazy. Tracked as a
+  perf follow-up — does not block the ADR-0285 contract (which the green `adr0285`
+  gate covers).
+
+### Fork commits
+
+`agentdb`: `e455a2f` (db-fallback sql.js binding), `1fa64ee` (CausalMemoryGraph
+guards). `ruflo`: `a53373ebe` (purge completeness), `a97d09b02` (key validation +
+id-normalize + sanitizeError), `3422f7144`-era reword.
