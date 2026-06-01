@@ -504,6 +504,56 @@ CLI-level K×N t3-2 is the **sole release gate**:
 
 Ran the deconfound on the current tree (`@sparkleideas/cli` **patch.394** = NB-poll + `.jslock`, invoked directly at `bin/cli.js` to bypass the `ruflo` wrapper's *nested* patch.395 build), warm-start, N=16, no artificial load. Sequential calibration clean (`durableDelta=16 visible=16`). Concurrent: **6/8 perfect, 2/8 real-loss** (`durableDelta=2 visible=2`; `durableDelta=1 visible=1`), **`visibility-gap=0`**. When loss fires, the durable count (`listMetadataIds` delta, read fresh via `open_readonly`) and the visible count (`memory list`) **drop together** — so it is genuine serialization write-loss (the committed manifest is missing entries), **not** the Risk-2 visibility artifact. **GATE: GO** — empirically confirms the council's analytical conclusion; the collapse proceeds to implementation. Harness: `/tmp/rvf-fix/step1-deconfound.sh` + `durable.cjs` (to be formalised into `scripts/` per Step 4/5). Note: the race needed **warm-start** to surface (no-load cold-start was 16/16 on this idle machine); artificial CPU/IO load generators were explicitly removed.
 
+### Implementation outcome — FIX VERIFIED, root cause REVISED (2026-06-01)
+
+Implementing under the council's "any loss ⇒ trace before shipping" condition **revised
+the diagnosis**: the dominant cause was **not** the lock at all. Building a native
+park/unpark stress harness (forks/ruvector `rvf_test_writer` `RVF_TEST_WRITER_PARKUNPARK`
+mode + `tests/adr0167_n8_stress.rs::n16_parkunpark_cross_process`) showed the native
+flock + `resync_for_write` is a **correct sole serializer** — 16/16 every run with unique
+ids. A second native test (`dup_native_id_overwrites_confirms_idcollision`: 8 writers,
+same vid, distinct payloads → **1 entry**) located the real mechanism:
+
+1. **ROOT CAUSE — native-id collision (dominant, ~25% loss).** `assignNativeId`
+   (`rvf-backend.ts`) handed out `this.nextNativeId++`, a **per-process** counter seeded
+   identically across concurrent processes (all load the same file → same `maxId+1`). Two
+   processes assigned the **same numeric id to different entries**; the native store keys
+   vectors by id → the later writer overwrote the earlier. The lock was never the dominant
+   problem — the JS fed the (correct) native layer **colliding ids**. The council's
+   entirely lock-focused framing missed this; the measure-then-delete discipline + the
+   native harness is what surfaced it. Fix: derive the id by stable FNV-1a hash of the
+   string id (range `[2^50,2^51)`, exact as a JS number, disjoint from legacy ids) —
+   identical in every process, so concurrent appends never collide.
+
+2. **RESIDUAL — the `.jslock` race (~7% after fix 1 alone).** With deterministic ids, loss
+   dropped to ~4/60 — the `.jslock` occasionally failing to serialize while ADR-0274's
+   **debounced** native park had released the flock → two unprotected ingests raced. This
+   **is** the council's target, fixed by the single-flock collapse (remove `.jslock`,
+   native flock sole serializer held across the envelope, sync-park, INIT-WRAP).
+
+**A measured warning (Risk 3, sharpened):** sync-park while **retaining** the `.jslock` is
+**catastrophic** — two locks cycling per-op → severe NB-poll contention → 30 s timeouts →
+**0/40 + ~14× slowdown**. Sync-park is only safe *with* the `.jslock` removed (the full
+collapse: one lock cycles cleanly, as the native `n16_parkunpark` test shows). Partial
+application is worse than either endpoint.
+
+**Verification matrix (CLI N=16 warm-start deconfound, durable+visible):**
+
+| Build | Result |
+|---|---|
+| Stock patch.394 (counter ids, `.jslock`+debounce) | ~75% (6/8) — the bug |
+| id-fix alone | 56/60 (residual `.jslock` race) |
+| collapse alone (counter ids) | 0/8 (id-collision dominates) |
+| sync-park + `.jslock` retained | 0/40 + timeouts (harmful) |
+| **collapse + id-fix (shipped)** | **90/90 durable AND visible, 0 loss** |
+
+Native harness: `n16_parkunpark` 16/16, `dup-id` → 1 entry, `n8` 8/8 — all green (~1.9 s).
+Shipped: forks/ruflo `d96cb1f84` (the fix), forks/ruvector `2ca0192fc` (the harness).
+**Still TODO (Steps 4–5):** formalise the harness into `scripts/` + wire the K×N CLI t3-2
++ daemon + crash checks into a path-filtered `v3-ci-rvf-lock.yml`; rebuild rvf-node is
+N/A (no Rust runtime change — the fix is JS-only + test-only Rust). Frontmatter ratification
+(Q6) pending green CICD.
+
 ## References
 
 - **Council transcript** (verbatim deliberation, 123 messages): [`docs/council/2026-06-01-rvf-lock-council-transcript.md`](../council/2026-06-01-rvf-lock-council-transcript.md)
