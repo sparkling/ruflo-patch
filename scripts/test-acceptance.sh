@@ -908,6 +908,8 @@ adr0282_lib="${PROJECT_DIR}/lib/acceptance-adr0282-checks.sh"
 [[ -f "$adr0282_lib" ]] && source "$adr0282_lib"
 adr0285_lib="${PROJECT_DIR}/lib/acceptance-adr0285-checks.sh"
 [[ -f "$adr0285_lib" ]] && source "$adr0285_lib"
+adrcreatematrix_lib="${PROJECT_DIR}/lib/acceptance-adr-create-checks.sh"
+[[ -f "$adrcreatematrix_lib" ]] && source "$adrcreatematrix_lib"
 
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
@@ -4005,6 +4007,30 @@ if [[ -f "$adr0285_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
   rm -rf "$PARALLEL_DIR" 2>/dev/null
 fi
 _record_phase "phase-adr0285-causal-crud-and-purge" "$(_elapsed_ms "$_adr0285_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# adr-create + the 4 ADR storage mechanisms — full op matrix. Every op
+# (create/retrieve/get/search/query/update/upsert/delete) on each of the 4
+# surfaces (hierarchical SQLite records, adr-patterns RVF vectors, causal_edges
+# SQLite, causal-edges RVF mirror), the adr-create write path (surfaces 1+2),
+# and a 2× `agentdb index --purge` reconciliation (P1/P2/P8). Locks in the
+# ADR-0285 fixes (FAILs if any regression guard P1-P8 returns). Server-less.
+# ════════════════════════════════════════════════════════════════════
+_adrcreatematrix_start=$(_ns)
+if [[ -f "$adrcreatematrix_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
+  log "── adr-create storage op-matrix: 4 surfaces × all ops + reconciliation ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+  export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+
+  run_check_bg "adr-create-storage-matrix" "adr-create + 4 ADR storage mechanisms (full op matrix)" check_adr_create_storage_matrix "adrmatrix"
+
+  collect_parallel "adrmatrix" \
+    "adr-create-storage-matrix|adr-create + 4 ADR storage mechanisms (full op matrix)"
+
+  unset ADR0255_SMOKE_SHARED_TEMP
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr-create-storage-matrix" "$(_elapsed_ms "$_adrcreatematrix_start" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
 # Results

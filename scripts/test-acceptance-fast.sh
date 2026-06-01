@@ -502,6 +502,17 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0285"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
   fi
 fi
 
+if [[ "$_FAST_RUN_GROUPS" == *"adrmatrix"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr-create-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr-create-checks.sh"
+    echo "── adr-create storage op-matrix (4 surfaces × all ops + reconciliation) ──"
+    export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+    echo "[fast] adrmatrix reusing ACCEPT_TEMP: ${ACCEPT_TEMP}"
+    _fast_run "adr-create-storage-matrix" check_adr_create_storage_matrix
+    unset ADR0255_SMOKE_SHARED_TEMP
+  fi
+fi
+
 if [[ "$_FAST_RUN_GROUPS" == *"adr0176qk"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
   if [[ -f "$PROJECT_DIR/lib/acceptance-adr0176-query-key.sh" ]]; then
     source "$PROJECT_DIR/lib/acceptance-adr0176-query-key.sh"

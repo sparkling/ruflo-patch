@@ -22,8 +22,10 @@ on:
       - 'forks/agentdb/src/archivist/handlers/agentdb/causal-recall.ts'
       - 'scripts/smoke-adr0282-agentdb-surface-fixes.mjs'
       - 'scripts/smoke-adr0285-causal-crud-and-purge.mjs'
+      - 'scripts/smoke-adr-create-storage-matrix.mjs'
       - 'lib/acceptance-adr0282-checks.sh'
       - 'lib/acceptance-adr0285-checks.sh'
+      - 'lib/acceptance-adr-create-checks.sh'
   pull_request:
     paths:
       - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts'
@@ -33,8 +35,10 @@ on:
       - 'forks/agentdb/src/archivist/handlers/agentdb/causal-recall.ts'
       - 'scripts/smoke-adr0282-agentdb-surface-fixes.mjs'
       - 'scripts/smoke-adr0285-causal-crud-and-purge.mjs'
+      - 'scripts/smoke-adr-create-storage-matrix.mjs'
       - 'lib/acceptance-adr0282-checks.sh'
       - 'lib/acceptance-adr0285-checks.sh'
+      - 'lib/acceptance-adr-create-checks.sh'
 
 env:
   REGISTRY: http://localhost:4873
@@ -104,4 +108,36 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: smoke-logs-causal-crud-and-purge
+          path: ${{ env.SMOKE_LOG_DIR }}
+
+  adr-create-storage-matrix:
+    name: adr-create + 4 ADR storage mechanisms (full op matrix)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Start local Verdaccio + publish fork packages
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/ruflo-publish.sh 2>&1 | tee "${SMOKE_LOG_DIR}/publish.log"
+
+      - name: Run adr-create storage op-matrix smoke via fast runner
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/test-acceptance-fast.sh adrmatrix 2>&1 | tee "${SMOKE_LOG_DIR}/adrmatrix.log"
+
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs-adr-create-storage-matrix
           path: ${{ env.SMOKE_LOG_DIR }}
