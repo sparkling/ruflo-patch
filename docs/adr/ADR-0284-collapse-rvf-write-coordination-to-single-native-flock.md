@@ -208,16 +208,26 @@ init→first-store); C2 liveness now rests solely on the 30 s
 `RVF_LOCK_ACQUIRE_TIMEOUT_MS` → must load-test envelope duration ≪ 30 s at N=16;
 C3 keep both the JS depth counter and the Rust process-local refcount.
 
-**Q3 — ADR-0267 non-regression: SUPPORT (backend 0.9) — cleanest verdict.**
-Synchronous park _cannot_ regress the lifetime-hold, because the daemon (the 0267
-victim) does **not** release via park at all: it sets `setRouterPersistent(false)`
-(`worker-daemon.ts:976-977`) and `withRouter` runs `_storage.shutdown()`→`close()`
-per-op (`memory-router.ts:1081-1083` → `rvf-backend.ts:463-467`), which drops the
-flock and _cancels_ the debounce timer. So debounce→sync-park is invisible to the
-daemon path. On the persistent CLI/hook path (the only path where park _is_ the
-release) sync-park is strictly tighter than the starved `setTimeout` debounce — it
-removes a hold, never adds one. Condition: the daemon-hold check must assert
-`lsof memory.rvf.lock` empty between ticks (folds into Q5).
+**Q3 — ADR-0267 non-regression: SUPPORT (backend 0.9) — verdict clean; supporting
+ratio corrected mid-council to a TWO-owner argument.** Synchronous park cannot regress
+the lifetime-hold, but the reason is _two-pronged_ because there are **two** long-lived
+RVF owners, not one (backend + DA both traced this; `setRouterPersistent(false)` has
+exactly one call site, `worker-daemon.ts:977`):
+- **worker-daemon** (`_isPersistent=false`): releases per-op via `_storage.shutdown()`
+  →`close()` (`memory-router.ts:1081-1083` → `rvf-backend.ts:463-467`), which drops the
+  flock and _cancels_ the debounce. Park is dead code here ⇒ debounce→sync-park is
+  invisible to this owner.
+- **MCP server** (`_isPersistent=true`, `mcp-server.ts:481-485` — itself the ADR-0267
+  "Option F" fix that skips the eager warm-up so it holds no flock at startup and takes
+  the flock only lazily per-dispatch): this is the original ADR-0267 victim, and park
+  **is** its release mechanism. Here sync-park is strictly _tighter_ than the starved
+  50 ms `setTimeout` debounce — it releases on envelope exit, sooner, which is
+  anti-ADR-0267 (the right direction). The only longer-hold path is a wedged envelope,
+  which the debounce never guarded either (pre-existing Q1/Q2 concern, not new).
+Condition (the one "proven vs assumed" gap): the `lsof memory.rvf.lock`-empty
+non-regression assertion must run against the **MCP-server-persistent** scenario, not
+only the worker-daemon — because the MCP path is where park is load-bearing and where a
+sync-park release bug would surface. Folds into Q5 as P2 (two sub-checks).
 
 **Q4 — Scope/simplicity: full `.jslock` removal is warranted _over B/B′/C_;
 PROCEED-WITH-CONDITIONS (measurement-first). The Devil's Advocate's REJECT does not
@@ -237,25 +247,33 @@ The 11→16 residual is not yet proven to be a serialization loss vs. a vectors-
 visibility artifact (see Risk 2), and that must be deconfounded _before_ the delete.
 
 **DA final re-calibration (intellectual-honesty trace → convergence).** After tracing
-`persistToDiskInner`, the DA _withdrew the strong form of fact (1)_ and moved
-REJECT (0.7) → **CONDITIONAL-ACCEPT (0.55)**. Its trace: in native mode (the path the
-t3-2 check exercises — no `.rvf.meta` sidecar) `persistToDiskInner` does not write
-`.meta` (gated `if (!this.nativeDb)`, `rvf-backend.ts:3557`); an entry's durability is
-already in the META_SEG written during `store()` (`:557-559`) under the native flock
-(atomic per rvf-integrity, `store.rs:572-598`), so a concurrent `.wal` unlink does
-_not_ lose a natively-committed entry; and `mergePeerStateBeforePersist`
-(`:3392-3415`) re-reads native + replays the WAL with set-if-absent/last-write-wins
-before each persist (a convergence mechanism). ⇒ the `.wal` is a _secondary_
-crash-recovery bridge, not the steady-state concurrent-loss vector — rvf-integrity's
-"native flock as sole gate" is _more_ defensible than the DA first credited. **So Q4
-is no longer a split: all seven participants accept Option A's end-state.** The DA's
-remaining condition — "ACCEPT only if Q5 replaces the bare `memory list` count with a
-_durable_ probe and shows stable 16/16-durable across warm+cold×N" — is **identical to
-verification's C1′** (dual durable+visible count) already adopted. The two converged on
-the same gate from opposite directions (DA: "the metric is documented-confounded";
-verification: "the durable count is only incidental, assert it explicitly"). Net Q4:
-**CONSENSUS-WITH-CONDITIONS**, the condition being the deconfounded dual-count gate —
-no new condition, and no viable pivot.
+`persistToDiskInner`, the DA _withdrew the strong form of fact (1)_, then over the next
+two traces **retracted fact (2) entirely and conceded fact (3)** — collapsing
+REJECT (0.7) → **ACCEPT (0.7)** (confident A is sound; not that it is the _only_ option).
+The traces: (fact 1) in native mode (the t3-2 path — no `.rvf.meta` sidecar)
+`persistToDiskInner` does not write `.meta` (`if (!this.nativeDb)`, `rvf-backend.ts:3557`);
+durability is in the META_SEG written during `store()` (`:557-559`) under the flock
+(atomic, `store.rs:572-598`), and `mergePeerStateBeforePersist` (`:3392-3415`) re-reads
++ replays before persist (convergence) — so the `.wal` is a _secondary_ crash bridge,
+not the steady-state loss vector, and its `store()`-path ops are transitively serialized
+(call order, conceded). (fact 2) the visibility confound is **already fixed in-tree**:
+the bug comment (`:2766-2788`) has its remediation ten lines below (`:2797-2823`, the
+ADR-0163 recovery pass), and the `memory list` path runs through it on a fresh boot — so
+a count-miss is real loss, not an artifact. (fact 3) addressed by flock-expert (the
+hot path unparks once; the racy window needs a second acquire it never makes).
+**So Q4 is not a split — all seven participants accept Option A's end-state, no viable
+pivot** (B′ = the measured-11/16 Option C; B″ keeps the AB-BA root). **The DA's
+disciplined closing boundary is adopted verbatim as the epistemic frame:** the council
+certifies _"no surviving structural / deadlock / metric objection"_ — it does **not**
+certify _"Option A reaches 16/16,"_ because no `.jslock`-removed run exists (every
+verdict is analytical; the handover's 11/16 was Option C _with_ the `.jslock`). That gap
+is an unrun experiment, and given this bug burned multiple cycles on plausible-but-wrong
+fixes, ratify A as the **agreed design direction gated on a green measured run**, not as
+"the fix." One pre-existing item surfaced and parked to a separate ticket: the
+delete-path `.wal` truncate (`delete()` `:719` / `bulkDelete()` `:1041`) runs outside any
+`acquireLock` bracket **today** — so "the single flock covers _all_ writes" is
+almost-true, not literally true; Option A introduces no new exposure there (optional
+~6-line fix: bracket `delete()`/`bulkDelete()` under the depth counter, per flock-expert).
 
 **Q5 — Verification adequacy: SUPPORT-WITH-CONDITIONS (verification 0.82).** The
 current t3-2 is **single-shot N=6** (`lib/acceptance-adr0079-tier3-checks.sh:127/:134`)
@@ -271,66 +289,93 @@ _absorbs_ the bug — so a green `cargo test` is **necessary-but-not-sufficient*
 (the `.jslock` doesn't exist in Rust). CICD today runs **zero** RVF checks (the 8
 `v3-ci-*.yml` are AgentDB smokes); a new path-filtered `v3-ci-rvf-lock.yml` (clone of
 `v3-ci-rvagent.yml:89-93`) must run both the cargo stress (fast pre-gate) and the CLI
-t3-2 group (real gate). Conditions: C1 rewrite t3-2 to K×N cold-start
-(N=16, K≥3 CI / 5 release) with break-on-shortfall + the preserved first-writer error
-(already in `53e9d3c`); **C1′ (dual count, adopted from the DA's confound): assert
-BOTH a _durable_ count (`nativeDb.listMetadataIds().length`, already bound at
-`rvf-backend.ts:2550`) AND a _visible_ count (`memory list`) = N every round.** This
-permanently deconfounds the metric (VISIBLE<N & DURABLE=N → a read-path/visibility
-regression, _not_ a lock bug; DURABLE<N → genuine write-loss, the Option-A target).
-Today's `memory list` happens to be a durable count only _incidentally_ — the t3-2
-check counts via a fresh process whose `boot()` (`store.rs:2420`) reloads both
-`vectors` (`:2496/:2520`) and `metadata_full` (`:2563`), so the in-process
-`resync_for_write` visibility gap (`store.rs:2120` `self.vectors.get(*id)?`;
-documented `rvf-backend.ts:2766-2785`) does not bite it — but that invariant
-(fresh-process-fork + ADR-0163-holds) can silently regress, which is exactly why the
-durable count must be asserted explicitly, not relied on. (The Rust test is already
-deconfounded — it reopens via `open_readonly` and asserts exact payloads `writer-1..N`,
-`adr0095_coldstart_race.rs:96`, a content check not a bare count.) C2 add an automated
-daemon-scenario check (Part A recipe: `lsof` empty + 8/8 + daemon survives — currently
-zero coverage; assert 8/8 DURABLE **and** VISIBLE, since the daemon is the _one_ place
-an in-process resync reader exists at runtime, so the dual count matters most there);
-C3 the new workflow + the ADR must state cargo = necessary-not-sufficient. Plus a crash-recovery probe
-(kill a writer after `appendToWal` `:580`, before native commit; fresh process must
-recover it via WAL replay — `loadFromDisk` `:3078-3086` is the cross-process recovery
-bridge, _not_ vestigial). This probe **confirms a reasoned-safe property, not an
-unknown** (rvf-integrity, traced): removing the `.jslock` cannot regress crash
-recovery, because the `.jslock` is a _live-process-only_ advisory lock — a crashed
-peer's `.jslock` is already gone, so it never guarded a dead peer's WAL bytes; the
-replay path reads them _because_ no live lock holds them. Under Option A the native
-flock is released on process death (POSIX `flock` fd-close semantics), so the next
-process acquires it and `replayWalIfPresent` (`:3081-3085`) reads exactly the WAL bytes
-the crashed peer left — an _identical_ recovery path to today. The only live WAL race
-(peer B's `compactWal` unlink vs peer A's not-yet-ingested append) is the live-vs-live
-case Part 1's call order already serializes. **Confidence coupling (verification,
-explicit):** the 0.82 is downstream of Q1 — _because_ Q1 confirmed the native flock +
-`resync_for_write` is a sound serializer (call order proven three ways), the K×N gate
-is **deterministic-by-construction** (a zero-loss event, not a low-probability one), so
-it holds at 0.82. Had Q1 returned only "probably sound," the gate would degrade to mere
-flake-rate-reduction and this drops to ~0.6 with the pre-ratification empirical run as
-the load-bearing evidence. Q1 closed sound, so the strong reading stands.
+t3-2 group (real gate). **Three probes**, each asserting the count = N:
 
-**Q6 — ADR vehicle: NEW ADR-0284 (adr-governance 0.88).** Not an amendment to 0274:
-(a) different problem (0274 = lifetime-hold/LockHeld, _verified fixed_; 0284 =
-silent-loss flake); (b) the project DCAP deliberately dropped `amends`/`refines`
-(Council 414) so the choice is binary supersede-or-edit-in-place; (c) 0284 reverses
-_mechanisms_ (deletes 0274's debounced park; deletes the ADR-0095 `.jslock` design;
-reverts the 0095 init scope-down) — supersede territory. **On acceptance** (and only
-then, with the gating measurement passed): move ADR-0095 and ADR-0274 out of
-`depends-on` into `supersedes`; drop ADR-0267 (resolved tracker → prose);
-`depends-on: [ADR-0167, ADR-0202, ADR-0207]`. Add a `## Supersession scope:`
-subsection (the DCAP partial-supersession vehicle) enumerating survives-vs-replaced —
-critically, **ADR-0167 is _affirmed_, not superseded** (0284 makes the flock the
-_sole_ serializer; 0167 forbids _replacing_ the flock — opposite acts). The same ADR
-must not sit in both `supersedes` and `depends-on` (lint violation). Two authoring
-gaps to close now: add `### Consequences` and `### Confirmation` sections (required by
-the template; `### Confirmation` content is the Q5 plan). **Open authoring detail**
-(adr-governance −0.12; clarification in flight): whether 0095/0274 flip to
-`status: superseded` or stay `accepted` under a partial-supersession encoding — the
-expert recommends leave-`accepted` (most of both survives) recorded via the scope
-subsection + an `## Amendments` back-cross-link; confirm which encoding passes
-`adr-review` clean before ratifying. If the chosen mechanism narrows (it should not,
-per Q4), the 0095 supersede-scope shrinks accordingly.
+- **P1 — concurrency:** K×N cold _and_ warm start (N=16, K≥3 CI / ≥5 release),
+  break-on-shortfall + the preserved first-writer error (already in `53e9d3c`). Cold =
+  find-delete `.rvf` each round (`_e2e_isolate`, `acceptance-e2e-checks.sh:53-54`,
+  already cold); warm = pre-create the `.rvf` then race N writers (exercises the
+  `open()`-only resync-against-committed-peer path).
+- **P2 — no-lifetime-hold (the ADR-0267 guard), TWO sub-checks** because there are two
+  long-lived owners: `t3-2-daemon-hold` (worker-daemon) **and** `t3-2-mcp-hold`
+  (MCP-server-persistent — the path where park is the actual release mechanism, so the
+  one that proves sync-park). Each: `lsof memory.rvf.lock` (and main `.rvf`) empty
+  between ops/dispatches, 8 concurrent writes, owner survives, count == 8.
+- **P3 — crash-recovery (separable durability dimension):** SIGKILL a writer at WAL
+  window β — _between_ `appendToWal` (`rvf-backend.ts:580`, durable+fsync) and
+  `compactWal` (`:586`); deterministic via the diag bracket
+  `store.postAppendToWal`→`store.preCompactWal`, or a guarded `RVF_TEST_CRASH_AFTER_WAL`
+  exit hook (off by default). Assert the `.wal` is durable, then a fresh peer's
+  `replayWalIfPresent` (`:3083`) recovers the victim into the count; + a concurrent
+  variant (N−1 clean + 1 killed, all N survive — stresses that flock-only WAL
+  serialization doesn't let a peer's `compactWal` truncate eat the un-folded entry).
+  This probe **confirms a reasoned-safe property, not an unknown** (rvf-integrity): the
+  `.jslock` is a _live-process-only_ lock — a crashed peer's `.jslock` is already gone,
+  so it never guarded a dead peer's WAL bytes; under Option A the native flock is
+  released on process death (POSIX `flock` fd-close), so the next process acquires it
+  and replays the same bytes — an _identical_ recovery path to today.
+
+**Count method — `memory list` is adequate; the dual count is belt-and-suspenders, not
+a hard gate.** The metric question resolved (three ways: integrity + verification
+traced, DA retracted): `memory list` → `query()` → `Array.from(this.entries.values())`
+(`rvf-backend.ts:736`), and `this.entries` is loaded fresh per short-lived CLI process
+from the committed manifest. The vector-filtered `iter_metadata_with_vectors`
+(`store.rs:2120`) is only in the _load_ path and is neutralized before the count by the
+ADR-0163 recovery pass (`rvf-backend.ts:2797-2810`, which enumerates the _unfiltered_
+`listMetadataIds()` and re-adds dropped entries). So on a fresh boot a count-miss is
+**real durable loss** — the DA's metric-confound (its fact 2) is **retracted**, the bug
+it cited is already fixed in-tree. The recovery pass is `try/catch` + silent-fallthrough
+(`:2810-2816`), so as cheap insurance a fresh-process direct `listMetadataIds()` count
+(`lib.rs:739` → unfiltered `iter_metadata`, `store.rs:2088`) may ride _alongside_
+`memory list` to catch a silent recovery-pass throw under load — but this is
+belt-and-suspenders, **not** the mandatory deconfounding gate an earlier draft made it.
+
+Conditions: **C1** = the three probes above (P1/P2/P3), each its own `run_check_bg` id
+**and** `collect_parallel` spec entry (a check missing from the spec runs but is
+silently uncounted). **C2** = the new path-filtered `v3-ci-rvf-lock.yml` (clone
+`v3-ci-rvagent.yml:89-93`) running cargo stress as a fast pre-gate **and**
+`test-acceptance-fast.sh adr0284` as the real gate. **C3** = the ADR must state
+cargo = necessary-not-sufficient (**Risk 1**: `adr0095_coldstart_race.rs:131-143` — the
+pure-Rust retry budget _absorbs_ the bug; the `.jslock` doesn't exist in Rust, so a
+green cargo run cannot certify its removal; the Rust test is already content-deconfounded
+— `open_readonly` reopen + exact payloads `writer-1..N`, `:96`). No `skip_accepted`
+(the K×N design removes the flake by construction — see the confidence coupling).
+**Confidence coupling (verification, explicit):** the 0.82 holds _because_ Q1 confirmed
+the serializer sound (call order proven three ways) ⇒ the K×N gate is
+**deterministic-by-construction** (zero-loss event, not low-probability). Had Q1 been
+only "probably sound," it would degrade to flake-rate-reduction and drop to ~0.6 with
+the empirical run load-bearing. Q1 closed sound, so the strong reading stands.
+
+**Q6 — ADR vehicle: NEW ADR-0284 (adr-governance 0.93, encoding resolved).** Not an
+amendment to 0274: (a) different problem (0274 = lifetime-hold/LockHeld, _verified
+fixed_; 0284 = silent-loss flake); (b) the project DCAP deliberately dropped
+`amends`/`refines` (Council 414) so the choice is binary supersede-or-edit-in-place;
+(c) 0284 reverses _mechanisms_ (0274's debounced park; the ADR-0095 `.jslock` design;
+the 0095 init scope-down). **Encoding — resolved against the strict `adr-index`
+contract (and stress-tested by the DA), reversing the expert's first instinct:** the
+indexer step-7 status-consistency rule makes `supersedes:`-membership **biconditional**
+with `status: superseded` (a `supersedes:` target that stays `accepted` ⇒ index build
+**fails**), and there is **no typed-edge representation of _partial_ supersession** (the
+graph is frontmatter-only; the indexer never reads `## Supersession scope:` prose).
+Since 0284 only obsoletes _parts_ of 0095/0274 (the handle-split, the ADR-0267 fix, and
+read-freshness in 0274 all survive and stay load-bearing), flipping them to
+`superseded` would over-claim. ⇒ **the index-clean _and_ honest encoding:**
+`supersedes: []` (empty, now and on accept); `depends-on:
+[ADR-0095, ADR-0167, ADR-0202, ADR-0207, ADR-0274]` (0095/0274 stay here — 0284's
+correctness rests on their surviving parts; **drop ADR-0267**, resolved tracker → prose);
+record the partial override **only** via a `## Supersession scope:` subsection in 0284
+**plus** a one-line `## Amendments` cross-link added to the bodies of 0095 _and_ 0274
+pointing forward to 0284; **0095 and 0274 keep `status: accepted`**. This passes
+`adr-review` Phase A (A3/A4/A5) _and_ `adr-index` step-7 (no `supersedes` edge ⇒ no
+status obligation triggered), and the forward pointer is visible in the prior ADRs' own
+bodies so it does not repeat the stale-status failure mode. (The `completed:` axis the
+DA floated is **not** usable — `adr-index`'s 6-key whitelist fails loud on a 7th key;
+ADR-0262 accepted it on paper but the runtime contract never adopted it — flagged as a
+separate corpus gap.) **ADR-0167 is _affirmed_, not superseded** (0284 makes the flock
+the _sole_ serializer; 0167 forbids _replacing_ it — opposite acts), so it stays in
+`depends-on`. Add `### Consequences` + `### Confirmation` sections now (required by the
+template; `### Confirmation` = the Q5 plan). Robust to the mechanism: because the
+override lives in prose, narrowing it is a prose edit, not a frontmatter-graph change.
 
 #### Top 3 risks
 
