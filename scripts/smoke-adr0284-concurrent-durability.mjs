@@ -48,19 +48,33 @@ async function main() {
   const { dir, shared } = setupSmokeTempDir('smoke-adr0284', perf, REGISTRY);
   log(`[smoke] temp dir: ${dir}${shared ? ' (shared)' : ''}`);
 
-  const cli = shared ? findCli(dir) : installAndInit(dir, perf, REGISTRY);
+  let cli = shared ? findCli(dir) : installAndInit(dir, perf, REGISTRY);
   if (!cli) { log('[smoke] FAIL setup: cli not found'); process.exit(1); }
+
+  // Prefer the DIRECT cli.js over the `.bin/ruflo` wrapper: the wrapper dynamic-imports
+  // @sparkleideas/cli and FATALs if it can't locate it (a cli-only / hoisted install,
+  // e.g. the fast-runner ACCEPT_TEMP). Invoking bin/cli.js directly is robust in every
+  // install layout. Search dir + ancestors' node_modules.
+  let cliResolved = cli;
+  for (let b = dir, i = 0; i < 8; i++) {
+    const cliJs = join(b, 'node_modules', '@sparkleideas', 'cli', 'bin', 'cli.js');
+    if (existsSync(cliJs)) { cliResolved = `node ${cliJs}`; break; }
+    const parent = dirname(b);
+    if (parent === b) break;
+    b = parent;
+  }
+  log(`[smoke] cli: ${cliResolved}`);
 
   // Seed one store so the project's .rvf + native binding are materialised
   // before the harness resolves them.
-  spawnSync(cli, ['memory', 'store', '-k', 'adr0284-warmup', '-v', 'w', '--namespace', 'adr0284-warmup'],
+  spawnSync('bash', ['-lc', `${cliResolved} memory store -k adr0284-warmup -v w --namespace adr0284-warmup`],
     { cwd: dir, encoding: 'utf8', timeout: 60000, env: { ...process.env, NPM_CONFIG_REGISTRY: REGISTRY } });
 
   const harness = join(SCRIPT_DIR, 'rvf-concurrent-durability.mjs');
   log(`[smoke] running harness: ${harness}`);
   const r = spawnSync('node', [
     harness,
-    '--cli', cli,
+    '--cli', cliResolved,
     '--dir', dir,
     '--n', String(N),
     '--k', String(K),

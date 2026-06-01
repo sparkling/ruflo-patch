@@ -51,18 +51,41 @@ if (!cliCmd) {
   process.exit(2);
 }
 
-// Resolve the native binding from the project install (renamed by the codemod).
-let RvfDatabase;
-for (const pkg of ['@sparkleideas/ruvector-rvf-node', '@ruvector/rvf-node']) {
-  try {
-    const req = createRequire(join(projectDir, '__probe__.js'));
-    ({ RvfDatabase } = req(pkg));
-    break;
-  } catch { /* try next name */ }
+// Resolve the native binding for the DIRECT durable probe (manifest listMetadataIds).
+// Best-effort + robust across install layouts: walk up from projectDir AND try
+// relative to a discovered @sparkleideas/memory package (the install may hoist the
+// binding to a top-level dir that lacks a package.json — not require-resolvable — while
+// memory carries its own resolvable copy). If it can't be loaded, we DEGRADE to
+// `memory list` as the durable count (NON-FATAL): in this harness every `memory list`
+// is a FRESH process whose boot() reads the committed manifest, so it already IS a
+// durable read. The direct probe is the council's belt-and-suspenders deconfound — its
+// absence loses the visibility-vs-real-loss split, not the loss detection itself.
+function resolveBinding() {
+  const bases = [];
+  let d = projectDir;
+  for (let i = 0; i < 8; i++) { bases.push(d); const p = dirname(d); if (p === d) break; d = p; }
+  // Add @sparkleideas/memory package dirs found along the way.
+  for (const b of [...bases]) {
+    const mem = join(b, 'node_modules', '@sparkleideas', 'memory');
+    if (existsSync(mem)) bases.push(mem);
+  }
+  for (const base of bases) {
+    for (const pkg of ['@sparkleideas/ruvector-rvf-node', '@ruvector/rvf-node']) {
+      try {
+        const req = createRequire(join(base, '__probe__.js'));
+        const mod = req(pkg);
+        if (mod?.RvfDatabase) return mod.RvfDatabase;
+      } catch { /* try next base/pkg */ }
+    }
+  }
+  return null;
 }
-if (!RvfDatabase) {
-  console.error(`rvf-concurrent-durability: cannot resolve RVF native binding from ${projectDir}/node_modules`);
-  process.exit(2);
+const RvfDatabase = resolveBinding();
+const durableAvailable = !!RvfDatabase;
+if (!durableAvailable) {
+  console.error('[durable] native binding not resolvable from the install — DEGRADING to ' +
+    'fresh-process `memory list` as the durable count (sound here: each list re-boots from the ' +
+    'committed manifest). The direct listMetadataIds deconfound is skipped.');
 }
 
 // Candidate .rvf paths an `init --full` project writes to.
@@ -129,23 +152,25 @@ async function main() {
   for (let round = 1; round <= K; round++) {
     if (resetEachRound) { wipeRvf(); await seedOne(); }
     const ns = `${nsPrefix}-${round}-${process.pid}`;
-    const before = durableCount();
+    const before = durableAvailable ? durableCount() : 0;
     const results = await storeBurst(ns);
-    const after = durableCount();
-    const delta = after - before;
     const vis = await visibleCount(ns);
+    // Durable delta via the direct manifest probe when available; otherwise the
+    // fresh-process `memory list` count IS the durable read in this harness.
+    const delta = durableAvailable ? (durableCount() - before) : vis;
 
     let verdict;
     if (delta < N) { verdict = 'REAL-LOSS'; realLoss++; }
-    else if (vis < N) { verdict = 'VISIBILITY'; visGap++; }
+    else if (durableAvailable && vis < N) { verdict = 'VISIBILITY'; visGap++; }
     else { verdict = 'perfect'; perfect++; }
-    console.log(`round ${round}/${K}: durableDelta=${delta} visible=${vis} N=${N} => ${verdict}`);
+    const durLabel = durableAvailable ? `durableDelta=${delta}` : `durable(viaList)=${delta}`;
+    console.log(`round ${round}/${K}: ${durLabel} visible=${vis} N=${N} => ${verdict}`);
 
-    if (delta < N || vis < N) {
+    if (delta < N || (durableAvailable && vis < N)) {
       const firstErr = results.find(r => /error|lockheld|0x0[0-9a-f]|fatal|timed out/i.test(r.out));
       if (firstErr) console.error(`  first failing writer:\n${firstErr.out.split('\n').filter(l => /error|lockheld|0x0|fatal|timed/i.test(l)).slice(0, 4).join('\n')}`);
       console.error(`SHORTFALL at round ${round}: durable=${delta} visible=${vis} (need ${N}/${N}). ` +
-        (delta < N ? 'REAL write-loss (serialization).' : 'Visibility regression (durable OK, list short).'));
+        (delta < N ? 'REAL write-loss.' : 'Visibility regression (durable OK, list short).'));
       process.exit(1);
     }
   }

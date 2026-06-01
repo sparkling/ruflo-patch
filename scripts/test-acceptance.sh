@@ -3759,6 +3759,11 @@ _record_phase "phase-adr0274-rvf-rw-split" "$(_elapsed_ms "$_adr0274_start" "$(_
 _adr0284_start=$(_ns)
 if [[ -f "$adr0284_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
   log "── ADR-0284: RVF concurrent-write durability (deterministic dual-count gate) ──"
+  # Fresh PARALLEL_DIR — the adr0274 block above rm -rf'd its own; run_check_bg
+  # writes its result to ${PARALLEL_DIR}/${id}, so without this the write hits a
+  # deleted dir ("No such file or directory") and the check is mis-reported as
+  # "subprocess crashed".
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
   export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
 
   run_check_bg "adr0284-concurrent-durability" "ADR-0284 RVF concurrent-write durability" check_adr0284_concurrent_durability "adr0284"
@@ -3767,6 +3772,7 @@ if [[ -f "$adr0284_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
     "adr0284-concurrent-durability|ADR-0284 RVF concurrent-write durability"
 
   unset ADR0255_SMOKE_SHARED_TEMP
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
 fi
 _record_phase "phase-adr0284-concurrent-durability" "$(_elapsed_ms "$_adr0284_start" "$(_ns)")"
 
