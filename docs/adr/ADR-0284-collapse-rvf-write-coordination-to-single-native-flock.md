@@ -236,6 +236,27 @@ measure _after_ (`§116-118`, `§135`) — backwards from "default-reject-under-
 The 11→16 residual is not yet proven to be a serialization loss vs. a vectors-
 visibility artifact (see Risk 2), and that must be deconfounded _before_ the delete.
 
+**DA final re-calibration (intellectual-honesty trace → convergence).** After tracing
+`persistToDiskInner`, the DA _withdrew the strong form of fact (1)_ and moved
+REJECT (0.7) → **CONDITIONAL-ACCEPT (0.55)**. Its trace: in native mode (the path the
+t3-2 check exercises — no `.rvf.meta` sidecar) `persistToDiskInner` does not write
+`.meta` (gated `if (!this.nativeDb)`, `rvf-backend.ts:3557`); an entry's durability is
+already in the META_SEG written during `store()` (`:557-559`) under the native flock
+(atomic per rvf-integrity, `store.rs:572-598`), so a concurrent `.wal` unlink does
+_not_ lose a natively-committed entry; and `mergePeerStateBeforePersist`
+(`:3392-3415`) re-reads native + replays the WAL with set-if-absent/last-write-wins
+before each persist (a convergence mechanism). ⇒ the `.wal` is a _secondary_
+crash-recovery bridge, not the steady-state concurrent-loss vector — rvf-integrity's
+"native flock as sole gate" is _more_ defensible than the DA first credited. **So Q4
+is no longer a split: all seven participants accept Option A's end-state.** The DA's
+remaining condition — "ACCEPT only if Q5 replaces the bare `memory list` count with a
+_durable_ probe and shows stable 16/16-durable across warm+cold×N" — is **identical to
+verification's C1′** (dual durable+visible count) already adopted. The two converged on
+the same gate from opposite directions (DA: "the metric is documented-confounded";
+verification: "the durable count is only incidental, assert it explicitly"). Net Q4:
+**CONSENSUS-WITH-CONDITIONS**, the condition being the deconfounded dual-count gate —
+no new condition, and no viable pivot.
+
 **Q5 — Verification adequacy: SUPPORT-WITH-CONDITIONS (verification 0.82).** The
 current t3-2 is **single-shot N=6** (`lib/acceptance-adr0079-tier3-checks.sh:127/:134`)
 and Part C measured N=6 passing only 3/4 — **the check passes ~75 % on the _broken_
@@ -252,12 +273,42 @@ _absorbs_ the bug — so a green `cargo test` is **necessary-but-not-sufficient*
 `v3-ci-rvagent.yml:89-93`) must run both the cargo stress (fast pre-gate) and the CLI
 t3-2 group (real gate). Conditions: C1 rewrite t3-2 to K×N cold-start
 (N=16, K≥3 CI / 5 release) with break-on-shortfall + the preserved first-writer error
-(already in `53e9d3c`); C2 add an automated daemon-scenario check (Part A recipe:
-`lsof` empty + 8/8 + daemon survives — currently zero coverage); C3 the new workflow +
-the ADR must state cargo = necessary-not-sufficient. Plus a crash-recovery probe
+(already in `53e9d3c`); **C1′ (dual count, adopted from the DA's confound): assert
+BOTH a _durable_ count (`nativeDb.listMetadataIds().length`, already bound at
+`rvf-backend.ts:2550`) AND a _visible_ count (`memory list`) = N every round.** This
+permanently deconfounds the metric (VISIBLE<N & DURABLE=N → a read-path/visibility
+regression, _not_ a lock bug; DURABLE<N → genuine write-loss, the Option-A target).
+Today's `memory list` happens to be a durable count only _incidentally_ — the t3-2
+check counts via a fresh process whose `boot()` (`store.rs:2420`) reloads both
+`vectors` (`:2496/:2520`) and `metadata_full` (`:2563`), so the in-process
+`resync_for_write` visibility gap (`store.rs:2120` `self.vectors.get(*id)?`;
+documented `rvf-backend.ts:2766-2785`) does not bite it — but that invariant
+(fresh-process-fork + ADR-0163-holds) can silently regress, which is exactly why the
+durable count must be asserted explicitly, not relied on. (The Rust test is already
+deconfounded — it reopens via `open_readonly` and asserts exact payloads `writer-1..N`,
+`adr0095_coldstart_race.rs:96`, a content check not a bare count.) C2 add an automated
+daemon-scenario check (Part A recipe: `lsof` empty + 8/8 + daemon survives — currently
+zero coverage; assert 8/8 DURABLE **and** VISIBLE, since the daemon is the _one_ place
+an in-process resync reader exists at runtime, so the dual count matters most there);
+C3 the new workflow + the ADR must state cargo = necessary-not-sufficient. Plus a crash-recovery probe
 (kill a writer after `appendToWal` `:580`, before native commit; fresh process must
 recover it via WAL replay — `loadFromDisk` `:3078-3086` is the cross-process recovery
-bridge, _not_ vestigial).
+bridge, _not_ vestigial). This probe **confirms a reasoned-safe property, not an
+unknown** (rvf-integrity, traced): removing the `.jslock` cannot regress crash
+recovery, because the `.jslock` is a _live-process-only_ advisory lock — a crashed
+peer's `.jslock` is already gone, so it never guarded a dead peer's WAL bytes; the
+replay path reads them _because_ no live lock holds them. Under Option A the native
+flock is released on process death (POSIX `flock` fd-close semantics), so the next
+process acquires it and `replayWalIfPresent` (`:3081-3085`) reads exactly the WAL bytes
+the crashed peer left — an _identical_ recovery path to today. The only live WAL race
+(peer B's `compactWal` unlink vs peer A's not-yet-ingested append) is the live-vs-live
+case Part 1's call order already serializes. **Confidence coupling (verification,
+explicit):** the 0.82 is downstream of Q1 — _because_ Q1 confirmed the native flock +
+`resync_for_write` is a sound serializer (call order proven three ways), the K×N gate
+is **deterministic-by-construction** (a zero-loss event, not a low-probability one), so
+it holds at 0.82. Had Q1 returned only "probably sound," the gate would degrade to mere
+flake-rate-reduction and this drops to ~0.6 with the pre-ratification empirical run as
+the load-bearing evidence. Q1 closed sound, so the strong reading stands.
 
 **Q6 — ADR vehicle: NEW ADR-0284 (adr-governance 0.88).** Not an amendment to 0274:
 (a) different problem (0274 = lifetime-hold/LockHeld, _verified fixed_; 0284 =
@@ -325,13 +376,14 @@ work to measure-then-delete** and gate ratification on the following, in order:
   The repro confound is already evidenced-against (Risk 2 — the repro stores
   vector-bearing entries that the visibility filter does not drop), so this is now
   cheap confirmation rather than a likely halt. Confirm the t3-2 _acceptance check_
-  stores vector-bearing entries on the same `store.ts` path; then, as a safety net,
-  split a **durable** count (manifest-level read) from the **visible** count
-  (`memory list`) on a warm + cold N=16 run. If durable = 16 while visible < 16 →
-  **stop — fix `resync_for_write`/the metric, not the lock** (deleting the `.jslock`
-  would not help). If durable < 16 (real serialization loss — the expected case per
-  Risk 2) the collapse proceeds. Pin the `memory list` → backend count call-edge
-  file:line here for the record.
+  stores vector-bearing entries on the same `store.ts` path. The deconfounding is then
+  made _permanent_ — not a one-time net — by **condition C1′**: every t3-2 round
+  asserts both a **durable** count (`nativeDb.listMetadataIds().length`) and a
+  **visible** count (`memory list`) = N. If durable = N while visible < N →
+  **stop — the residual is a read-path/visibility regression; fix `resync_for_write`/
+  the metric, not the lock** (deleting the `.jslock` would not help). If durable < N
+  (real serialization loss — the expected case per Risk 2) the collapse proceeds. Pin
+  the `memory list` → backend count call-edge file:line here for the record.
 - **Then implement Option A** in `rvf-backend.ts` (the `§120-133` surface), keeping
   NB-poll + the 30 s timeout (no Rust change expected), with Q1/Q2 conditions
   C1 (init sync-park-after-`loadFromDisk`), C2 (envelope-duration load-test ≪ 30 s),
