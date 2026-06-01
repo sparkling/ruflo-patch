@@ -886,6 +886,8 @@ adr0176qk_lib="${PROJECT_DIR}/lib/acceptance-adr0176-query-key.sh"
 [[ -f "$adr0176qk_lib" ]] && source "$adr0176qk_lib"
 adr0274_lib="${PROJECT_DIR}/lib/acceptance-adr0274-checks.sh"
 [[ -f "$adr0274_lib" ]] && source "$adr0274_lib"
+adr0284_lib="${PROJECT_DIR}/lib/acceptance-adr0284-checks.sh"
+[[ -f "$adr0284_lib" ]] && source "$adr0284_lib"
 adr0273_lib="${PROJECT_DIR}/lib/acceptance-adr0273-checks.sh"
 [[ -f "$adr0273_lib" ]] && source "$adr0273_lib"
 adr0275_lib="${PROJECT_DIR}/lib/acceptance-adr0275-checks.sh"
@@ -3750,6 +3752,23 @@ if [[ -f "$adr0274_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
   rm -rf "$PARALLEL_DIR" 2>/dev/null
 fi
 _record_phase "phase-adr0274-rvf-rw-split" "$(_elapsed_ms "$_adr0274_start" "$(_ns)")"
+
+# ADR-0284: RVF concurrent-write durability (the t3-2 high-concurrency silent-loss
+# gate). Deterministic K×N=10×16 reset-each-round dual-count (durable + visible);
+# fails round 1 on the pre-fix counter+jslock build, 0 loss post-fix.
+_adr0284_start=$(_ns)
+if [[ -f "$adr0284_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
+  log "── ADR-0284: RVF concurrent-write durability (deterministic dual-count gate) ──"
+  export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+
+  run_check_bg "adr0284-concurrent-durability" "ADR-0284 RVF concurrent-write durability" check_adr0284_concurrent_durability "adr0284"
+
+  collect_parallel "adr0284" \
+    "adr0284-concurrent-durability|ADR-0284 RVF concurrent-write durability"
+
+  unset ADR0255_SMOKE_SHARED_TEMP
+fi
+_record_phase "phase-adr0284-concurrent-durability" "$(_elapsed_ms "$_adr0284_start" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
 # ADR-0273: scriptable `agentdb index` — builds 3 surfaces in-process alongside

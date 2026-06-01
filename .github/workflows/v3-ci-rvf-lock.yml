@@ -1,0 +1,104 @@
+# ADR-0284 — CI for RVF concurrent-write durability (the t3-2 high-concurrency
+# silent-loss fix: deterministic native ids + single-flock collapse).
+#
+# Two gates, per the rvf-lock-council (docs/council/2026-06-01-rvf-lock-council-transcript.md):
+#
+#   1. cargo-pregate (FAST, necessary-but-NOT-sufficient): the forks/ruvector
+#      rvf-runtime cross-process stress incl. the ADR-0284 park/unpark + dup-id
+#      tests. These pin the NATIVE mechanism (flock+resync correct; id-collision is
+#      the loss mode) but CANNOT certify the JS fix — the .jslock + assignNativeId
+#      counter live in JS, and the pure-Rust retry budget absorbs the race. A green
+#      cargo run is a prerequisite, never proof.
+#
+#   2. cli-gate (the SOLE release gate): Verdaccio-publish the forks, then run the
+#      ADR-0284 durability smoke (K×N=10×16, reset-each-round, dual durable+visible
+#      count). FAILS on the pre-fix counter+.jslock build (round 1), 0 loss post-fix.
+#      No skip_accepted — concurrency flakiness here is a real defect, not an excuse.
+#
+# Per feedback-always-wire-tests-into-cicd.
+
+name: ADR-0284 RVF concurrent-write durability
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts'
+      - 'forks/ruvector/crates/rvf/rvf-runtime/src/**'
+      - 'forks/ruvector/crates/rvf/rvf-node/src/**'
+      - 'scripts/rvf-concurrent-durability.mjs'
+      - 'scripts/smoke-adr0284-concurrent-durability.mjs'
+      - 'lib/acceptance-adr0284-checks.sh'
+      - '.github/workflows/v3-ci-rvf-lock.yml'
+  pull_request:
+    paths:
+      - 'forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts'
+      - 'forks/ruvector/crates/rvf/rvf-runtime/src/**'
+      - 'forks/ruvector/crates/rvf/rvf-node/src/**'
+      - 'scripts/rvf-concurrent-durability.mjs'
+      - 'scripts/smoke-adr0284-concurrent-durability.mjs'
+      - 'lib/acceptance-adr0284-checks.sh'
+      - '.github/workflows/v3-ci-rvf-lock.yml'
+
+env:
+  REGISTRY: http://localhost:4873
+  CLI_PKG: '@sparkleideas/ruflo'
+  SMOKE_LOG_DIR: ${{ github.workspace }}/smoke-logs
+
+jobs:
+  cargo-pregate:
+    # FAST native mechanism pre-gate — necessary, NOT sufficient.
+    name: rvf-runtime park/unpark + dup-id stress (ADR-0284, necessary-not-sufficient)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: cargo test — cross-process stress (incl. ADR-0284 park/unpark + dup-id)
+        working-directory: forks/ruvector/crates/rvf/rvf-runtime
+        run: |
+          set -e
+          # n16_parkunpark_cross_process: native flock+resync is a correct sole
+          # serializer (16/16). dup_native_id_overwrites_confirms_idcollision: the
+          # loss mechanism is native-id collision, not a lock defect. n8 deterministic.
+          cargo test --test adr0167_n8_stress -- --nocapture
+
+  cli-gate:
+    # The SOLE release gate — the JS fix end-to-end.
+    name: ADR-0284 durability smoke (the real gate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: cargo-pregate
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Start local Verdaccio + publish fork packages
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/ruflo-publish.sh 2>&1 | tee "${SMOKE_LOG_DIR}/publish.log"
+
+      - name: Run ADR-0284 durability gate via fast runner
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          # K can be lowered in CI for speed; 10 is the release gate. Stock fails
+          # round 1 regardless, so even K=3 catches a regression.
+          ADR0284_K=10 ADR0284_N=16 bash scripts/test-acceptance-fast.sh adr0284 2>&1 | tee "${SMOKE_LOG_DIR}/adr0284.log"
+
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs-adr0284
+          path: ${{ env.SMOKE_LOG_DIR }}

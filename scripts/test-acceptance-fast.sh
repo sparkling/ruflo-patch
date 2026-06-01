@@ -513,6 +513,17 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0274"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
   fi
 fi
 
+if [[ "$_FAST_RUN_GROUPS" == *"adr0284"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0284-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0284-checks.sh"
+    echo "── ADR-0284 (RVF concurrent-write durability — deterministic dual-count gate) ──"
+    export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+    echo "[fast] adr0284 reusing ACCEPT_TEMP: ${ACCEPT_TEMP}"
+    _fast_run "adr0284-concurrent-durability" check_adr0284_concurrent_durability
+    unset ADR0255_SMOKE_SHARED_TEMP
+  fi
+fi
+
 if [[ "$_FAST_RUN_GROUPS" == *"adr0273"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
   if [[ -f "$PROJECT_DIR/lib/acceptance-adr0273-checks.sh" ]]; then
     source "$PROJECT_DIR/lib/acceptance-adr0273-checks.sh"
