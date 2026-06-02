@@ -15,8 +15,42 @@ import { readFileSync, writeFileSync, readdirSync, statSync, existsSync, realpat
 import { resolve, join } from 'node:path';
 import { promisify } from 'node:util';
 import { parseArgs } from 'node:util';
+import { cpus } from 'node:os';
 
 const execFile = promisify(execFileCb);
+
+// Within-level publish concurrency cap. Each publishOne spawns an
+// `npm publish` subprocess; a wide level (Level 1 has ~22 packages)
+// previously fanned out ALL of them at once, contributing to the
+// build/publish-phase load spike. Cap to ncpu/2 (mirrors
+// RUFLO_BUILD_PARALLEL in scripts/build-packages.sh). Escape hatch:
+// set RUFLO_BUILD_PARALLEL high to restore full parallelism.
+const PUBLISH_PARALLEL = (() => {
+  const env = process.env.RUFLO_BUILD_PARALLEL;
+  if (env !== undefined && /^\d+$/.test(env)) {
+    return Math.max(1, parseInt(env, 10));
+  }
+  return Math.max(1, Math.floor((cpus().length || 8) / 2));
+})();
+
+/**
+ * Map an async fn over items with a bounded number of concurrent
+ * in-flight calls. Preserves input order in the result array.
+ * (Mirror of the wait -n semaphore in lib/promote-packages.sh.)
+ */
+async function mapLimit(items, limit, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const idx = next++;
+      results[idx] = await fn(items[idx], idx);
+    }
+  }
+  const workers = Array.from({ length: Math.min(limit, items.length) }, worker);
+  await Promise.all(workers);
+  return results;
+}
 
 // ── Topological levels (ADR-0014, B3: read from publish-levels.json) ──
 //
@@ -599,10 +633,11 @@ export async function publishAll(buildDir, { dryRun = false, metadata, getPublis
     // Pre-fetch all registry tags for this level in parallel
     await prefetchTags(levelPackages);
 
-    // Publish all packages within a level concurrently
-    const results = await Promise.all(
-      levelPackages.map(pkgName => publishOne(pkgName, levelNumber))
-    );
+    // Publish all packages within a level concurrently, but capped at
+    // PUBLISH_PARALLEL in-flight `npm publish` subprocesses (RUFLO_BUILD_PARALLEL)
+    // to bound the build/publish-phase load spike.
+    const results = await mapLimit(levelPackages, PUBLISH_PARALLEL,
+      pkgName => publishOne(pkgName, levelNumber));
     console.log(`  Level ${levelNumber} completed in ${Date.now() - levelStart}ms`);
 
     // Check results — collect all successes/failures for this level

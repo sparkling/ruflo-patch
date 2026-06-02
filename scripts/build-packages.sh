@@ -36,6 +36,30 @@ mkdir -p "${TEMP_DIR}"
 BUILD_COMPILED_COUNT=""
 BUILD_TOTAL_COUNT=""
 
+# Concurrency cap for the parallel `build_one_pkg &` fan-outs below.
+# Each fan launches one single-threaded `tsc -p` per package; uncapped
+# fan-out (a wide dependency level, or the v3/plugins/* glob) was the
+# source of the build-phase load spike (peak 35 on 18 cores). Cap the
+# number of concurrent tsc processes so the fan window stays bounded.
+#
+# Defaults to ncpu/2 (mirrors RUFLO_MAX_PARALLEL in lib/acceptance-harness.sh:
+# same sysctl → /proc/cpuinfo → 8 detection chain, same env-override
+# semantics). Floor of 1 so the cap is always meaningful. Escape hatch:
+# set RUFLO_BUILD_PARALLEL high (e.g. ncpu, or larger than any group) to
+# restore full unthrottled parallelism.
+if [[ -z "${RUFLO_BUILD_PARALLEL+x}" ]]; then
+  if command -v sysctl >/dev/null 2>&1 && _ncpu=$(sysctl -n hw.ncpu 2>/dev/null) && [[ "$_ncpu" =~ ^[0-9]+$ ]]; then
+    :
+  elif [[ -r /proc/cpuinfo ]]; then
+    _ncpu=$(grep -c '^processor' /proc/cpuinfo 2>/dev/null || echo 8)
+  else
+    _ncpu=8
+  fi
+  RUFLO_BUILD_PARALLEL=$(( _ncpu / 2 ))
+  (( RUFLO_BUILD_PARALLEL < 1 )) && RUFLO_BUILD_PARALLEL=1
+  unset _ncpu
+fi
+
 # ---------------------------------------------------------------------------
 # Build (TypeScript compilation)
 # ---------------------------------------------------------------------------
@@ -260,6 +284,7 @@ run_build() {
     local -n group_ref="$group_var"
     local -a bg_pids=()
     local _grp_start _grp_end _grp_count=0
+    local _grp_running=0
 
     _grp_start=$(date +%s%N 2>/dev/null || echo 0)
     for pkg_name in "${group_ref[@]}"; do
@@ -277,8 +302,15 @@ run_build() {
         continue
       fi
 
+      # Concurrency cap (RUFLO_BUILD_PARALLEL): block before launching the
+      # next tsc once the cap is reached. Mirror of lib/promote-packages.sh.
+      if [[ $_grp_running -ge $RUFLO_BUILD_PARALLEL ]]; then
+        wait -n 2>/dev/null || true
+        _grp_running=$((_grp_running - 1))
+      fi
       build_one_pkg "$pkg_name" &
       bg_pids+=($!)
+      _grp_running=$((_grp_running + 1))
       _grp_count=$((_grp_count + 1))
     done
 
@@ -353,11 +385,20 @@ run_build() {
   done
   if [[ ${#extra_pkg_dirs[@]} -gt 0 ]]; then
     local -a extra_pids=()
+    local _extra_running=0
     local _extra_start
     _extra_start=$(date +%s%N 2>/dev/null || echo 0)
     for extra_dir in "${extra_pkg_dirs[@]}"; do
+      # Concurrency cap (RUFLO_BUILD_PARALLEL): this is the widest fan
+      # (cross-repo + the v3/plugins/* glob, which can be many packages).
+      # Mirror of lib/promote-packages.sh.
+      if [[ $_extra_running -ge $RUFLO_BUILD_PARALLEL ]]; then
+        wait -n 2>/dev/null || true
+        _extra_running=$((_extra_running - 1))
+      fi
       build_one_pkg "$extra_dir" &
       extra_pids+=($!)
+      _extra_running=$((_extra_running + 1))
     done
     for pid in "${extra_pids[@]}"; do
       wait "$pid" 2>/dev/null || true
