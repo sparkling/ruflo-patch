@@ -3,7 +3,7 @@ status: proposed
 date: 2026-06-02
 tags: [mcp, observability, learning, honesty, infrastructure]
 supersedes: []
-depends-on: [ADR-0204, ADR-0267, ADR-0274, ADR-0284, ADR-0170, ADR-0210, ADR-0277]
+depends-on: [ADR-0204, ADR-0267, ADR-0274, ADR-0284, ADR-0177, ADR-0210, ADR-0277, ADR-0069, ADR-0207, ADR-0280, ADR-0235, ADR-0112, ADR-0180, ADR-0080, ADR-0094]
 implements: []
 ---
 
@@ -203,3 +203,109 @@ Per-finding disposition:
   `project-mcp-daemon-runs-sqljs-fallback`, `feedback-trace-bin-entry-before-patching`.
 * Key file:line anchors are inline in each finding above; full traces in the four
   research-agent reports (session 2026-06-02).
+
+## Amendments
+
+### 2026-06-02 — Upstream/ADR cross-check (4-agent comparison swarm)
+
+A second read-only swarm compared every finding against three axes — fresh ruvnet
+upstream source (`git show origin/main`), upstream ADRs, and this repo's ADR corpus —
+to test each disposition (CONFIRM / REFINE / CHALLENGE) and flag merge risk. Net:
+the working core is sound and most fixes are low/no merge risk, but **six dispositions
+had inaccurate targets or rationales that are corrected below.** No disposition was
+fully reversed except F3b's *preferred remedy* (wire → relabel) and F8b (bug →
+already-solved-by-ADR-0069, narrowed to a stale reporter).
+
+| # | Verdict | Provenance | Merge risk |
+|---|---------|------------|------------|
+| F1 | REFINE | bloat **inherited**; fork *amplified* it | low (track upstream ADR-100) |
+| F2 | REFINE | **inherited** (both entry files) | negligible |
+| F3a | REFINE | fork-introduced **and already superseded** upstream | low (converges) |
+| F3b | CONFIRM diag / **flip remedy** | inherited (implement-ahead) | wire=high, relabel=none |
+| F5 | REFINE | block **fork-only** (`2f372931`); contract inherited | **none** — DELETE safe |
+| F6 | CONFIRM | mixed; no cross-store contract anywhere | none |
+| F4 | REFINE | **inherited** (identical upstream) | none (additive) |
+| F7 | CONFIRM | **fork-invented** subsystem | none |
+| F8a | CONFIRM | field inherited-absent, consumer fork-new | minimal (additive) |
+| F8b | **CHALLENGE** | precedence inherited & **intended** (ADR-0069) | do NOT touch precedence |
+| F8c | CONFIRM | aligned (ADR-0080/0094) | none |
+| F8d | REFINE | outcome right, **cause wrong** | low |
+
+Corrections (supersede the body where they conflict):
+
+- **F2 — wrong file target.** The live `ruflo mcp start` path is `bin/cli.js` (advert
+  `:206`, `-32601` at `:309`), **not** `bin/mcp-server.js:192` (reachable only via the
+  `ruflo-mcp` bin — the ADR-0267 dead-code trap). Both files carry the bug
+  byte-identically from upstream; the fix must patch **`cli.js` primarily**, or the
+  live `-32601` survives. Disposition intent (drop the unbacked `resources` advert)
+  is ADR-0210-aligned and unchanged.
+- **F1 — adopt upstream's durable fix.** The 1.5GB tree is **inherited** from ruvnet
+  (xenova/better-sqlite3/node-llama-cpp are required upstream deps; onnxruntime/sharp
+  transitive). Upstream already has the accepted durable fix: **upstream ADR-100**
+  (cli-core lazy-load split — same 30s-timeout/zero-tools bug) + **upstream ADR-094**
+  (xenova → optionalDependencies). The deferred "shrink the tree" ADR should
+  adopt/track ADR-100/094, not chart a parallel course. Also: the fork **amplified**
+  the bloat by promoting `agentdb` optional→required in `cli/package.json` vs upstream
+  — a fork-introduced install-size regression a shrink ADR can partly reverse.
+- **F3a — re-scope target + fix a mis-citation.** The live defect in *this repo* is a
+  **stale dogfood `.mjs` snapshot** (`hook-handler.mjs` from patch.211, commit
+  `e1d033d`) plus the published template's residual `.js` helpers (which break only
+  under a `type:module` root). The fork *root* already ships all-`.cjs` helpers — the
+  exact fix shape. Durable fix: mirror the fork-root's `.cjs` set into the template
+  generator + re-dogfood this repo's `.claude/`; verify against a fresh `init`
+  sandbox, not this repo's stale `.claude/`. **Correction:** the body's claim that
+  "ADR-0235 added a `createRequire` loader that still fails under type:module" is
+  inaccurate — ADR-0235 has no `createRequire` change; that loader is a different
+  surface (auto-memory resolver).
+- **F3b — flip the preferred remedy to relabel/retire.** The body leaned "prefer wiring
+  `routing-outcomes.json` → `QLearningRouter.update()` (no-dormant-flags)". The
+  comparison shows wiring would create a **redundant associative learner competing
+  with the ADR-0280 action-value/causal substrate** (`.swarm/action-values.json`) —
+  re-introducing the duplication ADR-0277/0280 consolidated away (high merge tax +
+  architectural conflict). Correct disposition: **relabel `ruflo route` as
+  untrained/experimental, or retire it (ADR-0210 honesty)**. The `no-dormant-flags`
+  rule cannot be satisfied — there is no self-inert-until-data path for an untrained
+  Q-table. (The one would-be trainer, `SonaOptimizer.recordTrajectory`, is itself
+  uncalled in the wired hook path.)
+- **F5 — DELETE is safe; drop the stale rationale.** The block is **fork-only** (intro
+  `2f372931`, absent from `agentic-flow origin/main`), calls a `setController` that
+  exists in *neither* fork nor upstream `AgentDB` (so it `TypeError`s in addition to
+  the `getController` throw), uses wrong registry keys, and upstream shows zero intent
+  to maintain it (incl. the live ADR-073 SOTA roadmap) — **zero merge risk**.
+  **Correction:** drop "graphAdapter retired (ADR-0170 Phase D) — do not resurrect" as
+  the justification. **ADR-0170 is superseded by ADR-0177 (accepted), which *reverses*
+  the retirement** and prescribes re-enabling graph mode (still unimplemented in code:
+  `agentdb/src/core/AgentDB.ts:154-158` throws on `enableGraph`). Justify the delete on
+  dead-code grounds only; graphAdapter's substrate fate is an open ADR-0177 Phase 1
+  item, orthogonal to this delete. Also: ADR-0069 §F1 explicitly excludes Phase-2/4
+  controllers from `getController`, so the block's own `// ADR-0069 F1` comment
+  misapplies that ADR — further support for DELETE.
+- **F4 — prefer the PID-centric fix; correct the worker framing.** The liveness gap is
+  **inherited** (`daemon.ts`/`doctor.ts` byte-identical to upstream; hardcoded relative
+  `.claude-flow/daemon.pid`). Prefer **ensuring the PID write + anchoring `doctor.ts`'s
+  path to project-root (ADR-0137)** over trusting `daemon-state.json.running` — the
+  latter contradicts **ADR-0207**, which deliberately made the PID file the liveness
+  arbiter and the state file untrusted-when-stale. **Correction:** drop "6 workers
+  disabled in fork" — the disabled set is upstream-baseline (predict/document) + 4
+  intentional fork additions (ADR-0277 added learn/preload enabled); not a regression.
+- **F8b — CHALLENGE: already solved, narrow to a reporter bug.** json-wins precedence
+  is **inherited and intended**: **ADR-0069 already chose `config.json` canonical**;
+  YAML is a deliberate legacy read-fallback, and a fresh `init` emits no YAML (no
+  collision in practice). Do **not** touch the precedence or remove the YAML fallback
+  (upstream-aligned + ADR-0069 legacy-project guarantee). The genuine, narrow defect is
+  a **stale `doctor.ts`**: its comment (`:105`) and config-detection list (`:113-115`)
+  still reference `config.yaml` only and don't check `config.json` — out of sync with
+  ADR-0069. Fix only that.
+- **F8d — outcome right, stated cause wrong.** "Unavailable" is honest (the consumer
+  genuinely can't construct it), but **ContrastiveTrainer was NOT removed from ruvllm
+  2.5.x** — the ruvector fork source still exports it (`ruvllm/src/contrastive.ts:214`,
+  re-exported in `index.ts:84`). The real cause is an **incomplete dist build**:
+  `ruvllm/dist/cjs/` is missing `contrastive.js`, `training.js`, `models.js`,
+  `intelligence.js`, `benchmarks.js`. This is a separate **latent build-completeness
+  gap** (worth its own look) — and a rebuild that ships `contrastive.js` would flip the
+  report to Active and make the stale "removed in 2.5.x" comment a lie.
+
+Frontmatter `depends-on` updated accordingly: ADR-0170 (superseded) replaced by
+ADR-0177; added ADR-0069, ADR-0207, ADR-0280, ADR-0235, ADR-0112, ADR-0180, ADR-0080,
+ADR-0094. Upstream ADR-100 (cli-core lazy split) and upstream ADR-094 (xenova→optional)
+are ruvnet-corpus, referenced in prose only (not eligible for intra-corpus `depends-on`).
