@@ -25,6 +25,7 @@
 import { spawnSync } from 'node:child_process';
 import { appendFileSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   createSmokePerf,
   setupSmokeTempDir,
@@ -63,6 +64,22 @@ function mcpExec(cli, dir, tool, params) {
 }
 const count = (o) => (o && Array.isArray(o.results)) ? o.results.length : null;
 
+// ADR-0282 perf: store/delete the 101 limit-probe records via ONE in-process
+// helper run (boots agentdb controllers once) instead of 101 cold `cli mcp exec`
+// spawns per phase. The helper uses the SAME callMCPTool('agentdb_hierarchical-
+// store'/'-delete') entry point + cwd, so the writes land in the SAME
+// `.swarm/memory.db` store the G1 query (still a `cli mcp exec`) reads. Returns
+// the number actually written/deleted (parsed from `BULK-<MODE> <ok>/<count>`)
+// so a partial store still fails G1-store loud (no silent fallback).
+const BULK_HELPER = join(fileURLToPath(new URL('.', import.meta.url)), 'lib', 'adr0282-hierarchical-bulk.mjs');
+function bulkHierarchical(dir, mode, prefix, n) {
+  const r = spawnSync(process.execPath, [BULK_HELPER, mode, prefix, String(n)],
+    { cwd: dir, encoding: 'utf8', timeout: 120000, maxBuffer: 64 * 1024 * 1024, env: { ...process.env, NPM_CONFIG_REGISTRY: REGISTRY } });
+  const out = `${r.stdout || ''}\n${r.stderr || ''}`;
+  const m = out.match(new RegExp(`BULK-${mode.toUpperCase()}\\s+(\\d+)/(\\d+)`));
+  return m ? Number(m[1]) : 0;
+}
+
 async function main() {
   log(`\n[ADR-0282/0276/0273 smoke] agentdb CLI surface fixes — limit, causal-edge KV, dry-run`);
   log(`[smoke] log: ${LOG_FILE}\n`);
@@ -76,11 +93,7 @@ async function main() {
 
   // ── G1 (ADR-0282): hierarchical-query honors an explicit limit > 100 ──
   const lp = `limitprobe-${ts}`;
-  let stored = 0;
-  for (let i = 0; i < 101; i++) {
-    const o = parse(mcpExec(cli, dir, 'agentdb_hierarchical-store', { key: `${lp}/${String(i).padStart(3, '0')}`, value: `v${i}`, tier: 'working' }));
-    if (o?.success) stored++;
-  }
+  const stored = bulkHierarchical(dir, 'store', lp, 101);
   log(`[smoke] G1 stored ${stored}/101 limit-probe records`);
   if (stored < 101) { fail('G1-store', `only ${stored}/101 stored`); }
   else {
@@ -93,8 +106,8 @@ async function main() {
       else fail('G1', `expected 101, got ${n}`);
     }
   }
-  // cleanup G1 probes
-  for (let i = 0; i < 101; i++) mcpExec(cli, dir, 'agentdb_hierarchical-delete', { key: `${lp}/${String(i).padStart(3, '0')}` });
+  // cleanup G1 probes (single in-process bulk delete; teardown is best-effort)
+  bulkHierarchical(dir, 'delete', lp, 101);
 
   // ── G2 (ADR-0276): causal-edge-delete clears the KV copy ──
   const cA = `ADR-92X-${ts}`, cB = `ADR-92Y-${ts}`;
