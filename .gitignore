@@ -100,3 +100,8 @@ test-results/catalog.db-*
 # by the rules earlier in this file).
 **/.claude-flow/
 !/.claude-flow/
+
+# Stray runtime memory DB committed by error (canonical store is .swarm/memory.db)
+.claude/memory.db
+.claude/memory.db-shm
+.claude/memory.db-wal
