@@ -973,9 +973,12 @@ Restarted the **worker daemon** (`daemon start`) from the node-24 shell → new 
 long-running processes, and only one was fixed:**
 - **Worker daemon** (`daemon start` — runs the `learn`/`consolidate`/`map`/etc. workers): **FIXED → node 24 / native.**
 - **MCP server** (`mcp start` — the `mcp__ruflo__*` surface, and the *actual* subject of
-  `project-mcp-daemon-runs-sqljs-fallback`): **STILL node 22.21.1 → sql.js** (PIDs 70385/43875, orphaned from
-  2026-06-02 sessions; `lsof txt` confirms the `mise/installs/node/22.21.1` binary). The worker-daemon restart
-  did **not** touch it.
+  `project-mcp-daemon-runs-sqljs-fallback`): **CORRECTION (2026-06-03)** — *this project's* MCP server, spawned
+  fresh by the `/mcp` reconnect at 16:13 in ruflo-patch's node-24 env, is **PID 81846/81755 on node 24.14.1 →
+  native** (`lsof txt`). The node-22.21.1 `mcp start` processes (70385/43875/70222/43846, from 2026-06-02) are
+  **NOT this project's** — they belong to the **other ruflo projects running on this machine** (there are 2
+  others). They are **out of scope and must NOT be killed/touched** from here. Attribute MCP servers by `cwd`,
+  not by assuming all `mcp start` procs are this project's. (Earlier "orphaned zombies, killable" claim was wrong.)
 
 **What the restart actually fixes (don't overclaim):**
 - ✅ The **worker daemon's own agentdb writes** (causal/consolidate/nightlyLearner via the `learn` worker) now run
@@ -989,9 +992,67 @@ long-running processes, and only one was fixed:**
   F8a/F8b/F8e (reporters), F8d (publish+plumbing), and **F10's core starvation** (no episodes because the MCP/hook
   trajectory path is down — F1/F3a) are all node-agnostic and unchanged.
 
-**Generalised fix:** this is a **session-spawn Node-resolution problem**, not a one-daemon bug — *both* `daemon
-start` (hook `settings.json:129`) and `mcp start` (`.mcp.json` autoStart) spawn under node 22 in some session
-contexts despite mise global + `.tool-versions` both pinning 24 (the bare subprocess PATH doesn't honour mise
-activation). Durable fix = ensure **both** spawn commands resolve node 24 (explicit node-24 invocation, or mise
-activation in the spawn env). Interim: the orphaned node-22 MCP servers (70385/43875) can be killed; the next
-MCP spawn must come up on 24 to fully close T3/T4. **F4 should own this** (it's the daemon/process-lifecycle finding).
+**Generalised fix:** ensure ruflo-patch's `daemon start` (hook `settings.json:129`) and `mcp start`
+(`.mcp.json` autoStart) reliably resolve node 24 (mise global + `.tool-versions` both pin 24; the risk is a bare
+subprocess PATH not honouring mise activation). Do **not** kill the node-22 processes — see the correction below.
+
+### 2026-06-03 — CORRECTION: the node-22 processes are OTHER projects (opda, hm), not ruflo-patch
+
+The machine runs **3 ruflo projects** — ruflo-patch + **opda** + **hm** — each with its own `mcp start` and
+`daemon start`. The node-22.21.1 processes I observed (MCP servers 70385/43875/70222/43846 and the worker daemon
+PID 59757) **belong to opda/hm, not ruflo-patch** — so the "ruflo-patch daemon/MCP runs sql.js on node 22"
+conclusion was a **cross-project misattribution.** Corroborating evidence: `daemon stop` run from ruflo-patch
+reported *"Worker daemon was not running"* → **ruflo-patch had no daemon of its own** until I started PID 49267
+(node 24), and the `/mcp` reconnect spawned ruflo-patch's MCP server fresh on **node 24** (PID 81846). ruflo-patch
+has `.tool-versions = nodejs 24` and its own spawns resolve 24.
+
+**Re-scoped consequences:**
+- **ruflo-patch itself is on node 24 / native better-sqlite3** for both its daemon and MCP server. The
+  node-22/sql.js state was **opda/hm**, which are **out of scope** (don't touch their processes; their node
+  resolution is their concern).
+- **T3/T4's "verify the sql.js read path" is therefore largely MOOT for ruflo-patch** — its live processes are
+  native. (Keep the corruption-throws acceptance assertion as good hygiene, but the sql.js-specific worry was
+  another project's.)
+- **F4 (daemon liveness) and F10 (frozen learning) still stand** — they were derived from ruflo-patch's *own*
+  on-disk state (`.swarm/`, `.claude-flow/neural/*`, `daemon status`/`doctor` behaviour), not from the
+  misattributed processes. F10's root cause remains F1/F3a (no episode capture), node-agnostic.
+- The earlier "daemon-Node-pin" / "kill the orphaned node-22 MCP servers" items are **WITHDRAWN for ruflo-patch**
+  (they were other projects'). What survives is the narrow F4 doctor-path anchor + the standing recommendation
+  that ruflo-patch's own spawns resolve node 24 (already the case in practice).
+
+### 2026-06-03 — LIVE RE-EVALUATION (authoritative current status — supersedes process-state claims above)
+
+After restarting ruflo-patch's worker daemon (→ node 24) and reconnecting its MCP server (`/mcp` → fresh PID
+81846 on node 24), I exercised the **now-connected live MCP tools + restarted daemon** to re-assess every finding
+against *current* reality. **This table is the authoritative status; where it conflicts with earlier amendments,
+this wins.** Live facts established this session:
+- **Memory works, with real semantic embeddings.** `memory_store` ("JWT refresh token rotation… session
+  security") → `memory_search` ("token-based login flow…") returned **0.59 cosine** (a paraphrase match
+  hash-embeddings can't produce). Backend: `archivist (RVF + HNSW)` / `HNSW + SQLite`, `hasEmbedding: true`.
+- `agentdb_health`: **41 controllers live** from Registry B (incl. correctly-named `gnnService`/`semanticRouter`/
+  `sonaTrajectory`). `doctor`: **✓ Daemon Status: Running (PID 49267)**, `daemon.pid` written.
+- The node-22/sql.js processes were **opda/hm**, not ruflo-patch (correction above). RAM was ~99% (3 projects' MCP servers).
+
+| Finding | Earlier status | **Live status now** | Net action |
+|---|---|---|---|
+| **F1** MCP cold-start | live-broken (no tools) | **DOWNGRADED — surface UP** this session (tools connect; memory round-trip works). Cold-start race (npm >30s, 60s cap) persists only for first-after-publish cold-cache sessions | durable tree-shrink still wanted (own ADR); not currently broken |
+| **F3a** hook router | broken | **STILL BROKEN** — `[INFO] Router not available` fires every prompt *this* session even with MCP up (it's the CJS-under-`type:module` helper load, independent of MCP). Confirmed live. | **fix stands** (helper `.cjs` rename + exec smoke) — highest-value, still failing every turn |
+| **F4** daemon liveness | live-misreport | **DOWNGRADED — not symptomatic.** `doctor` now correctly shows Running(49267); earlier "Not running" was largely ruflo-patch having *no* daemon (node-22 one was opda/hm). The `doctor.ts:166` cwd-relative path is a **latent** code smell (misreports only from a subdir) | demote to LOW; fix the cwd anchor opportunistically |
+| **T3 / T4** sql.js read-path / `.meta` | verify needed | **MOOT for ruflo-patch** — its MCP+daemon are node-24/native; sql.js was opda/hm. Keep only the generic corruption-throws assertion as hygiene | drop the sql.js-specific items |
+| **F8a** 0-dim | reporter bug | **STANDS (reporter only) — memory embeddings confirmed REAL** (0.59 match). "0-dim" (CLI) and "hash-based/384" (MCP `neural_status`) are both **reporter artifacts** that disagree with the real memory path → plumb the real dim into *both* reporters | reporter fix (now 2 sites: CLI hnswStats + MCP neural_status `_realEmbeddings`/dim) |
+| **F10** frozen learning | starved | **STANDS — F1 surface up is necessary-not-sufficient.** MCP is connected, but learning is still frozen (neural_status: 0 models/patterns in the fresh server; persisted `lastAdaptation` still 2026-04-04) and **F3a is still down**, so no trajectory capture is flowing. Won't self-heal without trajectory activity | gated on F3a + actual trajectory capture; recheck after F3a |
+| **F5** dead Phase-2 block | delete | **STANDS** — `agentdb_health` shows Registry B owns the correctly-named controllers; the block's wrong-key false banner is still dead code | delete (unchanged) |
+| **F2** resources/list | add handler | **STANDS** (code unchanged; both bins advert w/o handler) | add `{resources:[]}` handler |
+| **F3b** Q-router cold | relabel | **STANDS** (still cold) | relabel default box |
+| **F8d** ContrastiveTrainer | 3-layer | **STANDS** (publish + unset-global + false-comment) | unchanged |
+| **F8e** spinner | guard | **STANDS** (code unchanged) | isTTY guard |
+| **T1** agentdb-memory.rvf | wire | **STANDS** (dead bridge unchanged) | wire via router |
+| **T2** action-values.json | keep | **STANDS** (keep) | keep |
+| **F9p** prune discovery | withdrawn | **WITHDRAWN** | leave |
+
+**Net effect of the restart on the backlog:** **F1 and F4 downgrade** (surfaces healthy now; only latent/cold-cache
+risk remains), **T3/T4 sql.js items drop** (were cross-project), and **F8a doubles** (a second reporter — MCP
+`neural_status` — also misreports). **Unchanged and still real:** F3a (the keystone — *still* failing every turn,
+MCP-up notwithstanding), F5, F2, F3b, F8d, F8e, T1, F10-core (F3a-gated). So the implementation priority sharpens
+to: **F3a first** (only thing actively breaking every turn), then F5/F2 (code lies), then the reporter/cleanup tier.
+The daemon/MCP/node concerns that dominated recent amendments are **resolved or out-of-scope** for ruflo-patch.
