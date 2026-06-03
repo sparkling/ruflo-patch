@@ -167,9 +167,16 @@ the timeout is **100% npm cold-install** of a ~1.5GB / 444-package tree (~38s) u
 first session after a version bump. *Status:* **surface UP this session** (tools connect; memory works).
 *Disposition:* interim — `MCP_TIMEOUT=60000` in Claude Code's **launch env** (not `.mcp.json`; Claude
 **hard-caps it at ~60s**, so it's a ceiling, not a tunable) + warm the npx cache post-publish. **Durable fix =
-shrink the install tree** (revert the fork's `agentdb` optional→required amplification as the low-risk first
-step; adopt upstream ADR-100 cli-core split + ADR-094 xenova→optional) — its **own ADR** (cross-fork packaging
-risk). **Upstream has no precaching step** (the `bin/preinstall.cjs` cache-repair was removed in 3.1.0-alpha.53;
+shrink the install tree** — its **own ADR** (cross-fork packaging risk). **Correction (do NOT revert `agentdb`
+to `optionalDependencies`):** the fork holds `agentdb` in `dependencies` (upstream has it optional) **by
+design** — ADR-0091 *removed the sql.js memory fallback* upstream keeps for edge envs, so RVF/agentdb is the
+**sole** memory substrate and must be present (no-fallbacks/fail-loud; reverting would reintroduce a banned
+silent-degradation). It also wouldn't help, since **npm installs `optionalDependencies` by default** — the
+section is not the lever. The real lever is getting the **heavy ML libs (onnxruntime/xenova/sharp/node-llama-cpp)
+out of the default install** (ADR-094 xenova→optional *and* actually skippable, fail-loud at call sites) and/or
+**ADR-100's cli-core split** where the lite path doesn't carry the ML stack. (This supersedes the validation
+pass's "revert agentdb optional→required as the low-risk first step", which missed ADR-0091 and the
+optional-deps-still-installed fact.) **Upstream has no precaching step** (the `bin/preinstall.cjs` cache-repair was removed in 3.1.0-alpha.53;
 now a no-op). Its cold-start mechanisms all *avoid* the cost rather than precache it: **`@claude-flow/cli-core`**
 (a separate package handling **memory commands only — no SQLite/HNSW/ONNX**; ~1.5s cold via `CLI_CORE=1`, for
 *plugin scripts*), local `.cjs` (no npx, for statusline), and RVF replacing the sql.js WASM blob. **cli-core
