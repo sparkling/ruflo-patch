@@ -309,3 +309,27 @@ Frontmatter `depends-on` updated accordingly: ADR-0170 (superseded) replaced by
 ADR-0177; added ADR-0069, ADR-0207, ADR-0280, ADR-0235, ADR-0112, ADR-0180, ADR-0080,
 ADR-0094. Upstream ADR-100 (cli-core lazy split) and upstream ADR-094 (xenova→optional)
 are ruvnet-corpus, referenced in prose only (not eligible for intra-corpus `depends-on`).
+
+### 2026-06-03 — Dead-code triage (initial, from the cross-check)
+
+The cross-check surfaced removal candidates. These are triaged under the
+`feedback-no-consumer-is-not-stub` discipline — **WIRE / KEEP-AS-CAPABILITY /
+DELETE** — where DELETE is reserved for ADR-0210-class *lies* (advertised surfaces
+that no-op) or fork-only broken code, NOT for honest unadvertised "implement-ahead"
+surfaces. A scoped read-only audit swarm (launched 2026-06-03) is expanding this into
+an evidence-backed list; the table below is the seed.
+
+| Candidate | Location | Verdict | Rationale | Merge risk |
+|---|---|---|---|---|
+| F5 Phase-2 controller-activation block | `agentic-flow/.../agentdb-service.ts:767-908` | **DELETE** | Fork-only (`2f372931`); calls nonexistent `setController` (TypeError); wrong registry keys; functionality already live via Registry B; emits a false "real error" boot banner → ADR-0210 lie | None — upstream has no such path |
+| CLI Q-router surface | `q-learning-router.ts`, orphaned `SonaOptimizer.recordTrajectory` (`sona-optimizer.ts:285,372`) | **DECIDE** (relabel/retire, not silent delete) | Orphaned + untrained, but inherited honest implement-ahead; becomes a lie only because `ruflo route` prints meaningless confidence/Q-values. Wiring rejected (conflicts ADR-0280 substrate). | relabel=none; retire=low |
+| Second MCP server copy | `src/mcp-server.ts`, `bin/mcp-server.js` (vs live `bin/cli.js` inline) | **KEEP / consolidate** (do NOT delete) | Still reachable via `ruflo-mcp` / `claude-flow-mcp` bins; deleting breaks those entries (no-consumer≠stub). It is the *duplication* that enables the ADR-0267 trap — a consolidation question pending evidence of whether `ruflo-mcp` has any real consumer. | high if deleted blind |
+| Stale `.swarm/memory.graph` | repo runtime state (1.5MB, 6-Apr legacy) | **DELETE** (housekeeping, data not code) | Legacy artifact; nothing reads it | none |
+
+Items NOT for removal (looks-dead-isn't): F8d's missing ruvllm dist modules are a
+*build-completeness gap* (source exists, dist incomplete) — fix the build, do not
+delete; F3a's `.js`/`.mjs` helpers are live-but-misloading — rename, do not delete.
+
+Execution of any DELETE is a separate fork patch requiring go-ahead. The audit swarm
+will append a §"Dead-code triage (audit results)" subsection with the evidence-backed
+WIRE/KEEP/DELETE list before any removal lands.
