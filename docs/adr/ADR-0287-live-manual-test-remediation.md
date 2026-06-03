@@ -329,6 +329,20 @@ test prove the learning substrate has no automatic writer in normal operation (i
 needs a deliberate *capture-wiring* decision in its own ADR, not a side-effect of any fix here. Everything in
 tier 2-3 is low-risk cleanup.
 
+**Scope caveats (from the critique — apply before committing the cleanup tier):**
+- **The reporter tier (F8a, F8e, F8b, F4) is cosmetic on *inherited* files.** Apply the F9p test per-item:
+  is "stop a reporter mislabel" worth a *permanent* divergence + recurring merge-tax on an upstream-owned file?
+  F9p was withdrawn on exactly this logic; F8e/F8b/F4 deserve the same explicit check, not an automatic "fix."
+- **F8d (ContrastiveTrainer) is poor cost/benefit** — republishing a package + wiring a global to flip a
+  *cosmetic* "Unavailable" on a genuinely-absent feature. Lean **document-don't-fix** unless the report
+  actively misleads.
+- **F7 caveat:** it reproduced *once* (the original observation), then not on two retries — so it's "couldn't
+  reproduce; likely a cold-start race," not "proven absent." Keep, but don't overstate the certainty.
+- **F5 caveat:** the audit confirmed Phase-2 is dead; **verify Phase-1/4 are live + correct** before deleting
+  around them (cheap check; the delete leaves them in place).
+- **Track record:** several first-pass claims in this ADR were wrong (F2 drop-not-add, agentdb-revert ×2,
+  F3a-gates-F10). **Verify each disposition against current code before implementing** — don't trust the prose alone.
+
 ### Consequences
 
 * Good — fixing F3a restores the hook-time routing advisory (failing every turn). It does **not** unblock F10
