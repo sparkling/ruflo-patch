@@ -355,7 +355,9 @@ grounded across upstream + fork + corpus, and the fix is de-risked:
   biggest design question.** An episode row carries `subject`+`critique` = user-prompt content, file paths,
   possibly secrets — and capture turns transient turn content into a durable, embedded, cross-session,
   potentially federated (ADR-0196) store. Mechanism exists (`aidefence_has_pii`/`transfer_detect-pii`) but no
-  policy → must decide redaction-before-write. (2) **Router single-write-path / flock** (ADR-0083 +
+  policy → **now decided in ADR-0289**: Phase 1 = metadata-only (a **zero-PII** F10 unblock, since the routing
+  signal is the structured `action`/`reward`/`task_type` fields); Phase 2 = tiered redaction (secrets
+  hard-blocked, PII masked, fail-loud) for the free-text. (2) **Router single-write-path / flock** (ADR-0083 +
   `check_adr0083_no_dosync_drain`; ADR-0032/0284) — seam (a) sidesteps this (SQLite carve-out, not RVF), but
   must open no new RVF writer. (3) **No-fallbacks/fail-loud** (ADR-0286) — discriminated re-throw, never
   swallow-to-stay-green (that recreates the dormant-but-green illusion F10 exposed). (4) **Embedding cost** —
@@ -409,7 +411,7 @@ separate `agentdb-memory.rvf` (T1), `config.yaml`, 768-dim mpnet (deliberate, AD
 | 3 noise fix | **F3a** | rename helpers → `.cjs` in the generator + re-dogfood + **execution smoke**; rewrite the parity test. **Cosmetic only — suppresses an advisory line; gates nothing** | moderate (converge w/ upstream `.mjs→.cjs`) |
 | 4 pipeline | **F8d** | republish ruvllm @ pin + wire `__claudeFlowSonaStats` + fix comment | pipeline |
 | band-aid (decided) | **F1** | `MCP_TIMEOUT=60000` in Claude Code's launch env — only. Tree-shrink + cache-warm dropped (downgraded; not worth it) | none (operator env) |
-| own ADR (wiring decision) | **F10** | dormant-by-design, **NOT gated by F3a/F1**. 4-agent swarm (2026-06-03): write chain already LIVE (`hooks_post-task`→`agentdb_reflexion_store`→`episodes`, ADR-0268) — only the **trigger** is missing. Cheapest seam (a) = wire the file-based PostTask hook → `ruflo hooks post-task` (`hook-handler.mjs` / `settings-generator.ts`); no RVF-flock (SQLite carve-out). Completes ADR-0195's producer half; unblocks NightlyLearner→ADR-0280. Open decisions = constraints (**PII-redaction foremost**), not seam existence | design |
+| own ADR (wiring decision) | **F10** | dormant-by-design, **NOT gated by F3a/F1**. 4-agent swarm (2026-06-03): write chain already LIVE (`hooks_post-task`→`agentdb_reflexion_store`→`episodes`, ADR-0268) — only the **trigger** is missing. Cheapest seam (a) = wire the file-based PostTask hook → `ruflo hooks post-task` (`hook-handler.mjs` / `settings-generator.ts`); no RVF-flock (SQLite carve-out). Completes ADR-0195's producer half; unblocks NightlyLearner→ADR-0280. PII gate now **ADR-0289** (Phase 1 metadata-only = zero-PII unblock); capture-wiring still its own ADR | design |
 | keep / none | **T2, T3, T4, F6, F7, F8c, F9p, F11-RVF** | documented; no code change | — |
 
 **Implementation note (corrected):** F3a is **not** a keystone and gates nothing — it only suppresses an
@@ -537,7 +539,8 @@ on-disk only.)
   unfinished PRODUCER half of ADR-0195 (ADR-0279 §R3 names a non-existent producer hook); most-starved consumer
   = NightlyLearner (hourly vs empty episodes) → ADR-0280 self-inert. Cheapest seam (a): wire file-based PostTask
   hook → `ruflo hooks post-task` (`hook-handler.mjs` / `settings-generator.ts`); no RVF-flock (SQLite carve-out).
-  Biggest open decision = PII-redaction-before-write (new, ungoverned). Still its own ADR; no implementation.
+  Biggest open decision = PII-redaction-before-write → now **ADR-0289** (Phase 1 metadata-only zero-PII unblock /
+  Phase 2 tiered redaction). Capture-wiring still its own ADR; no implementation.
   Raw findings: `docs/research/f10/01-04`. **F5:** reachability trace — the false banner is on agentic-flow's
   *own* fastmcp surface, not the live ruflo MCP boot (`@sparkleideas/ruflo` = claude-flow v3 never imports
   `AgentDBService`); `AgentDBService` is 100% fork-authored (absent from agentic-flow `origin/main`); delete
