@@ -364,10 +364,11 @@ grounded across upstream + fork + corpus, and the fix is de-risked:
   no per-turn mpnet-768 embed on the hot path; defer to the daemon. (5) **Anti-sprawl** (ADR-0098)
   one-hook-one-write; **CICD must assert the HOOK fires the write, not a manual tool call.**
 
-*Refined disposition:* unchanged in kind — **still its own capture-wiring ADR; do NOT implement here (no
-go-ahead)** — but de-risked: the write path is live, the cheapest seam is identified (seam a), it **completes
-ADR-0195** and aligns with upstream's ADR-074 direction, and the genuinely-open *decisions* are the constraints
-above (PII foremost), not "does a seam exist." *Acceptance (refined):* after seam (a) lands, drive a real Task
+*Refined disposition:* **extracted to ADR-0290** (the actionable capture-wiring fix; do NOT implement here, no
+go-ahead) — de-risked: the write path is live, the cheapest seam is identified (seam a), it **completes
+ADR-0195** and is **guided by upstream's ADR-074** direction. **Enabling learning is PII-free** — the routing
+signal is the structured `action`/`reward`/`task_type` fields, so capture is metadata-only; PII (ADR-0289)
+governs only the *optional* free-text capture, **not** enabling learning. ADR-0290 holds the full plan. *Acceptance (refined):* after seam (a) lands, drive a real Task
 completion through the **file-based hook** (not a manual tool) and assert `episodes` accrues a row with real
 `task_type`/`reward`, then NightlyLearner's hourly run populates `action-values.json`. (Corpus citation fixes:
 project `ADR-0125` = Hive-mind queen-types, *not* MemoryConsolidator — that is upstream 3-digit ADR-125; §F11's
@@ -411,7 +412,7 @@ separate `agentdb-memory.rvf` (T1), `config.yaml`, 768-dim mpnet (deliberate, AD
 | 3 noise fix | **F3a** | rename helpers → `.cjs` in the generator + re-dogfood + **execution smoke**; rewrite the parity test. **Cosmetic only — suppresses an advisory line; gates nothing** | moderate (converge w/ upstream `.mjs→.cjs`) |
 | 4 pipeline | **F8d** | republish ruvllm @ pin + wire `__claudeFlowSonaStats` + fix comment | pipeline |
 | band-aid (decided) | **F1** | `MCP_TIMEOUT=60000` in Claude Code's launch env — only. Tree-shrink + cache-warm dropped (downgraded; not worth it) | none (operator env) |
-| own ADR (wiring decision) | **F10** | dormant-by-design, **NOT gated by F3a/F1**. 4-agent swarm (2026-06-03): write chain already LIVE (`hooks_post-task`→`agentdb_reflexion_store`→`episodes`, ADR-0268) — only the **trigger** is missing. Cheapest seam (a) = wire the file-based PostTask hook → `ruflo hooks post-task` (`hook-handler.mjs` / `settings-generator.ts`); no RVF-flock (SQLite carve-out). Completes ADR-0195's producer half; unblocks NightlyLearner→ADR-0280. PII gate now **ADR-0289** (Phase 1 metadata-only = zero-PII unblock); capture-wiring still its own ADR | design |
+| own ADR (wiring decision) | **F10** | dormant-by-design, **NOT gated by F3a/F1**. 4-agent swarm (2026-06-03): write chain already LIVE (`hooks_post-task`→`agentdb_reflexion_store`→`episodes`, ADR-0268) — only the **trigger** is missing. Cheapest seam (a) = wire the file-based PostTask hook → `ruflo hooks post-task` (`hook-handler.mjs` / `settings-generator.ts`); no RVF-flock (SQLite carve-out). Completes ADR-0195's producer half; unblocks NightlyLearner→ADR-0280. **Learning is PII-free** (metadata-only; ADR-0289 = optional free-text only). Capture-wiring fix = **ADR-0290** (upstream-ADR-074-guided) | design |
 | keep / none | **T2, T3, T4, F6, F7, F8c, F9p, F11-RVF** | documented; no code change | — |
 
 **Implementation note (corrected):** F3a is **not** a keystone and gates nothing — it only suppresses an
@@ -540,7 +541,8 @@ on-disk only.)
   = NightlyLearner (hourly vs empty episodes) → ADR-0280 self-inert. Cheapest seam (a): wire file-based PostTask
   hook → `ruflo hooks post-task` (`hook-handler.mjs` / `settings-generator.ts`); no RVF-flock (SQLite carve-out).
   Biggest open decision = PII-redaction-before-write → now **ADR-0289** (Phase 1 metadata-only zero-PII unblock /
-  Phase 2 tiered redaction). Capture-wiring still its own ADR; no implementation.
+  Phase 2 tiered redaction — optional, free-text only). **Capture-wiring fix extracted to ADR-0290**
+  (upstream-ADR-074-guided, PII-decoupled); no implementation.
   Raw findings: `docs/research/f10/01-04`. **F5:** reachability trace — the false banner is on agentic-flow's
   *own* fastmcp surface, not the live ruflo MCP boot (`@sparkleideas/ruflo` = claude-flow v3 never imports
   `AgentDBService`); `AgentDBService` is 100% fork-authored (absent from agentic-flow `origin/main`); delete

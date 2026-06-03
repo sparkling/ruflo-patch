@@ -83,8 +83,10 @@ redaction) — NOT Option D, and not blocked behind Option E.**
 
 **This ADR is `proposed` and authorises no code.** It records the policy and its phasing. The human calls it
 defers: (1) is Phase-1 metadata-only acceptable as the F10 unblock? (2) is Phase-2 redacted-text capture wanted,
-and what is the secrets/PII detector of record? The capture-wiring implementation (ADR-0287 seam a) **depends on
-this policy** and must not write free-text until Phase 2's gates are met.
+and what is the secrets/PII detector of record? **Enabling learning does NOT depend on this policy** — the
+capture-wiring (ADR-0290) proceeds with Phase-1 metadata-only (structured, PII-free) and needs nothing from this
+ADR. This policy gates **only** the optional Phase-2 free-text capture (skill-consolidation): the capture-wiring
+must simply not write free-text until Phase 2's gates are met.
 
 ### Consequences
 
