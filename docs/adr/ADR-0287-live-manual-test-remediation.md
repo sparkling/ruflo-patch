@@ -7,1052 +7,317 @@ depends-on: [ADR-0204, ADR-0267, ADR-0274, ADR-0284, ADR-0177, ADR-0210, ADR-027
 implements: []
 ---
 
-# Live manual-test remediation: MCP cold-start, hook-router CJS/ESM, dead Phase-2 controller activation, and reporter/liveness honesty gaps
+# Live manual-test remediation: hook-router load failure, MCP cold-start, dead controller-activation, and reporter/storage honesty gaps
 
 ## Context and Problem Statement
 
-A manual test of the live ruflo stack in `ruflo-patch` (memory, learning, neural,
-routing, daemon, MCP — via the live npx-cache bin `@sparkleideas/ruflo@latest`,
-patch.408, **not** the acceptance harness) surfaced a cluster of issues. Each was
-then traced to root cause by a four-agent read-only research swarm against the fork
-source (`/Users/henrik/source/forks/*`), the live binary, and the Claude Code MCP
-logs. The research plan and raw evidence are in
-`docs/research/2026-06-02-live-system-findings-research-plan.md`.
+A manual test of the live ruflo stack in `ruflo-patch` (memory, learning, neural, routing,
+daemon, MCP) surfaced a cluster of issues. Each was traced to root cause, then put through
+three further read-only passes — an **upstream cross-check** (ruvnet `origin/main` source +
+ADRs), a **dead-code audit**, and a **live re-evaluation** after the daemon + MCP server were
+restarted onto node 24. This document is the consolidated result; the per-finding status below
+is the *current, validated* truth. (The investigation arc is preserved compactly in the
+Changelog; raw evidence is in `docs/research/2026-06-02-live-system-findings-research-plan.md`.)
 
-The core working surfaces are healthy: memory store/retrieve/semantic-search
-(1,226 entries, mpnet-768, HNSW active, scoring correct at 0.91 for near-exact
-match), SONA/ReasoningBank/Flash-Attention/Training-Pipeline all active, hooks
-firing, `ruflo doctor` 15-pass. The findings below are defects and honesty gaps
-around that healthy core — most are reporters lying about a working system, two are
-genuine load/wiring bugs, and several first-pass conclusions were **corrected** by
-the research (the daemon is in fact running; the "eventual-consistency" write lag
-did not reproduce).
+**The core is healthy.** Memory works: a live `memory_store`→`memory_search` paraphrase test
+("JWT refresh token rotation…" → "token-based login flow…") returns **0.59 cosine** via the
+`archivist (RVF + HNSW)` backend with real mpnet-768 embeddings; the corpus holds 1,226 entries;
+`agentdb_health` reports 41 controllers live from the canonical registry. The findings below are
+defects and **honesty gaps around that healthy core** — most are reporters/wiring, one is a
+keystone load bug, and several first-pass conclusions were **corrected** by the later passes
+(notably: the node-22/sql.js processes were *other projects* — opda/hm — not ruflo-patch; the
+daemon "Not running" and the write-visibility "lag" did not hold up).
 
-Findings (severity in brackets):
-
-- **F1 [high] — No `mcp__ruflo__*` tools registered in the session.** Not a server
-  bug. The MCP server answers `initialize` in **0.14s** and already defers all
-  AgentDB/RVF/archivist bootstrap past the handshake (ADR-0204(a)/ADR-0267,
-  `bin/mcp-server.js:64-75,183-196`). The 30s connection timeout is **100% npm
-  cold-install** of a 1.5GB / 444-package tree (~38s, dominated by ML
-  optionalDependencies: onnxruntime, xenova, agentic-flow, node-llama-cpp, sharp),
-  forced on the **first session after every version bump** by the `@latest` +
-  frequent-patch design. Warm = 0.5s, offline = 0.02s. The `TAR_ENTRY_ERROR` storm
-  is a symptom of npm self-repairing a partially-extracted cache, not the cause.
-- **F2 [medium] — `resources/list` returns `-32601 Method not found`** though the
-  server advertises `capabilities.resources` at `bin/mcp-server.js:192`; no handler
-  exists (`default` → -32601 at `:298`). Advertised-but-no-op (cf. ADR-0210).
-- **F3a [high] — Hook-time router always "Router not available".** `.claude/helpers/
-  router.js` (and `session.js`, `memory.js`) are CommonJS, but project
-  `package.json:39` declares `"type":"module"`, so Node parses them as ESM and the
-  load throws (`module is not defined`); `safeImport`'s bare `catch {}`
-  (`hook-handler.mjs:45`) swallows it → `router = null` → the `[INFO] Router not
-  available` branch (`hook-handler.mjs:145`). Reproduced end-to-end. The template's
-  `createRequire` "fix" (ADR-0235) does **not** help — a `.js` file is ESM under
-  `"type":"module"` regardless of loader.
-- **F3b [medium] — CLI Q-router is untrained and architecturally orphaned.**
-  `.swarm/q-learning-model.json` never existed; epsilon=1.0, `updateCount:0`. The
-  router only learns via explicit `ruflo route feedback`, which nothing in the stack
-  ever calls. The 715 trajectories / 7 neural patterns / ReasoningBank / `learn`
-  worker all feed the **causal/semantic** subsystem, not the Q-table
-  (`q-learning-router.js:41,216`; `route.js:138`). The `learn`-12 vs `map`-3677 run
-  gap is a benign age/cadence artifact (`learn` added under ADR-0277).
-- **F5 [medium] — Dead Phase-2 controller-activation block emits a false alarm.**
-  `agentdb-service.ts:767-908` (`initializePhase2RuVectorPackages`) calls
-  `AgentDB.getController('gnnLearning'|'semanticRouter'|'graphAdapter'|'sonaService')`.
-  `AgentDB.getController` (`AgentDB.ts:341-390`) is a hard `switch` that **throws**
-  on unknown names (and has no `setController`), and these four names belong to the
-  *other* registry (canonical `ControllerRegistry`, Registry B) — and are wrong even
-  there (`gnnLearning`/`sonaService` are private LearningSystem fields, not registry
-  keys `gnnService`/`sonaTrajectory`). All four throw → caught → mislabeled "real
-  error, not module-missing" → `GNN/Router/Graph/Sona=false`. **The functionality is
-  already live** via `LearningSystem`/`GNNService`/Registry B; `graphAdapter` is
-  retired (ADR-0170 Phase D). The `doctor` "32/41, 9 inactive" reads Registry B and
-  is healthy/unrelated (the 9 are config-gated/explicit-enable).
-- **F6 [info, not a bug] — Discrepant pattern/graph stores.** Four independent
-  stores with overlapping vocabulary: intelligence JSON (148 patterns/144 edges,
-  `graph-state.json`), neural JSON (7 patterns/715 trajectories, `neural/*.json`,
-  Sona trajectories in-memory by design), uncreated GNN graph (0/0,
-  `.claude-flow/agentdb/graph.db` absent — blocked by F5 + retired by ADR-0170), and
-  the RVF/HNSW corpus (1,226 vectors, authoritative). No data loss. `.swarm/memory.graph`
-  (1.5MB, 6-Apr) is a stale legacy artifact.
-- **F7 [low, CORRECTED] — Cross-process write-visibility lag did NOT reproduce.**
-  The RVF write path is synchronous-durable (lock → index add → WAL append →
-  `compactWal` flush → unlock, all under one flock; `rvf-backend.ts:542-594`,
-  ADR-0284). Two fresh-process trials returned the new entry on the first search
-  (0.80 / 0.88). The original one-off miss was a cold-start txnid-snapshot timing
-  artifact at the ADR-0274 read-your-own-writes guard boundary, self-healing within
-  one process generation — not designed eventual consistency. The per-call ~31s is
-  mpnet WASM cold-load, not index lag.
-- **F8a [low] — `neural status` prints "0-dim".** Reporter gap: the `hnswStats`
-  object (`rvf-backend.ts:1240-1245`) has no `dimensions` field, so
-  `memory-router.ts:2136` `?? 0` always wins. `memory stats` reads 768 from a
-  different path and is correct.
-- **F8b [medium] — config.json + config.yaml collision.** `doctor.ts:148` warns
-  correctly. Precedence is json-wins-then-stops (`worker-daemon.ts:486`), so when
-  config.json exists the YAML's `OPT-*` tuning (cacheSize/learningBridge,
-  maxAgents:20) is **silently dead**.
-- **F8c/F8d [info, not bugs] — Intended fallbacks.** `agentdb-onnx` missing →
-  transformers.js WASM is the *intended* default embedding path (`executor.ts:1451`,
-  no-API-key discipline); native ONNX is an optional accelerator. Contrastive Trainer
-  "Unavailable" is honest reporting of a class removed from ruvllm 2.5.x
-  (`intelligence.ts:1170-1176`); current stack uses TrainingPipeline/SonaCoordinator
-  (both Active).
-- **F4 [medium, CORRECTED] — Daemon liveness misreported.** The daemon **is**
-  running (live PID 56912, `daemon start --foreground`). `daemon status`/`doctor`
-  report "Not running" because (a) `.claude-flow/daemon.pid` is absent (the
-  foreground start didn't write it), so `bgRunning=false`, and (b) the status CLI's
-  fresh in-process `WorkerDaemon` singleton has `running=false`; worker history is
-  rehydrated from `daemon-state.json` with `nextRun:undefined` (hence all
-  "Next Run = -"). `daemon.ts:664-667`, `worker-daemon.ts:806-822,1181-1189`. The 6
-  disabled workers are disabled in fork DEFAULT_WORKERS (`worker-daemon.ts:166-171`),
-  not by this repo.
+**Terminology:** "upstream" = the ruvnet repos we forked from (`forks/* → origin/main`); upstream
+ADRs are 3-digit (`ADR-100`), ours are 4-digit (`ADR-0287`). We integrate by **hand cherry-pick
+(`-x`)**, never `--theirs`; every intentional divergence gets a row in
+`docs/upstream/INTEGRATION-LEDGER.md` (the existing 364-row ledger).
 
 ## Decision Drivers
 
-* Honesty over green-wash — reporters that claim "not running"/"real error"/"0-dim"
-  for a working system are ADR-0210-class lies and must be fixed or made truthful.
-* Preserve the `npx -y @sparkleideas/ruflo@latest` freshness mandate
-  (`feedback-always-npx-for-ruflo`) — no pinning, no removing npx.
-* Patches land in the forks, not the codemod (`feedback-patches-in-fork`).
-* No fork code change without a separate explicit go-ahead — this ADR records
-  dispositions; it is `proposed`, not implemented.
-* Distinguish genuine bugs (F1-timeout, F2, F3a, F5, F8a, F8b, F4) from
-  intended-behaviour / non-bugs (F6, F7, F8c, F8d, F3b-is-untrained-not-broken).
+* **Honesty over green-wash** — a reporter that says "not running" / "real error" / "0-dim" /
+  "Unavailable" about a working system is an ADR-0210-class lie; fix it or make it truthful.
+* **Adopt upstream's direction, don't reinvent** — where upstream already solves a problem
+  (cli-core split, `resources/list` handler, single-store consolidation), track/adopt it.
+* **No-fallbacks / fail-loud** (`feedback-no-fallbacks`, `feedback-best-effort-must-rethrow-fatals`)
+  — no silent degrade paths; RVF-as-sole-truth + fail-loud is correct, a SQL-blob *fallback* is not.
+* **Patches in forks, not codemod** (`feedback-patches-in-fork`); each inherited-surface fix carries
+  a ledger row + an arch-guard so a future hand cherry-pick can't silently re-introduce the old code.
+* **No execution without a separate go-ahead** — this ADR is `proposed`; it records dispositions,
+  it does not authorise the fork patches.
 
 ## Considered Options
 
-* **Option A — Record dispositions, triage by severity, fix nothing yet** — one
-  consolidated ADR that classifies each finding (bug / intended / non-bug) with a
-  chosen remedy per finding, implemented later under separate go-aheads.
-* **Option B — Fix everything in the forks immediately** — bundle all remedies into
-  one patch series now.
-* **Option C — Split into N single-finding ADRs** — one ADR per finding.
-* **Option D — Do nothing** — the working core is fine; treat all as cosmetic.
+* **A — Record validated dispositions in one ADR, implement later under separate go-aheads.**
+* **B — Fix everything in the forks now** (violates no-execute-without-go-ahead + patches-in-fork batching).
+* **C — One ADR per finding** (fragments the shared two-registry / multi-substrate / upstream-intent context).
+* **D — Do nothing** (ignores the keystone F3a, which fails every turn).
 
 ## Decision Outcome
 
-Chosen option: **Option A**, because the findings came from one investigation sweep
-and are thematically related (live-system honesty/connection/wiring), so a single
-record keeps the evidence and dispositions together; while the no-execute-without-
-go-ahead and patches-in-fork rules forbid Option B's immediate bulk change. Option C
-fragments shared context (the two-registry story, the four-store map) across records;
-Option D ignores two high-severity bugs (F1, F3a) that disable real surfaces.
+**Chosen: Option A.** The findings came from one investigation sweep and share context; a single
+record keeps the evidence, the upstream-alignment, and the priority order together. Each finding
+below carries its **validated root cause, current status, disposition, and provenance/merge-risk**.
 
-Per-finding disposition:
+### Findings
 
-| # | Class | Disposition | Target |
-|---|-------|-------------|--------|
-| F1 | bug (env, not code) | (1) Set `MCP_TIMEOUT=60000` in Claude Code's **launch environment** (NOT `.mcp.json` `env` — Claude reads its own `process.env`). (2) Warm the npx cache as a post-publish release step so cold sessions are rare. (3) Longer-term: gate the ML optionalDependencies — **separate ADR** (cross-fork packaging risk). | launcher env + release pipeline |
-| F2 | bug (advertised no-op) | Remove the unimplemented `resources` capability advertisement at `bin/mcp-server.js:192` (or implement `resources/list` if a catalog is genuinely intended — not currently). | forks/ruflo cli |
-| F3a | bug (CJS/ESM) | Rename `router.js`/`session.js`/`memory.js` → `.cjs` in deployed `.claude/helpers/` **and** in `helpers-generator.js`; stop swallowing the load error in `safeImport`/`safeRequire` (log to stderr). | forks/ruflo cli init template |
-| F3b | intended-but-untrained + orphaned | Decision point: **wire `routing-outcomes.json` → `QLearningRouter.update()`** (quality→reward map + replay-dedup) so it learns from data that already exists — preferred under the no-dormant-flags discipline; OR relabel `ruflo route` output as "untrained (epsilon=1.0)". Pick at implementation time. | forks/ruflo cli |
-| F5 | bug (dead code + false alarm) | **Delete** `initializePhase2RuVectorPackages` (`agentdb-service.ts:767-908`) — Registry B is the single registration authority; GNN/Router/Sona already live; `graphAdapter` retired (ADR-0170). Do not resurrect graphAdapter. Relabel the `neural status` GNN "0/0" row as retired. | forks/agentic-flow |
-| F6 | not a bug | No data fix. Optional housekeeping: remove stale `.swarm/memory.graph`; relabel GNN line (covered by F5). | — |
-| F7 | not a bug (corrected) | No code change; write path is synchronous-durable. Optional low-priority hardening: a fresh reader re-checks txnid once after an empty top-k. Defer (speculative; did not reproduce). | — |
-| F8a | bug (reporter) | One-line: add `dimensions: this.config.dimensions` to `hnswStats` (`rvf-backend.ts:1241`). | forks/ruflo memory |
-| F8b | bug (latent) | Pick config.yaml **or** config.json as canonical and archive the other (per doctor's fix hint) so the `OPT-*` tuning stops being silently inert. | repo config + doctor hint |
-| F8c/F8d | not bugs | No action. Optional: rename the contrastive-trainer reporter row to the current ruvllm training API. | — |
-| F4 | bug (liveness detection) | Make `daemon status`/`doctor` detect a live daemon when `daemon.pid` is missing — either have `daemon start --foreground` write/maintain the PID file, or fall back to `daemon-state.json.running` gated by a fresh `lastTick` heartbeat. | forks/ruflo cli |
+**F3a [HIGH — keystone] — Hook-time router fails to load ("Router not available" every turn).**
+`.claude/helpers/{router,session,memory}.js` are CommonJS, but the project `package.json` declares
+`"type":"module"`, so Node parses them as ESM and the load throws (`module is not defined`); the
+hook-handler's loader swallows it → `router = null` → the `[INFO] Router not available` branch.
+Reproduced in a fresh `init` sandbox. **The load-bearing fix is renaming the helper *targets* to
+`.cjs`** — neither `createRequire` nor a `.cjs` *dispatcher* helps, because Node resolves
+`router.js` by the package's `type:module` regardless of the requiring module's scope (upstream's
+own generator is therefore *also* bugged here; only the fork-root dogfood went fully `.cjs`).
+*Status:* **still firing live** this session even with MCP connected (it's independent of MCP).
+*Disposition:* rename `router/session/memory.js → .cjs` in the generator (`helpers-generator.ts`
+~:1212-1221) + `executor.ts` + adopt upstream's `hook-handler.cjs` dispatcher; re-dogfood this
+repo's `.claude/`; **add an execution smoke** (run the route hook in a `type:module` sandbox, assert
+≠ "Router not available") — its *absence* is why this shipped through every green release. Rewrite
+the `init-helpers-parity.test.mjs` assertion that wrongly blesses `createRequire` as the fix.
+*Provenance:* inherited generator, fork ahead on `.cjs`; merge risk moderate (collides with
+upstream's in-flight `.mjs→.cjs` dispatcher migration — converge on it).
+
+**F5 [MED] — Dead Phase-2 controller-activation block emits a false "real error" banner.**
+`initializePhase2RuVectorPackages` (`agentic-flow/.../services/agentdb-service.ts:767-908` + call
+site `:457`) calls `AgentDB.getController('gnnLearning'|'semanticRouter'|'graphAdapter'|'sonaService')`.
+`AgentDB.getController` (`AgentDB.ts:341-390`) hard-`switch`es and **throws** on unknown names; those
+four aren't cases (and are the *wrong* keys — the canonical Registry B uses `gnnService`/`sonaTrajectory`/
+`semanticRouter`/`graphAdapter`, confirmed live in `agentdb_health`'s 41 controllers). It also calls
+`this.db.setController(...)`, which exists in **neither** fork nor upstream — but that line is
+*unreachable* (the `getController` throw fires first, so it fails as a throw, not a TypeError). The
+throw string isn't matched by `isModuleNotInstalledError`, so every boot logs a false
+`"… init failed (real error, not module-missing)"`. The functionality is already live via
+`LearningSystem`/`GNNService`/Registry B. *Disposition:* **DELETE** the block + call site (leave the
+valid Phase-1/4 inits). Justify on dead-code grounds **only** — *not* "graphAdapter retired": ADR-0170
+is superseded by ADR-0177, which *reverses* that retirement (still unimplemented in code). ADR-0069
+§F1 explicitly excludes Phase-2/4 controllers from `getController`, so the block's own `// ADR-0069 F1`
+comment misapplies it. *Provenance:* fork-only (intro `2f372931`, absent from `origin/main`); **zero
+merge risk.**
+
+**F2 [MED] — `resources/list` returns `-32601` though the server advertises `resources`.**
+Both bins advertise `capabilities.resources` with no handler → falls to `-32601`. The **live** path is
+`bin/cli.js:206` (advert) / `:309` (`-32601`), **not** `bin/mcp-server.js:192` (reachable only via the
+`ruflo-mcp` bin — the ADR-0267 dead-code trap); both must be patched. *Disposition:* **ADD** upstream's
+empty `{ resources: [] }` handler to both bins (upstream implements exactly that in its *class*-servers,
+`shared/src/mcp/server.ts:609`) — converges with upstream and keeps the advert truthful; do **not** drop
+the advert (would diverge from upstream's universal advert → standing merge tax). Ledger row + arch-guard
+that the *handler exists*. *Provenance:* inherited verbatim; negligible merge risk.
+
+**F8a [LOW] — embedding dimension misreported (two reporters).** Memory embeddings are real (the 0.59
+match proves mpnet-768), but two reporters lie about the dim: the CLI `neural status` prints "0-dim"
+(`hnswStats` literal `rvf-backend.ts:1240-1245` omits `dimensions`; consumer `memory-router.ts:2136`
+`?? 0`), and the MCP `neural_status` prints `hash-based / 384 / _realEmbeddings:false` for a path that is
+actually real. *Disposition:* plumb the real dim into **both** reporters — add `dimensions:
+this.config.dimensions` to the `hnswStats` literal **and** the `HNSWStats` type (`memory/src/types.ts:286-302`)
+**and** the native `agentdb-backend.ts:690` literal; correct the MCP `neural_status` `_realEmbeddings`/dim
+fields. *Provenance:* fork-only consumers; near-zero merge risk.
+
+**F8e [LOW] — spinner non-TTY frame leak.** `cli-core/src/output.ts:595-632` (`Spinner.start()`/`render()`/
+`stop()`) writes `\r…frame` to stdout with no `isTTY` guard → on non-TTY stdout each 100 ms frame appends a
+line (the "Checking neural systems…" spam). *Disposition:* `isTTY` early-return in `start()` + guard
+`render()`/`stop()` (`ProgressBar.render()` has the same issue — same fix class). Guard on
+`process.stdout.isTTY` directly (the `:103` check is inside a private method). *Provenance:* inherited
+byte-identical; low merge risk.
+
+**F8b [LOW] — doctor inverts the config-canonical pick.** ADR-0069 chose `config.json` canonical (YAML is a
+legacy read-fallback; daemon precedence is json-wins and **must not change**). `doctor.ts` is stale and
+*inverts* it (`:104-105` comment + `:144-157` recommend "keep YAML, archive JSON"; it *does* check
+`config.json` at `:107` — an earlier "doesn't check json" claim was wrong; the bug is yaml-first precedence).
+*Disposition:* reconcile `doctor.ts` to JSON-canonical; verify "drop `config.yaml`" separately (didn't
+confirm nothing emits/reads it). *Provenance:* inherited; low merge risk.
+
+**F3b [LOW] — `ruflo route` default box reads cold/meaningless.** The CLI Q-router shares
+`.swarm/q-learning-model.json` with `SonaOptimizer.processTrajectoryOutcome` (live-trained via the MCP hook
+path, `hooks-tools.ts:3037`), so it is **not** orphaned — just cold here (no trajectory traffic; F10/F3a).
+The default `route <task>` box prints `Confidence 12.5% / Q 0.000 / Exploration` with no cold-state signal
+(`route stats` already shows `updateCount`/`qTableSize`). *Disposition:* **relabel the default box** as
+untrained when `updateCount===0` (from live `getStats()`). Do **not** wire routing-outcomes→Q-table (a
+redundant associative learner conflicts with the ADR-0280 de-confounded substrate; ADR-0277 keeps SONA's
+associative loop as additive) and do **not** retire it (inherited). *Provenance:* inherited; low merge risk.
+
+**R2 [MED, latent] — silent row/vector split in `AgentDBBackend.storeInAgentDB`.** `agentdb-backend.ts:777-848`
+does the SQLite INSERT and HNSW vector-add in separate try/catch blocks with a swallowing `catch{}` (`:832`)
+→ can strand a row-without-vector. **Latent today** — `storage-factory`→`RvfBackend` keeps `AgentDBBackend`
+off the live user-memory path (ADR-0095); it only bites the dead-Hybrid path + the separate
+`agentdb-memory.rvf` process. *Disposition:* a **discriminated** re-throw of the data-integrity subset
+(`err.name`-matched, per `feedback-best-effort-must-rethrow-fatals` + ADR-0082/0085), **not** a blanket throw;
+ledger row + arch test (forced write-failure ⇒ throws). Sequence **before** any T1 wiring that puts
+`AgentDBBackend` back on a hot path. *Provenance:* inherited verbatim (fork added only a comment) → merge-taxed.
+
+**T1 [MED] — auto-memory hook's `agentdb-memory.rvf` silo + a dead drain-bridge.** The SessionStart hook
+(`auto-memory-hook.mjs:247-255`) writes a **separate** `.swarm/agentdb-memory.rvf` in its own process,
+**invisible to `memory_search`** unless the `memory-bridge` skill runs. Worse, its in-process "drain into
+main memory" path (`:319-341`) is **dead code** — it imports the `memory-initializer` that ADR-0086 deleted
+(`existsSync` permanently false). ADR-0083 already mandates converging silos through the single write path.
+*Disposition:* **WIRE** the drain through `routeMemoryOp('store')` (replace the dead import); retire
+`agentdb-memory.rvf` as a durable store — *not* "keep as tenant" (that ratifies a silo ADR-0083 set out to
+remove and doubles the `flock` surface, ADR-0032/0284). Closes an ADR-0210 lie. *Provenance:* hook inherited,
+RVF-target + dead-bridge fork-only; low merge risk; ledger the hook divergence.
+
+**T2 [triage] — `.swarm/action-values.json` (fork-only RL sidecar).** Fully live (writer
+`memory-router.ts:2586` after `nightlyLearner.run()`; consumers blend β/γ uplift, on by default; ADR-0280/0279/0277).
+*Disposition:* **KEEP**; fold into upstream's `RvfLearningStore` (ADR-057 P6) **only when** that store gets a
+live caller and meets the cross-process read-latency budget (today it has *zero* callers — folding now would
+regress a working feature). *Provenance:* fork-only; no merge risk.
+
+**F1 [resolved-this-session / durable fix is its own ADR] — MCP cold-start can exceed Claude Code's 30s
+connect timeout.** The server answers `initialize` in 0.14s (init deferred past the handshake, ADR-0204/0267);
+the timeout is **100% npm cold-install** of a ~1.5GB / 444-package tree (~38s) under `npx @latest`, on the
+first session after a version bump. *Status:* **surface UP this session** (tools connect; memory works).
+*Disposition:* interim — `MCP_TIMEOUT=60000` in Claude Code's **launch env** (not `.mcp.json`; Claude
+**hard-caps it at ~60s**, so it's a ceiling, not a tunable) + warm the npx cache post-publish. **Durable fix =
+shrink the install tree** (revert the fork's `agentdb` optional→required amplification as the low-risk first
+step; adopt upstream ADR-100 cli-core split + ADR-094 xenova→optional) — its **own ADR** (cross-fork packaging
+risk). Note upstream's cold-start mechanisms exist (cli-core ~1.5s lite path; local `.cjs` not npx; RVF
+replaced sql.js) but its primary one — *not* using `npx@latest` — is overridden by
+`feedback-always-npx-for-ruflo`, and cli-core's lite MCP uses the JSON backend (not RVF), so we shrink the
+full cli rather than route through cli-core. Do not resurrect ADR-0104 §4a's direct-path. *Provenance:* bloat
+inherited + fork-amplified.
+
+**F4 [downgraded → LOW] — daemon liveness reporting.** Re-evaluated live: with ruflo-patch's *own* daemon
+running (it now writes `daemon.pid`), `doctor` correctly reports "✓ Running (PID 49267)". The earlier "Not
+running" was largely that ruflo-patch had **no daemon of its own** (the node-22 one was opda/hm — see
+Changelog); `start()` does write the PID. Residual: `doctor.ts:166` uses a **cwd-relative** PID path →
+misreports only when run from a subdir. *Disposition:* anchor that path to `findProjectRoot()` (ADR-0137);
+keep PID-gating, don't trust `daemon-state.json.running` (ADR-0207). *Provenance:* inherited; low.
+
+**F8d [LOW] — `neural status` reports ContrastiveTrainer "Unavailable" (3 layers).** The comment "removed from
+ruvllm 2.5.x" is **false** (the class ships in published `@ruvector/ruvllm@2.5.5`). Real gaps: (1) the
+*consumed pin* `2.5.5-patch.201` is **not on Verdaccio**; (2) the reporter reads `globalThis.__claudeFlowSonaStats`,
+which **nothing sets**; (3) the false comment. *Disposition:* republish ruvllm at the pinned version + wire the
+stats global + delete the comment; a rebuild alone won't fix it. *Provenance:* fork-only pipeline.
+
+**F10 [HIGH-impact, gated] — the learning/adaptation layer is frozen.** SONA last adapted **2026-04-04**
+(`neural/stats.json` `lastAdaptation`; all 7 `neural/patterns.json` share that timestamp); the `learn` worker
+finds 0 episodes; every AgentDB learning table (`episodes`/`learning_experiences`/`reasoning_patterns`/`skills`)
+= 0; RL sidecars never written. Only the **ADR knowledge graph** is populated (`causal_edges`=910,
+`adr_node_ids`=215, `hierarchical_memory`=292 — written by `adr-index`, not learning). *Root cause:* the
+AgentDB/SONA learning **input** path (episode/trajectory capture) flows through the MCP/hook surface, which is
+gated by **F1 + F3a**; the file-based intelligence-graph JSON stays warm, but the learning substrate is starved.
+*Status:* MCP being up this session is **necessary-not-sufficient** — F3a is still down, so no trajectory capture
+flows. *Disposition:* **gated on F3a** (+ F1); after fixing, confirm episodes accrue and `lastAdaptation`
+advances. The stores are not broken — they are **starved**.
+
+**Non-bugs (documented, no change):** **F6** — the multiple pattern/graph stores are independent by design
+(intelligence JSON 148/144, neural JSON 7/715, GNN graph uncreated, RVF 1,226), no data loss. **F7** — the
+cross-process write-visibility "lag" did not reproduce; the RVF write path is synchronous-durable (ADR-0284).
+**F8c** — `agentdb-onnx` missing → transformers.js WASM is the *intended* default (ADR-0080/0094). **T3/T4** —
+"verify the sql.js read path / `.meta` is load-bearing" is **moot for ruflo-patch**: its MCP + daemon run
+node-24/native; the sql.js processes were opda/hm. RVF read corruption already fails loud (δ-strict, ADR-0164).
+Keep only a generic corruption-throws acceptance assertion as hygiene. **F9p** (prune `.claude/memory.db` from
+discovery arrays) — **withdrawn**: the arrays are inherited byte-identical, skip-safe, `.swarm`-first; pruning
+is gratuitous upstream divergence for zero gain.
+
+**F11 — file organisation vs upstream intent (assessment, mostly aligned).** Our layout is largely
+upstream-*designed*, not sprawl: the `.swarm`/`.claude-flow`/`.hive-mind` split, the RL JSON sidecars, and RVF
+itself are all upstream (RuVector ADR-029/032, agentdb ADR-002/003, claude-flow ADR-057). We are *ahead* on RVF
+(ship it live; upstream still defaults `hybrid`). Genuinely fork-specific: `action-values.json` (T2), the
+separate `agentdb-memory.rvf` (T1), `config.yaml`, 768-dim mpnet (deliberate, ADR-0068/0069). Upstream's
+`RvfLearningStore` is the intended sidecar-consolidation bridge — implement-ahead in both fork and upstream
+(no live caller); **track it, don't pre-empt**. Runtime entry-consolidation (`MemoryConsolidator`, ADR-125) is
+**live in our fork** (consolidate worker + `agentdb_consolidate`), just starved (F10). Our RVF-as-sole-truth
+(empty SQLite `*_embeddings`) is the *correct* choice under no-fallbacks + ADR-0286 fail-loud — **not** a gap to
+"fix" with a SQL-blob fallback.
+
+### Prioritised backlog (validated; each = a fork patch + wired acceptance check, on go-ahead)
+
+| Tier | Item | Action | Risk |
+|---|---|---|---|
+| 1 keystone | **F3a** | rename helpers → `.cjs` in the generator + re-dogfood + **execution smoke**; rewrite the parity test | moderate (converge w/ upstream `.mjs→.cjs`) |
+| 2 code lies | **F5** | delete the Phase-2 block + call site | none (fork-only) |
+| 2 code lies | **F2** | add `{resources:[]}` handler to **both** bins + ledger + arch-guard | negligible |
+| 3 reporters | **F8a** | plumb real dim into CLI + MCP reporters (+ type + native literal) | ~none |
+| 3 reporters | **F8e** | `isTTY` guard on Spinner/ProgressBar | low |
+| 3 reporters | **F8b** | reconcile `doctor.ts` to JSON-canonical (verify drop-yaml separately) | low |
+| 3 reporters | **F3b** | relabel the default `route` box as untrained from live stats | low |
+| 4 storage | **T1** | wire auto-memory drain via `routeMemoryOp`; retire `agentdb-memory.rvf` | low |
+| 4 storage | **R2** | discriminated re-throw (before any T1 hot-path wiring) + ledger + arch test | merge-taxed |
+| 4 storage | **F4** | anchor `doctor.ts:166` PID path to project root | low |
+| 5 pipeline | **F8d** | republish ruvllm @ pin + wire `__claudeFlowSonaStats` + fix comment | pipeline |
+| separate ADR | **F1 durable** | shrink the install tree (revert agentdb amplification; adopt ADR-100/094) | cross-fork |
+| gated | **F10** | re-verify learning resumes after F3a + F1 | — |
+| keep / none | **T2, T3, T4, F6, F7, F8c, F9p, F11-RVF** | documented; no code change | — |
+
+**Implementation note:** F3a is the only finding actively breaking on every turn, and it gates F10 — do it
+first. F5 + F2 are self-contained honesty fixes. Everything in tier 3+ is low-risk cleanup.
 
 ### Consequences
 
-* Good, because the two high-severity surfaces become reliable: MCP tools register
-  on cold sessions (F1) and hook-time routing actually loads (F3a).
-* Good, because deleting the dead Phase-2 block (F5) removes a recurring false "real
-  error" alarm and re-establishes a single controller-registration authority.
-* Good, because the reporter fixes (F8a, F4) stop `neural status`/`doctor` from
-  lying about a working system — restoring trust in the diagnostics.
-* Good, because the corrections (F4 daemon-is-running, F7 no-lag) prevent chasing
-  phantom data-integrity bugs.
-* Neutral, because F6/F7/F8c/F8d are confirmed non-bugs — documented, not changed.
-* Bad, because F1's durable cure (shrinking the 1.5GB cold-install tree) is deferred
-  to a separate ADR with cross-fork packaging risk; the interim is an env var +
-  release-time cache warming, which only reduces (not eliminates) cold-session
-  timeouts.
-* Bad, because F3b needs a genuine product decision (wire vs relabel) that this ADR
-  defers to implementation time.
+* Good — fixing F3a restores hook-time routing (failing every turn) and unblocks F10's learning input.
+* Good — F5 removes a recurring false boot alarm and keeps Registry B the single controller authority.
+* Good — the reporter fixes (F8a×2, F4, F8b) stop the diagnostics lying about a working system.
+* Good — the validation/live-re-eval caught real errors *before* implementation (F2 drop→add, the F1 60s
+  ceiling, T3/T4 cross-project, F4 not-symptomatic) and prevented a bad delete (`bin/mcp-server.js` is gated-KEEP).
+* Neutral — F6/F7/F8c/T3/T4/F9p/F11-RVF are confirmed non-bugs / correct-as-is, documented not changed.
+* Bad — F1's durable cure (tree-shrink) is deferred to its own ADR (cross-fork packaging risk); the interim
+  only reduces cold-session frequency and cannot beat the 60s `MCP_TIMEOUT` cap on a >60s cold install.
 
 ### Confirmation
 
-* **F1**: after setting `MCP_TIMEOUT` + cache-warming, a first-session-after-release
-  cold start connects with `hasTools:true` (Claude Code MCP log shows
-  `Successfully connected` under the limit). Add a release-pipeline step asserting a
-  post-publish `npx … --version` warm-up ran.
-* **F2/F5/F8a/F4**: targeted acceptance checks wired into `test-acceptance*.sh` +
-  `.github/workflows/` (per `feedback-always-wire-tests-into-cicd`): F2 = `resources/list`
-  returns a result (or capability absent); F5 = no "real error, not module-missing"
-  in MCP boot log + `Phase 2 complete` shows the live services without the throw;
-  F8a = `neural status` shows `768-dim`; F4 = `daemon status` reports running when a
-  live `daemon start` PID exists.
-* **F3a**: `echo '{"prompt":"…"}' | node .claude/helpers/hook-handler.mjs route`
-  emits `[INFO] Routing task: …`, not "Router not available".
-* **F3b**: if wired, `ruflo route stats` shows `updateCount > 0` / `epsilon < 1`
-  after outcomes replay.
+Each fix lands with an acceptance check wired into `test-acceptance*.sh` + `.github/workflows/` (per
+`feedback-always-wire-tests-into-cicd`):
+* **F3a** — run the route hook in a `type:module` sandbox; assert output ≠ "Router not available" (the
+  previously-missing execution test).
+* **F5** — MCP boot log shows no `"real error, not module-missing"`; the live services init via Registry B.
+* **F2** — `resources/list` returns `{ resources: [] }` (no `-32601`); arch-guard asserts the handler exists.
+* **F8a** — `neural status` (CLI + MCP) reports 768-dim; **F4** — `doctor` reports Running including from a
+  subdirectory; **F8e** — non-TTY output has no `\r`-frame spam.
+* **F10** — after F3a + F1, episodes/trajectories accrue and `lastAdaptation` advances.
+* Inherited-surface fixes (F2, R2, F4, F8b, F8e) each get an INTEGRATION-LEDGER row.
 
 ## More Information
 
-* Research plan & evidence: `docs/research/2026-06-02-live-system-findings-research-plan.md`.
-* Builds on: ADR-0204 (MCP server consolidation / deferred archivist bootstrap),
-  ADR-0267 (RVF lock release while MCP running / deferred RVF warmup), ADR-0274 (RVF
-  read/write handle split, x-process freshness guard), ADR-0284 (single-flock write
-  collapse), ADR-0170 (graphAdapter retirement, Phase D), ADR-0210 (advertised-surface
-  honesty), ADR-0277 (autonomous causal learning / `learn` worker).
-* Related lore: `feedback-always-npx-for-ruflo`, `feedback-patches-in-fork`,
-  `feedback-no-dormant-off-by-default-flags`, `project-two-hook-paths-cli-vs-handler`,
-  `project-mcp-daemon-runs-sqljs-fallback`, `feedback-trace-bin-entry-before-patching`.
-* Key file:line anchors are inline in each finding above; full traces in the four
-  research-agent reports (session 2026-06-02).
+* **Research plan & raw evidence:** `docs/research/2026-06-02-live-system-findings-research-plan.md`.
+* **Builds on (intra-corpus):** ADR-0204/0267 (deferred MCP init), ADR-0274/0284/0285 (RVF locks/durability/purge),
+  ADR-0177 (RVF vision; supersedes ADR-0170 graphAdapter retirement), ADR-0210 (advertised-surface honesty),
+  ADR-0069 (config-canonical + Phase-2/4 exclusion), ADR-0207 (daemon liveness = PID-gated), ADR-0280/0277/0279
+  (causal action-value substrate), ADR-0235 (init-helper seam), ADR-0112/0180 (independent-stores), ADR-0095
+  (storage-factory), ADR-0166 (ReasoningBank-in-SQLite), ADR-0286 (RVF fail-loud), ADR-0068/0073/0086 (embedding
+  dim / RVF / bsqlite placement).
+* **Upstream (ruvnet, prose-reference only):** ADR-100 (cli-core lazy split), ADR-094 (xenova→optional), ADR-057
+  (RVF native backend), RuVector ADR-029 (single canonical RVF format) / ADR-032 (flock lock model, RVF=source-of-truth),
+  agentdb ADR-002/003 (RuVector>RVF>HNSWLib), ADR-073 (SOTA roadmap), ADR-006/ADR-125 (unified MemoryService / MemoryConsolidator).
 
-## Amendments
-
-### 2026-06-02 — Upstream/ADR cross-check (4-agent comparison swarm)
-
-A second read-only swarm compared every finding against three axes — fresh ruvnet
-upstream source (`git show origin/main`), upstream ADRs, and this repo's ADR corpus —
-to test each disposition (CONFIRM / REFINE / CHALLENGE) and flag merge risk. Net:
-the working core is sound and most fixes are low/no merge risk, but **six dispositions
-had inaccurate targets or rationales that are corrected below.** No disposition was
-fully reversed except F3b's *preferred remedy* (wire → relabel) and F8b (bug →
-already-solved-by-ADR-0069, narrowed to a stale reporter).
-
-| # | Verdict | Provenance | Merge risk |
-|---|---------|------------|------------|
-| F1 | REFINE | bloat **inherited**; fork *amplified* it | low (track upstream ADR-100) |
-| F2 | REFINE | **inherited** (both entry files) | negligible |
-| F3a | REFINE | fork-introduced **and already superseded** upstream | low (converges) |
-| F3b | CONFIRM diag / **flip remedy** | inherited (implement-ahead) | wire=high, relabel=none |
-| F5 | REFINE | block **fork-only** (`2f372931`); contract inherited | **none** — DELETE safe |
-| F6 | CONFIRM | mixed; no cross-store contract anywhere | none |
-| F4 | REFINE | **inherited** (identical upstream) | none (additive) |
-| F7 | CONFIRM | **fork-invented** subsystem | none |
-| F8a | CONFIRM | field inherited-absent, consumer fork-new | minimal (additive) |
-| F8b | **CHALLENGE** | precedence inherited & **intended** (ADR-0069) | do NOT touch precedence |
-| F8c | CONFIRM | aligned (ADR-0080/0094) | none |
-| F8d | REFINE | outcome right, **cause wrong** | low |
-
-Corrections (supersede the body where they conflict):
-
-- **F2 — wrong file target.** The live `ruflo mcp start` path is `bin/cli.js` (advert
-  `:206`, `-32601` at `:309`), **not** `bin/mcp-server.js:192` (reachable only via the
-  `ruflo-mcp` bin — the ADR-0267 dead-code trap). Both files carry the bug
-  byte-identically from upstream; the fix must patch **`cli.js` primarily**, or the
-  live `-32601` survives. Disposition intent (drop the unbacked `resources` advert)
-  is ADR-0210-aligned and unchanged.
-- **F1 — adopt upstream's durable fix.** The 1.5GB tree is **inherited** from ruvnet
-  (xenova/better-sqlite3/node-llama-cpp are required upstream deps; onnxruntime/sharp
-  transitive). Upstream already has the accepted durable fix: **upstream ADR-100**
-  (cli-core lazy-load split — same 30s-timeout/zero-tools bug) + **upstream ADR-094**
-  (xenova → optionalDependencies). The deferred "shrink the tree" ADR should
-  adopt/track ADR-100/094, not chart a parallel course. Also: the fork **amplified**
-  the bloat by promoting `agentdb` optional→required in `cli/package.json` vs upstream
-  — a fork-introduced install-size regression a shrink ADR can partly reverse.
-- **F3a — re-scope target + fix a mis-citation.** The live defect in *this repo* is a
-  **stale dogfood `.mjs` snapshot** (`hook-handler.mjs` from patch.211, commit
-  `e1d033d`) plus the published template's residual `.js` helpers (which break only
-  under a `type:module` root). The fork *root* already ships all-`.cjs` helpers — the
-  exact fix shape. Durable fix: mirror the fork-root's `.cjs` set into the template
-  generator + re-dogfood this repo's `.claude/`; verify against a fresh `init`
-  sandbox, not this repo's stale `.claude/`. **Correction:** the body's claim that
-  "ADR-0235 added a `createRequire` loader that still fails under type:module" is
-  inaccurate — ADR-0235 has no `createRequire` change; that loader is a different
-  surface (auto-memory resolver).
-- **F3b — flip the preferred remedy to relabel/retire.** The body leaned "prefer wiring
-  `routing-outcomes.json` → `QLearningRouter.update()` (no-dormant-flags)". The
-  comparison shows wiring would create a **redundant associative learner competing
-  with the ADR-0280 action-value/causal substrate** (`.swarm/action-values.json`) —
-  re-introducing the duplication ADR-0277/0280 consolidated away (high merge tax +
-  architectural conflict). Correct disposition: **relabel `ruflo route` as
-  untrained/experimental, or retire it (ADR-0210 honesty)**. The `no-dormant-flags`
-  rule cannot be satisfied — there is no self-inert-until-data path for an untrained
-  Q-table. (The one would-be trainer, `SonaOptimizer.recordTrajectory`, is itself
-  uncalled in the wired hook path.)
-- **F5 — DELETE is safe; drop the stale rationale.** The block is **fork-only** (intro
-  `2f372931`, absent from `agentic-flow origin/main`), calls a `setController` that
-  exists in *neither* fork nor upstream `AgentDB` (so it `TypeError`s in addition to
-  the `getController` throw), uses wrong registry keys, and upstream shows zero intent
-  to maintain it (incl. the live ADR-073 SOTA roadmap) — **zero merge risk**.
-  **Correction:** drop "graphAdapter retired (ADR-0170 Phase D) — do not resurrect" as
-  the justification. **ADR-0170 is superseded by ADR-0177 (accepted), which *reverses*
-  the retirement** and prescribes re-enabling graph mode (still unimplemented in code:
-  `agentdb/src/core/AgentDB.ts:154-158` throws on `enableGraph`). Justify the delete on
-  dead-code grounds only; graphAdapter's substrate fate is an open ADR-0177 Phase 1
-  item, orthogonal to this delete. Also: ADR-0069 §F1 explicitly excludes Phase-2/4
-  controllers from `getController`, so the block's own `// ADR-0069 F1` comment
-  misapplies that ADR — further support for DELETE.
-- **F4 — prefer the PID-centric fix; correct the worker framing.** The liveness gap is
-  **inherited** (`daemon.ts`/`doctor.ts` byte-identical to upstream; hardcoded relative
-  `.claude-flow/daemon.pid`). Prefer **ensuring the PID write + anchoring `doctor.ts`'s
-  path to project-root (ADR-0137)** over trusting `daemon-state.json.running` — the
-  latter contradicts **ADR-0207**, which deliberately made the PID file the liveness
-  arbiter and the state file untrusted-when-stale. **Correction:** drop "6 workers
-  disabled in fork" — the disabled set is upstream-baseline (predict/document) + 4
-  intentional fork additions (ADR-0277 added learn/preload enabled); not a regression.
-- **F8b — CHALLENGE: already solved, narrow to a reporter bug.** json-wins precedence
-  is **inherited and intended**: **ADR-0069 already chose `config.json` canonical**;
-  YAML is a deliberate legacy read-fallback, and a fresh `init` emits no YAML (no
-  collision in practice). Do **not** touch the precedence or remove the YAML fallback
-  (upstream-aligned + ADR-0069 legacy-project guarantee). The genuine, narrow defect is
-  a **stale `doctor.ts`**: its comment (`:105`) and config-detection list (`:113-115`)
-  still reference `config.yaml` only and don't check `config.json` — out of sync with
-  ADR-0069. Fix only that.
-- **F8d — outcome right, stated cause wrong.** "Unavailable" is honest (the consumer
-  genuinely can't construct it), but **ContrastiveTrainer was NOT removed from ruvllm
-  2.5.x** — the ruvector fork source still exports it (`ruvllm/src/contrastive.ts:214`,
-  re-exported in `index.ts:84`). The real cause is an **incomplete dist build**:
-  `ruvllm/dist/cjs/` is missing `contrastive.js`, `training.js`, `models.js`,
-  `intelligence.js`, `benchmarks.js`. This is a separate **latent build-completeness
-  gap** (worth its own look) — and a rebuild that ships `contrastive.js` would flip the
-  report to Active and make the stale "removed in 2.5.x" comment a lie.
-
-Frontmatter `depends-on` updated accordingly: ADR-0170 (superseded) replaced by
-ADR-0177; added ADR-0069, ADR-0207, ADR-0280, ADR-0235, ADR-0112, ADR-0180, ADR-0080,
-ADR-0094. Upstream ADR-100 (cli-core lazy split) and upstream ADR-094 (xenova→optional)
-are ruvnet-corpus, referenced in prose only (not eligible for intra-corpus `depends-on`).
-
-### 2026-06-03 — Dead-code triage (initial, from the cross-check)
-
-The cross-check surfaced removal candidates. These are triaged under the
-`feedback-no-consumer-is-not-stub` discipline — **WIRE / KEEP-AS-CAPABILITY /
-DELETE** — where DELETE is reserved for ADR-0210-class *lies* (advertised surfaces
-that no-op) or fork-only broken code, NOT for honest unadvertised "implement-ahead"
-surfaces. A scoped read-only audit swarm (launched 2026-06-03) is expanding this into
-an evidence-backed list; the table below is the seed.
-
-| Candidate | Location | Verdict | Rationale | Merge risk |
-|---|---|---|---|---|
-| F5 Phase-2 controller-activation block | `agentic-flow/.../agentdb-service.ts:767-908` | **DELETE** | Fork-only (`2f372931`); calls nonexistent `setController` (TypeError); wrong registry keys; functionality already live via Registry B; emits a false "real error" boot banner → ADR-0210 lie | None — upstream has no such path |
-| CLI Q-router surface | `q-learning-router.ts`, orphaned `SonaOptimizer.recordTrajectory` (`sona-optimizer.ts:285,372`) | **DECIDE** (relabel/retire, not silent delete) | Orphaned + untrained, but inherited honest implement-ahead; becomes a lie only because `ruflo route` prints meaningless confidence/Q-values. Wiring rejected (conflicts ADR-0280 substrate). | relabel=none; retire=low |
-| Second MCP server copy | `src/mcp-server.ts`, `bin/mcp-server.js` (vs live `bin/cli.js` inline) | **KEEP / consolidate** (do NOT delete) | Still reachable via `ruflo-mcp` / `claude-flow-mcp` bins; deleting breaks those entries (no-consumer≠stub). It is the *duplication* that enables the ADR-0267 trap — a consolidation question pending evidence of whether `ruflo-mcp` has any real consumer. | high if deleted blind |
-| Stale `.swarm/memory.graph` | repo runtime state (1.5MB, 6-Apr legacy) | **DELETE** (housekeeping, data not code) | Legacy artifact; nothing reads it | none |
-
-Items NOT for removal (looks-dead-isn't): F8d's missing ruvllm dist modules are a
-*build-completeness gap* (source exists, dist incomplete) — fix the build, do not
-delete; F3a's `.js`/`.mjs` helpers are live-but-misloading — rename, do not delete.
-
-Execution of any DELETE is a separate fork patch requiring go-ahead. The audit swarm
-will append a §"Dead-code triage (audit results)" subsection with the evidence-backed
-WIRE/KEEP/DELETE list before any removal lands.
-
-### 2026-06-03 — Dead-code triage (audit results, 4-agent scoped swarm)
-
-A read-only audit swarm (MCP/transport, learning/routing, AgentDB controllers,
-memory/helpers/config/data) applied the WIRE / KEEP-AS-CAPABILITY / DELETE /
-CONSOLIDATE triage with `git show origin/main` provenance per candidate. **Headline:
-exactly one confident CODE delete (F5), no siblings, no other dead code.** The fork's
-implement-ahead posture held — most "looks-dead" surfaces are honest KEEP or
-reachable-needs-fix. The discipline directly prevented a bad delete (see `bin/mcp-server.js`).
-
-**Confident CODE DELETE — one, self-contained:**
-- **F5 `initializePhase2RuVectorPackages`** (`agentic-flow/.../services/agentdb-service.ts:767-908` + call site `:457`). Re-confirmed by two agents: fork-only (zero hits in `origin/main`); calls `AgentDB.setController` which exists in neither fork nor upstream; the four controller names hit `default: throw "Unknown controller"`, and that string is **not** matched by `isModuleNotInstalledError`, so every boot prints a false `"… init failed (real error, not module-missing)"` banner; the fields it sets are read nowhere (Registry B does the real job via `controller-bridge.ts`). ADR-0210 lie. Delete the method + its single call site; leave the valid Phase-1/4 inits. **Merge risk: none.**
-
-**Lie to FIX (not a clean delete — inherited, merge-taxed):**
-- **F2 `resources` capability advert** — confirmed a real ADR-0210 lie on the live path,
-  but **inherited verbatim from upstream** (both `bin/cli.js:206` *and* `bin/mcp-server.js:192`;
-  upstream ships no handler either). Fix = set capabilities to `{ tools: { listChanged: true } }`
-  in **both** bins, + an INTEGRATION-LEDGER row + arch-test guard so an upstream `--theirs`
-  merge can't silently re-add it.
-
-**KEEP — looks-dead, isn't (do NOT delete):**
-- **`bin/mcp-server.js`** — *not* a consolidation target. Reachable via the `ruflo-mcp` /
-  `claude-flow-mcp` bins and exercised by a **CICD-gated** check (`lib/acceptance-adr0113-plugin-checks.sh:378`,
-  wired at `test-acceptance.sh:1133` + `collect_parallel:2883`); three ADR-0212 arch/unit
-  tests assert it must stay. (This is the no-consumer≠stub save: a blind delete would have
-  broken a gated check.) Supersedes the seed table's "consolidate pending evidence."
-- **CLI Q-router + SonaOptimizer + all 5 routers** — Q-router is **live-trained** (not
-  orphaned): `SonaOptimizer.processTrajectoryOutcome` (`sona-optimizer.ts:307`→`qLearningRouter.update:373`)
-  runs on the MCP hooks trajectory-end path (`hooks-tools.ts:3037`), and CLI `route` shares
-  the same `.swarm/q-learning-model.json`. The 5 routers (Q / Semantic / Enhanced+Model /
-  Coverage / action-values) are intentionally distinct surfaces, all live.
-- **Contrastive trainer** — KEEP-AS-CAPABILITY (honest self-inert: import→catch→null,
-  every caller null-guards; `neural status` reports "Unavailable" truthfully). [See F8d cause
-  correction above: the ruvllm *source* still exports it; the dist build is incomplete.]
-- **`enableGraph`/graphAdapter throw** (`agentdb/src/core/AgentDB.ts:154-160`) — a **live,
-  deliberate-inert guard** (Registry B forwards `enableGraph:true` into it; it loud-rejects to
-  prevent a silent no-op), and a future **WIRE** target per ADR-0177 — not dead.
-- **`controller-bridge.ts`** (live shim over Registry B), **Registry A switch**,
-  `mutationGuard`/`attentionService` `undefined`-returns (honest explicit-enable), and the
-  6 disabled daemon workers (real switch bodies, manually triggerable) — all KEEP.
-
-**WIRE / fix (not delete) — supersedes some original dispositions:**
-- **F3a helpers** — rename `router.js`/`session.js`/`memory.js` → `.cjs` + update the
-  generator (`helpers-generator.ts:1219-1221`) + `settings-generator.ts:253` + re-sync this
-  repo's stale `hook-handler.mjs` dogfood (which is the *live* handler here, just an old
-  patch.211 snapshot missing newer ADR-0211 handlers — not a dead duplicate). Inherited.
-- **F8a 0-dim** — add `dimensions: this.config.dimensions` to the `hnswStats` literal
-  (`rvf-backend.ts:1240-1245`).
-- **NEW — spinner non-TTY frame leak.** `cli-core/src/output.ts:595-632` (`Spinner.start()`/`render()`)
-  writes `\r…frame` to stdout with **no `isTTY` guard** (the getter already exists at `:103`),
-  so on non-TTY stdout every 100ms frame appends a line — the "Checking neural systems…" spam
-  seen in the original manual test. Inherited; affects all spinner sites. Low-risk fix.
-- **F8b — sharper than the seed.** Not just a stale `doctor.ts` comment: `doctor.ts:104-105,144-157`
-  **inverts the canonical pick** — it recommends "keep the YAML, archive the JSON" while the
-  daemon + ADR-0069 treat **JSON** as canonical. Reconcile doctor to JSON-canonical. Do NOT
-  touch the daemon's json-wins precedence (inherited + intended). No newly-dead config keys
-  re-emerged (project-config-gaps still holds).
-- **F4 liveness** — reachable, buggy → the targeted PID-centric fix (per the cross-check), not dead.
-
-**DATA housekeeping (stale `.swarm/*`, not code) — safe `rm` (untracked):**
-`.swarm/memory.db.backup-384d`, `.swarm/memory.db.corrupt-2026-05-19-bak`,
-`.swarm/memory.db.pre-fix-bak`, `.swarm/memory.rvf.meta.tmp.60748.447`,
-`.swarm/memory-rvf.sqlite` (+`.lock`). **Verify-first (do not auto-delete):**
-`.swarm/memory.rvf.meta.tmp.92578.1128` (recent — confirm pid 92578 dead) and
-`.swarm/memory.graph` (git-tracked — needs `git rm`; confirm nothing reads the `.swarm/`
-copy — statusline reads a *different* `.claude-flow/data/` path). `agentdb-memory.rvf*`,
-live `memory.rvf*`/`memory.db*` = KEEP.
-
-**Net:** the audit confirms the codebase is **not** carrying broad dead code — one
-fork-only lie to delete (F5), one inherited lie to fix-with-merge-guard (F2), two new
-reachable bugs (spinner, doctor canonical inversion), and a short stale-data cleanup.
-Everything else flagged is honest KEEP or reachable-needs-wiring. No DELETE/CONSOLIDATE
-beyond F5.
-
-### 2026-06-03 — F9: Multi-substrate memory/learning coherence (the `.swarm/` split)
-
-Extends the manual memory/learning testing that produced this ADR. There is **one
-central `.swarm/`** (project-root-anchored; worktree/fixture `.swarm` dirs are isolated
-by design and out of scope). The question is coherence *within* it. A focused source
-trace (file:line below) found: **`.swarm/` is a federation of independently-owned
-substrates, not a synchronized store** — but the *primary* path is coherent, so this is
-mostly DOCUMENT-as-accepted-trade-off with two named risks and two scoped fixes.
-
-**Coherence map — who owns what (corrects the "dual-write" mental model):**
-- The **live user-memory path is single-substrate RVF.** `storage-factory.createStorage`
-  instantiates **only `RvfBackend`** (`storage-factory.ts:147-159`, rewrites `.db`→`.rvf` at `:99`).
-  `memory.rvf` (1,226 entries) is the **sole source of truth** for user memory; `RvfBackend`
-  has **zero SQLite INSERTs**. The `HybridBackend` dual-write (`hybrid-backend.ts:225-235`,
-  non-atomic `Promise.all([sqlite, agentdb])`) is **dead code on the live path** (imported only
-  by `database-provider.ts` + an example) — KEEP-AS-CAPABILITY, not the wiring.
-- **`memory.db` (SQLite) holds DISJOINT concerns**, not a mirror of user memory: AgentDB
-  controller tables (`causal_edges`=910, `hierarchical_memory`=292; `reasoning_patterns`/
-  `episodes`/`skills`/`learning_experiences`=0). It has **no `memory_entries` table** on the live
-  path (the DDL at `schema.sql:15` is a **stale artifact** — only `AgentDBBackend`/`SQLiteBackend`,
-  both off-path, ever create it). So there is **no SQLite↔RVF divergence on the hot path** —
-  they hold different things ("coherent by disjointness").
-- **Two RVF stores, siloed by design.** The cli/MCP process shares one `memory.rvf` (archivist
-  writes into it via `MemoryRvfAdapter`, "Option A", `memory-rvf-adapter.ts:35-46`). The
-  **auto-memory hook is a different process** that writes a **separate** `agentdb-memory.rvf`
-  (`auto-memory-hook.mjs:247-255`). They are **never merged/synced**.
-- Learning sidecars (`sona-patterns.json` present; `q-learning-model.json` / `action-values.json`
-  / `moe-weights.json` **absent**) are independent flat-file islands with **no coherence contract**
-  to the SQLite learning tables.
-
-**Divergence / failure modes:**
-- **R1 (real risk) — siloed `agentdb-memory.rvf`.** Auto-memory-hook insights land in a separate
-  RVF and are **invisible to `memory_search`** unless the `ruflo-rag-memory:memory-bridge` skill is
-  run. Designed Option-A/B split, but the recall-gap cost is an undocumented standing trade-off.
-- **R2 (real, the one code FIX) — silent row/vector split.** `AgentDBBackend.storeInAgentDB`
-  (`agentdb-backend.ts:777-844`) does the SQLite INSERT and the HNSW vector-add in **separate
-  try/catch blocks with a swallowing `catch{}`** (`:832`) → can strand a row-without-vector (or
-  in-memory-without-row). Only bites the `agentdb-memory.rvf`/dead-Hybrid paths today, but
-  violates `feedback-no-fallbacks` / `feedback-best-effort-must-rethrow-fatals`.
-- **Accepted/closed:** the cold sidecars (D7) are *never-triggered*, not broken (q-learning
-  auto-saves @100 updates; action-values after `nightlyLearner.run()`; moe @50). Lock/collision
-  data-loss windows are **closed** by ADR-0274 (rw-split) + ADR-0284 (single-flock + hash-ids);
-  the sql.js causal/recall bind bug is **closed** by ADR-0285 (purge reconciled `causal_edges`
-  1745→910). Past SQLite corruption (`.swarm/memory.db.corrupt-2026-05-19-bak`) was manual-repair
-  only — there is **no general RVF↔SQLite reconciler** (only ADR-0285 purge + the memory-bridge skill).
-
-**Vestigial store — `.claude/memory.db` (forensics):** a **384-dim legacy** SQLite memory DB
-created by the old `memory init` on **2026-03-04** (`metadata` table: `sql_js:true`,
-`dimensions:384` — pre-ADR-0068/0069 mpnet-768 unification), committed 2026-03-22 (`8035f1a`).
-It is **empty** (0 rows in all content tables; legacy `memory_entries`/`patterns`/`trajectories`
-schema, *different* from the live AgentDB schema). **ADR-0080 already removed the code that
-*created* it** (`memory-router.ts:1706` "dead-weight one-time copy"), yet its `-shm` is dated
-2026-06-02 because **discovery/fallback arrays still probe `.claude/memory.db`** as a candidate
-path (`memory-router.ts:39, 4062, 4341`). So a dead, wrong-dimension DB still gets opened.
-
-**F9 disposition — DOCUMENT (accepted trade-off) + scoped FIXes:**
-- DOCUMENT: `.swarm/` is a substrate federation; live user-memory = single-substrate RVF
-  (`memory.rvf` sole truth), `memory.db` = disjoint controller state. Primary path coherent-by-
-  disjointness, already hardened by ADR-0274/0284/0285. Not a data-loss bug.
-- **FIX (code):** re-throw fatal SQLite errors in `AgentDBBackend.storeInAgentDB:832` (or write
-  row+vector under one guarded block) — close the silent row/vector divergence (R2).
-- **FIX (cleanup):** prune `.claude/memory.db` from the discovery arrays (`memory-router.ts:39,
-  4062, 4341`) so nothing probes a 384-dim legacy DB; remove the empty file; drop the stale
-  `memory_entries` DDL at `schema.sql:15` (or document why it persists).
-- **DOCUMENT (R1):** record that auto-memory-hook content (`agentdb-memory.rvf`) is siloed from
-  `memory_search` and is reconciled only by the `memory-bridge` skill.
-
-File:line: `storage-factory.ts:97-159`, `hybrid-backend.ts:225-235`, `memory-router.ts:39,492-501,
-627-715,1706,4062,4341`, `archivist-init.ts:1640-1678`, `memory-rvf-adapter.ts:35-46`,
-`auto-memory-hook.mjs:247-255`, `agentdb-backend.ts:777-844`, `action-values.ts:50`,
-`q-learning-router.ts:149`, `moe-router.ts:165`, `schema.sql:15`.
-
-### 2026-06-03 — F10: Learning layer frozen + full storage inventory + orphan stores
-
-Live inspection of the actual on-disk stores (not just the code) surfaced the most
-operationally significant finding of this whole ADR: **the learning/adaptation layer
-has been frozen for ~2 months, because its input path is the same MCP/hook path that
-is down (F1/F3a).** Plus two more orphan/duplicate stores.
-
-**The freeze (evidence):**
-- `.claude-flow/neural/stats.json`: `lastAdaptation` = **2026-04-04 00:32**; `trajectoriesRecorded` = 715 (frozen).
-- `.claude-flow/neural/patterns.json`: all 7 patterns share timestamp `step_17752591209xx` = **2026-04-04 00:32** — populated once, never since.
-- `.claude-flow/metrics/learn.json` (daemon `learn` worker, ran 2026-06-02): `edgesDiscovered: 0`, `skillsCreated: 0`, recommendation *"collect more diverse episode data."*
-- `.swarm/memory.db`: every learning table (`episodes`, `learning_experiences`, `reasoning_patterns`, `skills`, `sona_trajectories`, `consolidation_*`) = **0 rows**. Only the **ADR knowledge graph** is populated (`causal_edges`=910 = ADR `depends-on`/`supersedes` edges, `adr_node_ids`=215, `hierarchical_memory`=292 = ADR metadata) — written directly by `adr-index`, not by learning.
-- RL sidecars `.swarm/{q-learning-model,action-values,moe-weights}.json` = **never written**.
-
-**Why (causal chain — strong, confirm post-fix):** there are TWO hook paths
-(`project-two-hook-paths-cli-vs-handler`). The **file-based** path (settings.json →
-`intelligence.cjs`) IS live — `.claude-flow/data/graph-state.json` (148 nodes/144 edges)
-was updated **today**, and `[INTELLIGENCE]` fires every prompt. But the **AgentDB/SONA
-learning** path (episodes, trajectories, RL uplift) flows through the **MCP** tools
-(`hooks-tools.ts:3037` `processTrajectoryOutcome` → q-learning update; `nightlyLearner`
-→ action-values) — and the MCP server's tools **never connect** (F1: npm cold-start >30s)
-and the hook-time router is dead (F3a). So: **F1+F3a → no episode/trajectory capture →
-learning starved → frozen since the last time MCP worked (2026-04-04).** The intelligence
-JSON graph stays warm; the AgentDB/SONA learning substrate is inert. This is the concrete
-answer to "we have learning pipelines that rely on storing data" — **they are storing
-almost nothing new.**
-
-**Orphan / duplicate stores (extends F9):**
-- `.claude-flow/agentdb/agentdb.sqlite` (528 KB) — a **second, fully-initialized but
-  ENTIRELY EMPTY** AgentDB SQLite, alongside the real `.swarm/memory.db`. A different init
-  path resolved a different `dbPath`. Dead weight; ambiguous which is authoritative.
-- `.claude/memory.db` — vestigial 384-dim legacy DB; **DELETED 2026-06-03** (empty, nothing
-  opened it, `.swarm` always won). Discovery arrays (`swarm.ts:39`, `hooks.ts:4062,4341`)
-  still list it → prune them so it can't resurface (F9 cleanup).
-
-**Full storage inventory** (project root; `~/.claude/projects/.../memory/` is the separate
-cross-session auto-memory, outside the repo):
+### Storage inventory (ruflo-patch; `~/.claude/projects/.../memory/` is the separate cross-session auto-memory)
 
 | Store | Path | Purpose | State |
 |---|---|---|---|
-| User-memory vectors | `.swarm/memory.rvf` (+`.meta`) | `memory_store`/`memory_search` corpus (768-dim HNSW) — **the real memory** | ✅ 1,226 entries, live |
-| AgentDB relational/graph | `.swarm/memory.db` | causal graph, hierarchical mem, episodes, skills, reasoning, learning tables | ⚠️ only ADR graph populated (910/215/292); learning tables = 0 |
-| AgentDB SQLite #2 | `.claude-flow/agentdb/agentdb.sqlite` | duplicate AgentDB init | ❌ empty orphan |
-| Auto-memory RVF | `.swarm/agentdb-memory.rvf` (+`.meta`) | auto-memory-hook insights (separate process) | ⚠️ siloed from `memory.rvf` (R1) |
-| Auto-memory source | `.claude-flow/data/auto-memory-store.json` | 148 MEMORY.md/cross-project entries imported by the hook | ✅ 148 |
-| Intelligence graph | `.claude-flow/data/graph-state.json` | 148 nodes/144 edges; `[INTELLIGENCE]` suggestions | ✅ live (updated today) |
-| Intelligence aux | `.claude-flow/data/{intelligence-snapshot.json,ranked-context.json,pending-insights.jsonl}`, `cjs-intelligence-signals.json` | snapshots, ranked context, pending-insight queue | ✅ active |
-| Neural patterns | `.claude-flow/neural/patterns.json` + `stats.json` | 7 patterns, 715 trajectories | ❌ frozen @ 2026-04-04 |
-| SONA patterns | `.swarm/sona-patterns.json` | SONA optimizer state | ⚠️ stale |
-| RL sidecars | `.swarm/{q-learning-model,action-values,moe-weights}.json` | Q-table / action-value uplift / MoE weights | ❌ never written |
-| Archivist audit | `.claude-flow/data/archivist-audit.jsonl` (8.4 MB) | append-only audit log (ADR-0263 replay) | ✅ live |
-| Daemon/agents state | `.claude-flow/{daemon-state.json,agents.json,agents/store.json,claims/claims.json,metrics/learn.json}`, `.swarm/{swarm-state.json,state.json}` | worker run history, agent registry, claims, learn metrics | ✅/⚠️ |
-| Config | `.claude-flow/config.json` (May) + `config.yaml` (Apr) + `embeddings.json` | runtime config; **json wins, yaml dead** (F8b) | ⚠️ collision |
-| Federation | `.claude-flow/federation/key-node-*.json` (~50) | federation node identities | ⚠️ transport broken (F1-adjacent) |
-| Legacy/cruft | `.swarm/{memory.graph,memory-rvf.sqlite,memory.db.*-bak,memory.rvf.meta.tmp.*}` | old graph, backups, corruption snapshot (2026-05-19), orphaned temps | 🗑️ stale |
+| User-memory vectors | `.swarm/memory.rvf` (+`.meta`) | `memory_store`/`memory_search` corpus, 768-dim HNSW — **the real memory** | ✅ 1,226 entries, live (real embeddings) |
+| AgentDB relational/graph | `.swarm/memory.db` | causal graph, hierarchical mem, episodes/skills/learning tables | ⚠️ only ADR graph populated (910/215/292); learning tables = 0 (F10) |
+| Auto-memory RVF | `.swarm/agentdb-memory.rvf` (+`.meta`) | SessionStart hook insights (separate process) | ⚠️ siloed from `memory_search` (T1) |
+| Auto-memory source | `.claude-flow/data/auto-memory-store.json` | 148 MEMORY.md/cross-project entries | ✅ |
+| Intelligence graph | `.claude-flow/data/graph-state.json` | 148 nodes/144 edges; `[INTELLIGENCE]` suggestions | ✅ live |
+| Neural / SONA | `.claude-flow/neural/{patterns,stats}.json`, `.swarm/sona-patterns.json` | 7 patterns / 715 trajectories / SONA state | ❌ frozen @ 2026-04-04 (F10) |
+| RL sidecars | `.swarm/{q-learning-model,action-values,moe-weights}.json` | Q-table / action-value uplift / MoE | `action-values` live (T2); others never written |
+| Config | `.claude-flow/{config.json,config.yaml,embeddings.json}` | runtime config (json canonical, ADR-0069) | ⚠️ doctor inverts the pick (F8b) |
+| Audit / daemon / federation | `.claude-flow/data/archivist-audit.jsonl`, `daemon-state.json`, `federation/key-node-*.json` | audit log, worker history, federation ids | ✅ |
 
-**Consolidated concerns (all findings):**
-1. **[HIGH] Learning frozen/starved** (F10) — adaptation dead since 2026-04-04; episodes/RL tables empty; root cause is the broken MCP/hook input path (F1/F3a). The learning pipeline runs but has no input.
-2. **[HIGH] MCP tools never connect** (F1) — entire surface offline this session; npm cold-start >30s.
-3. **[HIGH] Hook router dead** (F3a) — CJS-under-`type:module` → "Router not available" every turn.
-4. **[MED] Substrate sprawl** — 3 AgentDB SQLites (one real, one empty orphan, one deleted) + 2 RVFs + many JSON sidecars; ambiguous authority, no general reconciler.
-5. **[MED] Auto-memory silo (R1)** + **silent row/vector catch (R2, `agentdb-backend.ts:832`)**.
-6. **[MED] Config collision (F8b)**; **[LOW] corruption history** (`memory.db.corrupt-2026-05-19-bak`, no auto-repair).
-7. **[LOW] reporter/cosmetic**: F2 resources lie, F8a 0-dim, spinner non-TTY leak, F4 daemon liveness, F5 dead block, doctor JSON-canonical inversion.
+Removed during this work (verified safe — no handles, no readers): `.swarm/memory.graph` (legacy),
+`.swarm/memory-rvf.sqlite`, `.swarm/memory.db.*-bak` (incl. the 2026-05-19 corruption snapshot),
+`.swarm/memory.rvf.meta.tmp.*` (dead pids), `.claude-flow/agentdb/agentdb.sqlite` (empty orphan #2),
+`.claude/memory.db` (vestigial 384-dim legacy). Live stores untouched. (`.swarm/` is gitignored; cleanup was
+on-disk only.)
 
-**F10 disposition:** the fix is **upstream of the stores** — restore the MCP/hook input path (F1 timeout + F3a `.cjs` rename), then confirm learning resumes (episodes/trajectories accrue, `lastAdaptation` advances). Separately, remove the empty `.claude-flow/agentdb/agentdb.sqlite` orphan and prune the `.claude/memory.db` discovery paths. The stores themselves are not broken — they are **starved**.
+## Changelog (investigation arc — replaces the prior per-pass amendments)
 
-### 2026-06-03 — Legacy storage cleanup (executed)
-
-Safely removed the stale/orphan artifacts after verifying **no open handles** (`lsof`
-clean), **owner pids dead** (60748, 92578), and **no code reads the `.swarm/` copies**
-(AgentDB loads its schema from the package `dist/schemas/`, not `.swarm/schema.sql`).
-Removed:
-- `.swarm/memory.db.backup-384d`, `.swarm/memory.db.corrupt-2026-05-19-bak`,
-  `.swarm/memory.db.pre-fix-bak` (manual backups + a 2026-05-19 corruption snapshot)
-- `.swarm/memory-rvf.sqlite` (+`.lock`) (pre-RVF legacy stub)
-- `.swarm/memory.rvf.meta.tmp.60748.447`, `.swarm/memory.rvf.meta.tmp.92578.1128` (orphaned atomic-write temps; both pids dead)
-- `.swarm/memory.graph` (1.5 MB legacy graph format), `.swarm/schema.sql` (stray schema copy)
-- `.claude-flow/agentdb/agentdb.sqlite` (+`-shm`/`-wal`) (the empty orphan AgentDB #2)
-- (earlier) `.claude/memory.db` (+`-shm`/`-wal`) — vestigial 384-dim legacy DB
-
-**Verified intact (live stores, untouched):** `.swarm/memory.rvf` (76 MB) + `.meta`,
-`.swarm/memory.db` (ADR graph), `.swarm/agentdb-memory.rvf`, `.swarm/sona-patterns.json`,
-`.swarm/swarm-state.json`, `.swarm/state.json`. **Kept (ambiguous, not deleted):**
-`.swarm/adr-0116-0117-impl.json`, `.swarm/adr-status-cleanup.json` (tiny ad-hoc namespace
-dumps; no reader confirmed, left for conservatism). These are local runtime files
-(`.swarm/` is gitignored) — cleanup is on-disk only, no commit of the data itself.
-
-Still-open (code, needs go-ahead): prune `.claude/memory.db` from the discovery arrays
-(`swarm.ts:39`, `hooks.ts:4062,4341`) and remove the empty `.claude-flow/agentdb/` dir's
-re-creation path so the orphan #2 doesn't reappear.
-
-### 2026-06-03 — F11: File organization vs upstream storage intent (3-agent upstream analysis)
-
-Analysed our file layout against **upstream INTENT** (ruvnet ADRs + `origin/main` source
-across ruflo/agentdb/agentic-flow/RuVector). This **revises the "sprawl" framing of F9/F10**:
-most of our multi-store layout is **upstream-designed or upstream-anticipated**, not fork
-accretion. Two prior assumptions were wrong and are corrected here.
-
-**CORRECTION 1 — RVF is UPSTREAM, not a fork swap-in.** (Supersedes the stale memory note
-"upstream computes cosine directly, no RVF" — true only of the 2026-05-06 thin-spinoff.)
-RVF/RuVector are first-class upstream, ADR-governed in **all three** repos:
-- RuVector **ADR-029** (Accepted): "RVF = the single canonical binary format for all
-  RuVector libraries"; **ADR-032** (lock model: one `flock` writer / unlimited readers /
-  30 s stale recovery — exactly what our ADR-0274/0284 re-implement).
-- agentdb **ADR-002/003**: RuVector>RVF>HNSWLib backend priority (`backends/factory.ts`).
-- claude-flow **ADR-057** (Proposed): "replace sql.js with RVF as the native backend",
-  names `memory.rvf`/`events.rvf`/`embeddings.rvf`; `database-provider.ts:290` already
-  rewrites `.db`→`.rvf` for `provider:'rvf'`. **ADR-046** even makes "ruflo" upstream.
-- So our RVF choice is **on upstream's roadmap, and we are AHEAD**: we ship RVF as the live
-  single substrate; upstream still defaults to `hybrid` (SQLite+AgentDB) with RVF "Proposed".
-
-**CORRECTION 2 — the `.swarm`/`.claude-flow` split and the JSON sidecars are UPSTREAM
-defaults, not fork sprawl.** `cleanup.ts:27-30` defines three purpose-dirs by design:
-`.swarm/` (memory + RL state), `.claude-flow/` (config/metrics/sessions/daemon/data),
-`.hive-mind/` (consensus). `.swarm/memory.db` is the upstream canonical heavy default
-(`memory-initializer.ts:89`). The RL sidecars are upstream defaults verbatim:
-`.swarm/sona-patterns.json` (`sona-optimizer.ts:124`), `.swarm/q-learning-model.json`
-(`q-learning-router.ts:154`), `.swarm/moe-weights.json` (`moe-router.ts:156`). Upstream's
-own store-discovery probe (`system-tools.ts:325-331`, issue #1843) enumerates almost
-exactly our file set (`.claude-flow/memory/agentdb.sqlite`, `store.rvf`, `.swarm/memory.db`,
-`agentdb.rvf`, `ruvector.db`).
-
-**Upstream's intended architecture (synthesised):** a **federation of purpose-specific
-files** under one **unified `MemoryService` API** (claude-flow ADR-006/ADR-125), on a
-backend trajectory **sql.js → hybrid(SQLite+AgentDB) → RVF-native** (ADR-057). Two
-layers hold *different* source-of-truth models, and upstream is mid-migration between them:
-- **agentdb layer (ADR-002/003):** SQLite `*_embeddings` BLOBs are durable ground-truth;
-  the vector backend is an **ephemeral accelerator** (no `storagePath` by default).
-- **RuVector layer (ADR-029/032):** **RVF is the canonical source of truth; the companion
-  SQL/KV store is a rebuildable cache.** Consolidation target for learning = a single
-  `RvfLearningStore` (claude-flow `rvf-learning-store.ts`, ADR-057 Phase 6) folding
-  sona/lora/ewc/trajectory sidecars into one RVF — **implement-ahead, no live caller yet.**
-
-**Where our layout actually stands:**
-
-| Our artifact | Upstream status | Verdict |
-|---|---|---|
-| `.swarm/memory.db` | canonical heavy default | ✅ aligned |
-| `.swarm/` + `.claude-flow/` + `.hive-mind/` 3-dir split | upstream design (`cleanup.ts:27-30`) | ✅ aligned |
-| `.swarm/memory.rvf` user-memory (RVF single substrate) | upstream ADR-057 endpoint (Proposed) | ✅ **aligned & AHEAD** |
-| `.swarm/{sona-patterns,q-learning-model,moe-weights}.json` | upstream defaults verbatim | ✅ aligned (upstream wants them folded into RvfLearningStore *later*) |
-| `.claude-flow/data/*.json|jsonl`, config.json | upstream `STATE_DIR` + config path | ✅ aligned (dir) |
-| **RVF-as-sole-truth (SQLite `*_embeddings` empty)** | agentdb keeps SQLite-blob ground-truth + accelerator; RuVector ADR-029 says RVF-is-truth | ⚠️ **ahead of agentdb, aligned with ADR-029** — but we gave up the brute-force SQL-blob fallback (relevant to corruption history) |
-| `.swarm/agentdb-memory.rvf` (auto-memory hook's separate RVF) | upstream auto-memory = the `~/.claude/projects/<key>/memory/` **markdown bridge**, not a project-local RVF | ⚠️ **fork-added** — triage WIRE-into-`memory.rvf` vs KEEP-as-tenant |
-| `.swarm/action-values.json` | **not present anywhere upstream** | ⚠️ **fork-only** (ADR-0280) — keep as enhancement, but it's a 3rd RL sidecar; fold into RvfLearningStore when that lands |
-| `.swarm/memory.rvf.meta` (20 MB) | RVF format keeps meta **in-file segments**; no `.rvf.meta` in the upstream format (claude-flow's *hybrid* uses `.hnsw`+`.meta.json`, a different backend) | ⚠️ **fork artifact** — large external sidecar the RVF format doesn't prescribe |
-| `.claude-flow/agentdb/agentdb.sqlite` (empty) | location is upstream-probed, but an empty 2nd SQLite has no basis | 🗑️ accretion — **deleted** (F10) |
-| `.claude-flow/neural/*.json` location | upstream puts MoE at `.swarm/`, not `.claude-flow/neural/` | ⚠️ minor location divergence |
-| `config.yaml` | upstream recognizes `.json` only | ⚠️ fork-added (F8b) |
-| 768-dim mpnet | upstream default = 384 MiniLM | ⚠️ deliberate fork choice (ADR-0068/0069) |
-
-**The one real tension:** RuVector (ADR-029) wants **everything in one `.rvf`** (anti-
-fragmentation, "an agentdb file can't be queried by claude-flow"); claude-flow ships a
-**federation + unified API** with sidecars as the live default. The fork inherits both
-visions. `RvfLearningStore` is upstream's bridge between them — and it's the thing to
-**track, not pre-empt**.
-
-**F11 disposition — our file organization is largely sound; do NOT over-consolidate.**
-The earlier "fragmentation/sprawl" worry (F9/F10) is mostly **upstream-intended federation**.
-Genuinely fork-only and worth triage: (1) `.swarm/agentdb-memory.rvf` — decide WIRE-into-
-`memory.rvf` vs keep as an isolated tenant (it doubles the `flock` surface, ADR-032/0284);
-(2) `.swarm/action-values.json` — keep (ADR-0280) but earmark for RvfLearningStore folding;
-(3) empty `.claude-flow/agentdb/agentdb.sqlite` — done (deleted); (4) `config.yaml` — drop
-(F8b); (5) the 20 MB `.rvf.meta` — confirm whether the fork's RVF wiring needs it or it's
-recoverable in-file. **Strategic:** the RVF-as-sole-truth choice (dropping the SQLite-blob
-fallback) is the deepest divergence and the one with a real robustness cost — worth an
-explicit decision (accept, or restore a rebuildable SQL/blob cache per ADR-032 KI-2).
-Do **not** invent a fork sidecar-consolidation scheme; adopt upstream's `RvfLearningStore`
-(ADR-057 Phase 6) if/when it ships a live caller.
-
-**F11 follow-up (2026-06-03) — consolidation status, verified in our fork.** "Consolidation"
-is TWO distinct upstream mechanisms; checked both in `forks/ruflo`:
-- **Runtime entry-consolidation = `MemoryConsolidator` (ADR-125): LIVE in our fork.** We carry
-  `memory/src/consolidator.ts` + `MemoryService`; the `consolidate` daemon worker
-  (`worker-daemon.ts:1610` `runConsolidateWorker`, 2,607 runs/100%) routes it, `nightlyLearner`
-  delegates to `MemoryConsolidator.runAll()`, and `agentdb_consolidate` exposes it. Same upstream
-  lineage (not a fork build), proven by the B5 acceptance ("8 episodic memories → 1 cluster").
-  **Our architecture already takes care of this** — it's just starved here (`consolidation_*`
-  tables = 0 because `episodes` = 0; F10). Nothing to emulate.
-- **Store/sidecar-consolidation = `RvfLearningStore` (ADR-057 P6): implement-ahead in our fork,
-  same as upstream.** We carry `memory/src/rvf-learning-store.ts` (magic `RVLS`) +
-  `persistent-sona.ts` (`PersistentSonaCoordinator`), but they have **no live caller** — SONA
-  still writes the separate `.swarm/sona-patterns.json` sidecar. We are **in lockstep with
-  upstream** (code present, unwired). So there is nothing to "emulate" or import — wiring
-  `PersistentSonaCoordinator` ahead of upstream would *diverge* (and add merge tax); the correct
-  move is to wire it **when upstream wires its live caller**, staying merge-aligned.
-
-Net: on consolidation we are **not behind upstream** — runtime consolidation is live (and works,
-when fed), and sidecar-consolidation is implement-ahead in both. The only consolidation-relevant
-problem is the same F10 starvation (the layer runs but has no episodes to consolidate).
-
-**F11 correction (2026-06-03) — the "restore a rebuildable SQL/blob cache" recommendation is
-WITHDRAWN; it contradicts `feedback-no-fallbacks`.** Earlier in F11 I framed RVF-as-sole-truth
-(empty SQLite `*_embeddings`) as "a robustness cost — accept it, or restore a rebuildable SQL/blob
-cache (ADR-032 KI-2)." That second option is wrong for this fork: ADR-032's companion-as-
-rebuildable-cache is consulted *on RVF failure* — i.e. it **is** a fallback, exactly the silent
-degrade-on-failure path our philosophy forbids (`feedback-no-fallbacks`,
-`feedback-best-effort-must-rethrow-fatals`). Under **fail-hard / fail-fast / no-fallbacks**,
-RVF-as-the-single-source-of-truth is the **correct and coherent** choice, and we already have the
-matching behaviour: **ADR-0286 — "RVF vector backend fail-loud on init failure."** So this is *not*
-a robustness gap and *not* a divergence with a cost; it is a deliberate, philosophy-consistent
-departure from upstream's fallback-tolerant model. (This is a place our fork's principles
-*intentionally* diverge from upstream ADR-032 KI-2 — and that divergence is right.)
-
-The only legitimate residual (and it is NOT a fallback): **no-fallbacks ≠ no-backups.** Ensure
-(a) RVF corruption/loss fails **loud** at *read/runtime* too, not just init (ADR-0286 covers init —
-confirm the read path also throws rather than returning empty), and (b) recovery is a **deliberate
-operator restore** from a backup/snapshot, never an automatic in-process cache. That preserves
-fail-hard while still giving a recovery story. Do **not** add a SQL/blob auto-fallback.
-
-### 2026-06-03 — Validation pass, batch 1 (F1, F2, F5, R2)
-
-A 5-agent validation swarm re-checked each outstanding item against **upstream (ruvnet)
-`origin/main` source + ADRs** and our ruflo-patch ADRs, validating *both* finding and proposed
-solution. Batch 1 (F1/F2 via the MCP agent, F5/R2 via the AgentDB agent) below; **batch 2
-(F3a/F3b, storage triage, F4/F8a/F8b/spinner/F9p/F8d) pending** and will append.
-
-**F1 — VALID; solution parts 1+2 CONFIRMED, framing REVISED.**
-- `MCP_TIMEOUT` is read from **Claude Code's own `process.env`** (confirmed: Claude Code MCP docs + claude-code-action #1152) — the "NOT `.mcp.json` env" note is correct; `.mcp.json`'s per-server `timeout` is a *different* knob (per-call watchdog).
-- **REVISION (load-bearing): Claude Code hard-caps `MCP_TIMEOUT` at ~60 000 ms** (claude-code #16837 — `100000` still times out at ~60 s). So `60000` is the **ceiling, not a tunable**; a cold install >60 s is **unrescuable by env var**. This **elevates tree-shrink from "longer-term" to the *only* durable fix.**
-- **The `agentdb` optional→required amplification is a confirmed fork regression** (`origin/main:cli/package.json` keeps `agentdb` in `optionalDependencies`; fork made it a hard dep). **Reverting it is the low-risk, fork-local first step** of the shrink — do it without waiting on upstream's *unfinished* ADR-100 cli-core split (Proposed, foundation only; steps 3-4 pending). Must preserve fail-loud at call sites when agentdb is genuinely needed-but-absent (`optional-modules.d.ts` pattern; ADR-0286).
-- Constraint reaffirmed: the fix must **not** resurrect ADR-0104 §4a's direct-path-over-npx cure (deliberately deferred by `feedback-always-npx-for-ruflo`). Parts 1+2 add no fallback.
-
-**F2 — VALID; mechanism CONFIRMED, remedy REVISED: ADD the handler, don't DROP the advert.**
-- Both bins (`cli.js:206` live, `mcp-server.js:192`) advertise `resources` with no handler → `-32601`, byte-identical to `origin/main` (inherited).
-- **REVISION:** upstream **does implement `resources/list`** — in its *class-based* servers
-  (`shared/src/mcp/server.ts:609` → `{ resources: [] }`), just not in the hand-rolled inline bins.
-  So the upstream-convergent, ADR-0210-aligned fix is to **add the empty `{ resources: [] }`
-  handler to both bins** (mirrors upstream's own `handleResourcesList`), **not** drop the advert
-  (which would diverge from upstream's universal advert → standing merge tax). Keep the both-bins +
-  INTEGRATION-LEDGER row, but invert the arch-guard to assert the **handler exists** (not that the
-  advert is absent). Drop-the-advert demoted to fallback-only (no evidence the fork wants to suppress resources).
-
-**F5 — VALID; DELETE CONFIRMED (zero merge risk).**
-- Re-confirmed fork-only (intro commit not an ancestor of `origin/main`; no `agentdb-service.ts`
-  upstream), `setController` absent in both trees, the 4 keys hit `getController`'s `default: throw`,
-  false "real error" banner fires every boot. **ADR-0069 §F1 *forbids* what the block does** (Phase-2/4
-  controllers "have no path into AgentDB core") — the block's own `// ADR-0069 F1` comment misapplies it.
-  Registry B already registers the live GNN/Router/Sona equivalents → delete loses no functionality.
-- **Correction to the F5/F9 amendment text:** the `setController` calls are **unreachable** (the
-  `getController` throw fires first), so the block fails as a **throw, not a TypeError** — the earlier
-  "TypeErrors in addition to" phrasing overstated. Disposition unchanged. REWIRE-to-Registry-B is **not**
-  warranted (would duplicate Registry B). Justify on dead-code grounds, not graphAdapter retirement
-  (ADR-0170 superseded by ADR-0177).
-
-**R2 — VALID; re-throw CONFIRMED, refined to a *discriminated* re-throw.**
-- The silent row/vector split (`agentdb-backend.ts:777-848`, swallowing `catch{}` ~:832) is **inherited
-  verbatim from upstream** (fork added only a comment) — so the fix is **merge-taxed** (unlike fork-only F5).
-- **REVISION:** prefer a **discriminated re-throw of the data-integrity subset** (per
-  `feedback-best-effort-must-rethrow-fatals` + ADR-0082 Rule 3 + ADR-0085 — match `err.name` across the
-  dynamic-import boundary), **not** a blanket throw (which would also surface benign availability errors
-  upstream tolerates, and diverge harder). Requires an **INTEGRATION-LEDGER row + an arch test** (forced
-  SQLite-write-failure ⇒ throws), reaching the backend via a non-live constructor since the live path is
-  `RvfBackend`.
-- **Latency/urgency:** R2 is **latent today** — `storage-factory`→`RvfBackend` keeps `AgentDBBackend` off
-  the live user-memory path (ADR-0095/F9 "coherent by disjointness"); it bites only the dead-Hybrid path
-  and the separate `agentdb-memory.rvf` process. So: low-urgency hardening, **but a precondition** for any
-  storage-triage decision (V4) that wires `agentdb-memory.rvf` back onto a hot path.
-
-**Net batch-1 disposition changes:** F2 flips **drop→add-handler**; F1 tree-shrink elevated to *the*
-durable fix with the **agentdb optional→required reversal as the immediate low-risk step** (MCP_TIMEOUT is
-a 60 s ceiling); F5 delete stands (text correction only); R2 refined to discriminated-re-throw + merge-guard,
-latent (sequence before any agentdb-memory.rvf wiring).
-
-### 2026-06-03 — Validation pass, batch 2a (F3a, F3b)
-
-Verified in a **fresh Verdaccio sandbox** (`/tmp/f3a-sandbox`, `type:module`, cli.408) + `git show
-origin/main` — NOT this repo's stale dogfood. This batch **corrects several claims in my own earlier
-amendments** (the F3a follow-ups in F11 / cross-check were partly wrong).
-
-**F3a — VALID mechanism (empirically reproduced); my earlier framing had 3 errors — REVISED:**
-- Repro in fresh sandbox: `echo '{"prompt":"…"}' | node .claude/helpers/hook-handler.mjs route` →
-  `[FAIL] … module is not defined in ES module scope` → `[INFO] Router not available`. `type:module` is
-  the sole precondition (control: remove it → loads).
-- **Correction 1:** "the generator already emits `.cjs`, so the fix is just sync + re-dogfood" is **FALSE**.
-  The generator (`helpers-generator.ts` + `executor.ts:1210-1215`) still emits `router.js`/`session.js`/
-  `memory.js`. **This is a real generator code change, not a sync.** (Fork-*root* `.claude/` ships `.cjs` —
-  it dogfooded further than the generator — but that's not what `ruflo init` produces.)
-- **Correction 2 (un-retract):** my "ADR-0235 added a createRequire loader — inaccurate" retraction was
-  itself wrong. The fork generator **does** emit `hook-handler.mjs` with `createRequire(import.meta.url)`
-  (`helpers-generator.ts:395,400,410`). Original claim stands.
-- **Correction 3 (load-bearing):** **renaming the helper *targets* to `.cjs` is the fix — the hook-handler
-  extension is secondary.** Proven: upstream's own scheme (`hook-handler.cjs` + native `require` → `router.js`)
-  **STILL throws** under `type:module` (Node resolves `router.js` by the package's `type:module` regardless of
-  the requiring module's scope); only `→ router.cjs` loads. **So upstream `origin/main` is ALSO bugged here**
-  (it converted the dispatcher `.mjs→.cjs` but left the helper targets `.js`). The fork-root all-`.cjs` set is
-  the only fully-correct reference.
-- **"stop swallowing the error" is anti-convergent — REVISE:** the fork's `.mjs` path *already* logs
-  `[FAIL] …` to stderr (it aided this diagnosis); **upstream deliberately `// silently fail`s**. Keep our
-  stderr log as a *deliberate fork divergence*, but it self-mutes once helpers are `.cjs` (nothing fails).
-- **Fix (validated):** rename `router/session/memory.js → .cjs` in `helpers-generator.ts` + `executor.ts:1212-1214`
-  (bodies are already `module.exports`; only the emitted filename + the hook-handler's `join(...,'router.cjs')`
-  refs change); adopt upstream's `hook-handler.cjs` dispatcher (converge on the half upstream did); re-dogfood
-  this repo's `.claude/`. **Test churn to expect:** `tests/pipeline/init-helpers-parity.test.mjs:158-204`
-  *forbids* top-level `require` and blesses `createRequire` as "legal" — it encodes the false belief that
-  createRequire fixes the load; moving the dispatcher to `.cjs` breaks it → rewrite. `tests/unit/hook-paths.test.mjs`
-  needs settings.json↔helper-name agreement. `lib/acceptance-init-checks.sh` `node -c` already covers `.cjs` — no regression.
-- **Root coverage gap (why it shipped green):** **no test EXECUTES the route hook under `type:module`** — the
-  parity test only string-matches generator source; `node -c` only syntax-checks. **Add an execution smoke**
-  (run `hook-handler route` in a `type:module` sandbox, assert ≠ "Router not available"), wired into the
-  acceptance runner (`feedback-always-wire-tests-into-cicd`).
-- **Merge risk: MODERATE** — the dispatcher rename collides with upstream's in-flight `.mjs→.cjs` migration.
-  De-risk = adopt `hook-handler.cjs` (match upstream) **plus** the helper-target `.cjs` rename (the half
-  upstream missed); inherited surface, divergent-but-convergent fix.
-
-**F3b — diagnosis VALID; relabel target REVISED (it's narrower than I wrote):**
-- Cold-table output reproduced live (`Confidence: 12.5%`, `Q-Value: 0.000`, `Exploration: Yes`).
-- **`updateCount`/`qTableSize` are ALREADY surfaced — but only in `route stats`, not the default `route <task>`
-  box.** So the honest fix lands on the **default box**: when `updateCount===0 && qTableSize===0`, annotate it
-  "untrained (0 updates) — heuristic/exploration only" from the `getStats()` already on the router (ADR-0210:
-  honesty at the surface the user reads, not a buried subcommand). Smaller change than "surface updateCount".
-- **Correction:** "the real loop is NOT the Q-table" *overstates*. ADR-0277 keeps SONA's associative loop
-  (incl. the Q-router) as "genuinely additive, not redundant" — the Q-table is a legitimate **secondary
-  associative** learner that coexists with the ADR-0280 de-confounded substrate; it's just not *the*
-  de-confounded one. **CONFIRM: don't wire (would make it a redundant associative writer — the thing
-  ADR-0277 says to avoid) and don't retire (inherited + ADR-0277 keeps it).**
-- **F3a↔F3b causal link:** the Q-table is cold *because* the hook path is down (F3a/F1). Fixing F3a revives
-  the `SonaOptimizer.processTrajectoryOutcome → qLearningRouter.update` training loop, so the relabel must
-  reflect **live** stats (cold OR warm), not hardcode "cold."
-- **Merge risk: LOW** — presentational change in the fork's `route.ts` render block; no new substrate/persistence.
-
-### 2026-06-03 — Validation pass, batch 2b (storage triage + F4/F8a/F8b/spinner/F9p/F8d)
-
-**T1 — `.swarm/agentdb-memory.rvf` → REVISE: WIRE via router (it's an ADR-0210 lie, not a "decide").**
-Finding VALID and *stronger*: there are **3 auto-memory silos** (SQLite `memory.db`, JSON `auto-memory-store.json`,
-ESM-hook RVF `agentdb-memory.rvf`) per ADR-0083, split by a CJS/process boundary. Crucially the hook's own
-"drain into main memory" bridge (`auto-memory-hook.mjs:319-341`) is **DEAD CODE** — it imports the
-`memory-initializer` that **ADR-0086 Phase 3 deleted** (`existsSync` permanently false), so hook content
-**never reaches `memory.rvf`/`memory_search`**. ADR-0083 already adjudicated the architecture: silos converge
-through the **single write path (`routeMemoryOp`)** + read-only merge at search — NOT parallel durable files.
-So the disposition is **WIRE through the router (replace the dead import with `routeMemoryOp('store')`); retire
-`agentdb-memory.rvf` as a durable store** — *not* "keep as tenant" (which ratifies a silo ADR-0083 set out to
-remove and doubles the flock surface, ADR-032/0284). Closes an ADR-0210 lie. Hook FILE inherited; RVF-target +
-dead-bridge are fork-only (origin/main still targets SQLite) → ledger the divergence. Merge risk low.
-
-**T2 — `.swarm/action-values.json` → CONFIRM KEEP; soften the earmark.** VALID, fork-only, fully live
-(writer `memory-router.ts:2586` after `nightlyLearner.run()`; consumers `intelligence.ts:691` β-blend +
-`model-router.ts:628` γ-blend, both **on by default**, self-inert when empty). Coherent with ADR-0280/0279/0277.
-The JSON sidecar is the *correct* shape today (cheap cross-process IPC, ADR-0083 rationale). **Fold into
-`RvfLearningStore` only when that store gets a live caller AND can meet the routing hot-path read-latency
-budget** — today `RvfLearningStore`/`PersistentSonaCoordinator` exist but are **never instantiated** (folding a
-live on-by-default substrate into an unwired store would regress a working feature — `feedback-no-dormant-off-by-default-flags`).
-Merge risk: none.
-
-**T3 — RVF fail-loud on READ → REVISE: already fail-loud; verify, don't fix.** PARTIAL. Hard corruption on the
-runtime read path **already THROWS `RvfCorruptError`** (δ-strict, ADR-0164 A0d + ADR-0095 d5), not silent-empty;
-and the t3-2 vectorless-drop confound is **already fixed** (ADR-0163 recovery uses unfiltered `listMetadataIds`).
-So there is **no no-fallbacks violation to fix** for native corruption. Real residual = **(i)** add a
-corruption-throws **acceptance assertion** (corrupt a `.rvf`, assert next `memory search` throws/non-zero, not
-empty) since current evidence is source-trace; **(ii)** verify the **live sql.js daemon read path** shares the
-δ-strict throw (`project-mcp-daemon-runs-sqljs-fallback` — the native `degradeToFallbackMode` may not apply
-identically there). The sql.js-path check is the only real unknown.
-
-**T4 — 20 MB `.swarm/memory.rvf.meta` → CONFIRM finding; NEEDED, do NOT remove.** VALID (not in the canonical
-RVF format — RuVector ADR-029 keeps meta in in-file META_SEG). But it is **load-bearing**: it's the durable
-metadata store for native-fallback AND the **live sql.js daemon** path (`loadFromDisk` reads `.meta` *first*,
-`:1194-1199`); removing it breaks the path the live daemon actually uses. The 20 MB (~27% of the 73 MB store)
-is a full metadata mirror, not a lock/index. Right move = **reframe `.meta` as a rebuildable cache (ADR-032
-KI-2): native-mode authoritative-from-segments, `.meta` rebuilt-on-miss** — bounding it to fallback/sql.js mode.
-That's a **tracked follow-up** (touches the most fork-diverged file + the hot live read path; medium risk), NOT
-an inline fix and NOT a delete.
-
-**F4 — daemon liveness → REVISE: the causal claim is wrong; the fix is narrower.** PARTIAL. "`daemon start
---foreground` didn't write `daemon.pid`" is **unsupported** — `start()` writes the PID at `worker-daemon.ts:968`
-(both fg + bg). And `daemon status` **already anchors** via `findProjectRoot()` and reports correctly. The real
-defect is narrow: **`doctor.ts:166` uses a cwd-relative `.claude-flow/daemon.pid`** → "Not running" from a
-non-root cwd. Fix = anchor that path to `findProjectRoot()` (ADR-0137); keep PID-gating, do NOT trust
-`daemon-state.json.running` (ADR-0207). Inherited byte-identical → consistent ADR-0137-class divergence.
-⚠️ **Tension to resolve at implementation:** this contradicts the *earlier live finding* (this session) that the
-daemon was running (PID 56912) while `daemon.pid` was **absent**. Source-trace says PID is always written;
-live evidence said it wasn't. Confirm on the live daemon whether `daemon.pid` is actually written before
-concluding the fix is doctor-path-only — there may be a foreground/embedded start path that bypasses `start()`.
-
-**F8a — `neural status` "0-dim" → CONFIRM + scope correction (3 edits, not 1).** VALID, fork-only consumer.
-Add `dimensions: this.config.dimensions` to the `hnswStats` literal (`rvf-backend.ts:1240`) **AND** add
-`dimensions` to the `HNSWStats` **type** (`memory/src/types.ts:286-302`) **AND** the native `agentdb-backend.ts:690`
-literal (else native path still shows 0). Near-zero merge risk.
-
-**F8b — config canonical → PARTIAL: one sub-claim was wrong.** `doctor.ts:107` **does** include `config.json`
-in its candidate list — my "doesn't check config.json" was wrong. The genuine bug is **yaml-FIRST precedence**
-(`doctor.ts:153-158` returns the YAML hit before JSON) + the collision branch labelling JSON "legacy" + the stale
-`:104-105` comment — all **inherited byte-identical** from upstream and all contradicting ADR-0069's JSON-canonical
-runtime. Fix = invert precedence to JSON-first + reword. Keep json-wins runtime precedence. **"Drop config.yaml"
-must be verified separately** (didn't confirm init still emits it / that nothing reads it).
-
-**F8e — spinner non-TTY leak → CONFIRM.** VALID, inherited byte-identical. `isTTY` guard on `start()`/`render()`/
-`stop()`'s `\r` writes is the correct minimal fix (early-return in `start()` so the interval never starts). Nit:
-`:103` is inside the private `supportsColor()`, not a reusable getter — guard on `process.stdout.isTTY` directly.
-`ProgressBar.render()` has the identical `\r` issue (same class — mention, out of scope).
-
-**F9p — prune `.claude/memory.db` discovery paths → REVISE: LEAVE IT (don't prune).** VALID that the arrays are
-skip-safe + `.swarm`-first. But they're **inherited byte-identical from upstream** (the fork's only change was
-the ADR-0137 `findProjectRoot()` anchor); pruning is **purely cosmetic** (removes a harmless `existsSync`-false
-skip) and creates **recurring merge tax** every time upstream touches these lists, for **zero behavioral gain**.
-Verdict: **leave it** (at most a one-line "retained for upstream-parity; vestigial, skip-safe" comment). This
-withdraws the earlier F9-prune action item.
-
-**F8d — ruvllm ContrastiveTrainer → PARTIAL: 3 layers, rebuild-alone won't fix.** The "removed from ruvllm 2.5.x"
-comment (`intelligence.ts:1171-1176`) is **FALSE** — the class ships in published `@ruvector/ruvllm@2.5.5`
-(`dist/cjs/contrastive.js`, 72 KB). The real gaps: **(1)** the *consumed* pin `2.5.5-patch.201` is **not on
-Verdaccio** (only base `2.5.5`) — a publish/version gap (`feedback-pipeline-shared-skip-on-dist-clear`); **(2)**
-the reporter reads `globalThis.__claudeFlowSonaStats` (`intelligence.ts:1191`) which **nothing ever sets** → it
-would report Unavailable even with the class loaded — an independent plumbing break; **(3)** the false comment must
-be deleted. So F8d = **republish ruvllm at the consumed version + wire the stats global + fix the comment**, then
-verify `neural status` flips to Active — NOT a rebuild-only close. Fork-only.
-
----
-
-### Validated backlog (post-validation — the actual to-do)
-
-All findings VALID (some PARTIAL with corrected root cause). Net work, by tier:
-
-| Item | Verdict | Validated action | Provenance / merge risk |
-|---|---|---|---|
-| **F3a** (HIGH) | VALID, revised | Rename helper *targets* → `.cjs` in the **generator** (real change, not sync) + adopt `hook-handler.cjs` + re-dogfood + **add an execution smoke** (none exists — why it shipped broken). Rewrite the parity test's createRequire assertion. | inherited gen; moderate (collides w/ upstream in-flight `.mjs→.cjs`) |
-| **F1** (HIGH) | VALID, revised | `MCP_TIMEOUT=60000` (launch env; it's a **60 s ceiling**) + warm npx cache; **revert `agentdb` optional→required** (low-risk first step); tree-shrink (track upstream ADR-100) is *the* durable fix | bloat inherited+amplified; parts 1-2 zero risk |
-| **F5** (MED) | VALID, CONFIRM | DELETE the Phase-2 block + call site; wired check the false banner is gone | fork-only; **no merge risk** |
-| **F2** (MED) | VALID, revised | **ADD** `{ resources: [] }` handler to **both** bins (converge w/ upstream) + ledger + arch-guard | inherited; negligible |
-| **T1** (MED) | VALID, revised | **WIRE** auto-memory through `routeMemoryOp` (fix dead `memory-initializer` import); retire `agentdb-memory.rvf` as durable | fork-only patch; low |
-| **R2** (MED) | VALID, refined | **Discriminated** re-throw (not blanket) + ledger + arch test; latent → sequence **before** any T1 hot-path wiring | inherited; merge-taxed |
-| **F4** (MED) | PARTIAL | Anchor `doctor.ts:166` PID path to `findProjectRoot()` (the PID-write half is already done); **resolve the live daemon.pid-absent tension first** | inherited; low |
-| **F8b** (MED) | PARTIAL | Invert `doctor.ts` precedence to JSON-first + reword; verify "drop config.yaml" separately | inherited; low |
-| **F3b** (MED) | VALID, revised | Relabel the **default `route` box** as cold from live `getStats()` (don't wire, don't retire) | inherited; low |
-| **F8a** (LOW) | VALID, CONFIRM | 3 edits: `hnswStats` literal + `HNSWStats` type + native literal | fork-only; ~none |
-| **F8e** (LOW) | VALID, CONFIRM | `isTTY` guard on Spinner (+ note ProgressBar) | inherited; low |
-| **F8d** (LOW) | PARTIAL | Republish ruvllm @ pinned version + wire `__claudeFlowSonaStats` + delete false comment | fork-only; pipeline |
-| **T4** (triage) | VALID | Reframe `.meta` as rebuildable-cache — **tracked follow-up**, not now; do NOT delete | fork-only; medium |
-| **T3** (triage) | PARTIAL | Already fail-loud — add corruption-throws assertion + **verify sql.js read path** | fork-only; assertion = no risk |
-| **T2** (triage) | VALID, CONFIRM | KEEP; fold into RvfLearningStore only when it's live + meets latency budget | fork-only; none |
-| **F9p** (LOW) | VALID → **WITHDRAWN** | **Leave** `.claude/memory.db` in the discovery arrays (pruning = gratuitous upstream divergence) | inherited; n/a |
-
-**Cross-cutting:** the highest-value *new* gaps validation surfaced are **T1's dead `memory-initializer` bridge**
-(hook learnings never reach search — a real lie + ADR-0083's unfinished fold) and the **sql.js-path verification**
-for T3/T4 (the live daemon runs sql.js, so native-traced behaviour must be confirmed there, not assumed). F3a's
-**missing execution test** is why a router that fails every turn shipped through green releases — the durable fix
-includes that smoke. Several proposed fixes are **inherited surfaces** → each carries an INTEGRATION-LEDGER row
-+ arch-guard so a future hand cherry-pick can't silently undo them (corrected below — we never `--theirs`).
-
-### 2026-06-03 — Clarifications & corrections (review feedback)
-
-Four corrections from review; they sharpen the backlog (and one adds a new fix):
-
-- **(merge policy) We never do `--theirs` merges — we hand cherry-pick (`-x`).** Replace every "survive a
-  `--theirs` merge" rationale above with: the **INTEGRATION-LEDGER row is the primary record** of each
-  intentional divergence (F2, R2, F4, F8b, F8e), and the arch-guard is a *secondary* net that catches a future
-  **hand cherry-pick** of an upstream commit silently re-introducing an inherited surface (re-adding the
-  `resources` advert, the swallow, the yaml-first precedence, etc.) that a reviewer might miss in a large port.
-- **(ledger already exists) The ledger is `docs/upstream/INTEGRATION-LEDGER.md` (364 rows).** "Add an
-  INTEGRATION-LEDGER row" everywhere above means **append to that existing file** (per
-  `feedback-update-integration-ledger`), not create a new one.
-- **(F1 / cold-start — upstream already has the mechanism) Adopt, don't reinvent.** USERGUIDE confirms upstream's
-  cold-start story: **`@claude-flow/cli-core`** (zero-dependency, ~1.5 s cold, ADR-100; 8 plugin scripts already
-  use it), **local `.cjs` scripts instead of npx** (USERGUIDE:2617), and **RVF replacing sql.js** to kill the
-  ~2 s WASM-compile cold start (USERGUIDE:3144). (A `preinstall.cjs` cache-repair/precache step existed and was
-  **removed in 3.1.0-alpha.53** — now a no-op.) **Catch:** upstream's primary mitigation is *not using
-  `npx@latest`*, which our `feedback-always-npx-for-ruflo` mandate deliberately overrides for freshness — and
-  cli-core's lite MCP uses the **JSON backend, not RVF/agentdb**, so we can't route our full MCP through it
-  without downgrading memory. So F1's durable fix = **shrink the full `cli` install** (revert `agentdb`
-  optional→required + gate the ML optionalDeps, the ADR-094/ADR-100 *tree-reduction* direction) — confirming
-  F1's "tree-shrink is the only durable fix" and that we should **track/adopt cli-core's reduction, not invent
-  a parallel scheme**. (Its own ADR.)
-- **(NEW FINDING — why the daemon runs sql.js: wrong Node) F4-adjacent.** The running ruflo daemon (PID 59757)
-  is spawned under **`mise/installs/node/22.21.1`**, while the npx-cached native `better-sqlite3` is built for
-  **node 24** → ABI mismatch → it can't load → **sql.js WASM fallback**. Verified: native `better-sqlite3`
-  **loads fine under the shell's node 24.14.1**, and `doctor` (cache-bin, node 24) reports
-  `Initialized with better-sqlite3`. So "the daemon runs sql.js" is **NOT inherent** — it's the
-  `project-agentdb-neural-disabled-redherring-and-node-abi` mise-22-vs-24 split, still live on the
-  **daemon-spawn path** (the ABI fix set the mise *global* to 24.14.1, but the daemon spawn still resolves 22).
-  **It should NOT run sql.js** (native is faster; sql.js's WASM cold-start is what RVF was adopted to kill).
-  **UPDATE — the ABI fix is already in place; this is a stale spawn, likely just needs a restart.** `.tool-versions`
-  pins `nodejs 24`, mise global = `24.14.1`, the shell resolves 24.14.1, and native `better-sqlite3` loads under it.
-  PID 59757 is on node 22 only because the **auto-spawn hook** (`.claude/settings.json:129`
-  → `npx @sparkleideas/ruflo@latest daemon start --quiet`) fired at 15:34 today in an env that resolved 22 — a
-  **stale process**, not a failed fix. So the immediate fix is **restart the daemon from a node-24 context and
-  verify the new PID's node** (`ps -o command -p <pid>`). Caveat: it's hook-respawned, so the durable fix is to
-  ensure the **daemon-spawn hook reliably resolves node 24** (the bare hook subprocess may not honour mise
-  activation even though `.tool-versions` pins 24); if the respawn ever resolves 22 again, harden the hook command
-  to an explicit node-24 invocation. High value: a node-24 daemon **likely moots the T3/T4 sql.js-path
-  verification** (the sql.js read path is only live because the daemon is mis-Noded) and removes a class of
-  sql.js-only bugs (cf. ADR-0285 NAMED-bind).
-
-**Backlog readiness (Q: "do we have fixes outlined?"):** ready-to-implement — F5, F2, F8a, F8e, F3b, T1, R2,
-F8b(doctor), F3a(+smoke). Need-more-before-implementing — **F1** (durable fix = tree-shrink, its own ADR),
-**F4** (fold in the daemon-Node finding + resolve the live `daemon.pid`-absent tension), **T3/T4** (re-scope
-after the daemon moves to node 24 — the sql.js path may no longer be live). New: **daemon-Node-pin** (above).
-
-### 2026-06-03 — Node-22 affects TWO processes; worker-daemon restarted, MCP server NOT (so what's actually fixed)
-
-Restarted the **worker daemon** (`daemon start`) from the node-24 shell → new PID **49267 on node 24.14.1**
-(native better-sqlite3); old node-22 PID 59757 is gone. **But the wrong-node problem affects TWO separate
-long-running processes, and only one was fixed:**
-- **Worker daemon** (`daemon start` — runs the `learn`/`consolidate`/`map`/etc. workers): **FIXED → node 24 / native.**
-- **MCP server** (`mcp start` — the `mcp__ruflo__*` surface, and the *actual* subject of
-  `project-mcp-daemon-runs-sqljs-fallback`): **CORRECTION (2026-06-03)** — *this project's* MCP server, spawned
-  fresh by the `/mcp` reconnect at 16:13 in ruflo-patch's node-24 env, is **PID 81846/81755 on node 24.14.1 →
-  native** (`lsof txt`). The node-22.21.1 `mcp start` processes (70385/43875/70222/43846, from 2026-06-02) are
-  **NOT this project's** — they belong to the **other ruflo projects running on this machine** (there are 2
-  others). They are **out of scope and must NOT be killed/touched** from here. Attribute MCP servers by `cwd`,
-  not by assuming all `mcp start` procs are this project's. (Earlier "orphaned zombies, killable" claim was wrong.)
-
-**What the restart actually fixes (don't overclaim):**
-- ✅ The **worker daemon's own agentdb writes** (causal/consolidate/nightlyLearner via the `learn` worker) now run
-  on native better-sqlite3 → removes sql.js-path exposure (ADR-0285 NAMED-bind class) **for the daemon's writes**.
-- ⚠️ **T3/T4 are only HALF de-risked.** Their sql.js concern was about the **MCP server's** read path — which is
-  *still* on sql.js. So "verify the sql.js read path fails loud (T3)" and "`.meta` is load-bearing for sql.js (T4)"
-  **still apply to the MCP server** until it too restarts under node 24. (The current session has no MCP server
-  connected — F1 — so these two are orphaned zombies, but a freshly-spawned MCP server would still land on
-  whatever node the spawn env resolves.)
-- ❌ **Nothing else is fixed by Node version** — F1 (npm cold-install), F3a (CJS/ESM module-system), F5 (dead code),
-  F8a/F8b/F8e (reporters), F8d (publish+plumbing), and **F10's core starvation** (no episodes because the MCP/hook
-  trajectory path is down — F1/F3a) are all node-agnostic and unchanged.
-
-**Generalised fix:** ensure ruflo-patch's `daemon start` (hook `settings.json:129`) and `mcp start`
-(`.mcp.json` autoStart) reliably resolve node 24 (mise global + `.tool-versions` both pin 24; the risk is a bare
-subprocess PATH not honouring mise activation). Do **not** kill the node-22 processes — see the correction below.
-
-### 2026-06-03 — CORRECTION: the node-22 processes are OTHER projects (opda, hm), not ruflo-patch
-
-The machine runs **3 ruflo projects** — ruflo-patch + **opda** + **hm** — each with its own `mcp start` and
-`daemon start`. The node-22.21.1 processes I observed (MCP servers 70385/43875/70222/43846 and the worker daemon
-PID 59757) **belong to opda/hm, not ruflo-patch** — so the "ruflo-patch daemon/MCP runs sql.js on node 22"
-conclusion was a **cross-project misattribution.** Corroborating evidence: `daemon stop` run from ruflo-patch
-reported *"Worker daemon was not running"* → **ruflo-patch had no daemon of its own** until I started PID 49267
-(node 24), and the `/mcp` reconnect spawned ruflo-patch's MCP server fresh on **node 24** (PID 81846). ruflo-patch
-has `.tool-versions = nodejs 24` and its own spawns resolve 24.
-
-**Re-scoped consequences:**
-- **ruflo-patch itself is on node 24 / native better-sqlite3** for both its daemon and MCP server. The
-  node-22/sql.js state was **opda/hm**, which are **out of scope** (don't touch their processes; their node
-  resolution is their concern).
-- **T3/T4's "verify the sql.js read path" is therefore largely MOOT for ruflo-patch** — its live processes are
-  native. (Keep the corruption-throws acceptance assertion as good hygiene, but the sql.js-specific worry was
-  another project's.)
-- **F4 (daemon liveness) and F10 (frozen learning) still stand** — they were derived from ruflo-patch's *own*
-  on-disk state (`.swarm/`, `.claude-flow/neural/*`, `daemon status`/`doctor` behaviour), not from the
-  misattributed processes. F10's root cause remains F1/F3a (no episode capture), node-agnostic.
-- The earlier "daemon-Node-pin" / "kill the orphaned node-22 MCP servers" items are **WITHDRAWN for ruflo-patch**
-  (they were other projects'). What survives is the narrow F4 doctor-path anchor + the standing recommendation
-  that ruflo-patch's own spawns resolve node 24 (already the case in practice).
-
-### 2026-06-03 — LIVE RE-EVALUATION (authoritative current status — supersedes process-state claims above)
-
-After restarting ruflo-patch's worker daemon (→ node 24) and reconnecting its MCP server (`/mcp` → fresh PID
-81846 on node 24), I exercised the **now-connected live MCP tools + restarted daemon** to re-assess every finding
-against *current* reality. **This table is the authoritative status; where it conflicts with earlier amendments,
-this wins.** Live facts established this session:
-- **Memory works, with real semantic embeddings.** `memory_store` ("JWT refresh token rotation… session
-  security") → `memory_search` ("token-based login flow…") returned **0.59 cosine** (a paraphrase match
-  hash-embeddings can't produce). Backend: `archivist (RVF + HNSW)` / `HNSW + SQLite`, `hasEmbedding: true`.
-- `agentdb_health`: **41 controllers live** from Registry B (incl. correctly-named `gnnService`/`semanticRouter`/
-  `sonaTrajectory`). `doctor`: **✓ Daemon Status: Running (PID 49267)**, `daemon.pid` written.
-- The node-22/sql.js processes were **opda/hm**, not ruflo-patch (correction above). RAM was ~99% (3 projects' MCP servers).
-
-| Finding | Earlier status | **Live status now** | Net action |
-|---|---|---|---|
-| **F1** MCP cold-start | live-broken (no tools) | **DOWNGRADED — surface UP** this session (tools connect; memory round-trip works). Cold-start race (npm >30s, 60s cap) persists only for first-after-publish cold-cache sessions | durable tree-shrink still wanted (own ADR); not currently broken |
-| **F3a** hook router | broken | **STILL BROKEN** — `[INFO] Router not available` fires every prompt *this* session even with MCP up (it's the CJS-under-`type:module` helper load, independent of MCP). Confirmed live. | **fix stands** (helper `.cjs` rename + exec smoke) — highest-value, still failing every turn |
-| **F4** daemon liveness | live-misreport | **DOWNGRADED — not symptomatic.** `doctor` now correctly shows Running(49267); earlier "Not running" was largely ruflo-patch having *no* daemon (node-22 one was opda/hm). The `doctor.ts:166` cwd-relative path is a **latent** code smell (misreports only from a subdir) | demote to LOW; fix the cwd anchor opportunistically |
-| **T3 / T4** sql.js read-path / `.meta` | verify needed | **MOOT for ruflo-patch** — its MCP+daemon are node-24/native; sql.js was opda/hm. Keep only the generic corruption-throws assertion as hygiene | drop the sql.js-specific items |
-| **F8a** 0-dim | reporter bug | **STANDS (reporter only) — memory embeddings confirmed REAL** (0.59 match). "0-dim" (CLI) and "hash-based/384" (MCP `neural_status`) are both **reporter artifacts** that disagree with the real memory path → plumb the real dim into *both* reporters | reporter fix (now 2 sites: CLI hnswStats + MCP neural_status `_realEmbeddings`/dim) |
-| **F10** frozen learning | starved | **STANDS — F1 surface up is necessary-not-sufficient.** MCP is connected, but learning is still frozen (neural_status: 0 models/patterns in the fresh server; persisted `lastAdaptation` still 2026-04-04) and **F3a is still down**, so no trajectory capture is flowing. Won't self-heal without trajectory activity | gated on F3a + actual trajectory capture; recheck after F3a |
-| **F5** dead Phase-2 block | delete | **STANDS** — `agentdb_health` shows Registry B owns the correctly-named controllers; the block's wrong-key false banner is still dead code | delete (unchanged) |
-| **F2** resources/list | add handler | **STANDS** (code unchanged; both bins advert w/o handler) | add `{resources:[]}` handler |
-| **F3b** Q-router cold | relabel | **STANDS** (still cold) | relabel default box |
-| **F8d** ContrastiveTrainer | 3-layer | **STANDS** (publish + unset-global + false-comment) | unchanged |
-| **F8e** spinner | guard | **STANDS** (code unchanged) | isTTY guard |
-| **T1** agentdb-memory.rvf | wire | **STANDS** (dead bridge unchanged) | wire via router |
-| **T2** action-values.json | keep | **STANDS** (keep) | keep |
-| **F9p** prune discovery | withdrawn | **WITHDRAWN** | leave |
-
-**Net effect of the restart on the backlog:** **F1 and F4 downgrade** (surfaces healthy now; only latent/cold-cache
-risk remains), **T3/T4 sql.js items drop** (were cross-project), and **F8a doubles** (a second reporter — MCP
-`neural_status` — also misreports). **Unchanged and still real:** F3a (the keystone — *still* failing every turn,
-MCP-up notwithstanding), F5, F2, F3b, F8d, F8e, T1, F10-core (F3a-gated). So the implementation priority sharpens
-to: **F3a first** (only thing actively breaking every turn), then F5/F2 (code lies), then the reporter/cleanup tier.
-The daemon/MCP/node concerns that dominated recent amendments are **resolved or out-of-scope** for ruflo-patch.
+* **2026-06-02 — Manual test + 4-agent research swarm.** Surfaced F1–F10; traced each to root cause.
+* **2026-06-02 — Upstream cross-check (4 agents).** Per-finding CONFIRM/REFINE/CHALLENGE vs ruvnet `origin/main`.
+  Key flips: F2 drop→add-handler; F1 = inherited bloat, adopt upstream ADR-100/094; F5 graphAdapter rationale stale
+  (ADR-0170→0177); F3a stale-dogfood + createRequire mis-cite; F8b already-solved (narrow to stale doctor).
+* **2026-06-03 — Dead-code audit (4 agents).** Exactly one confident DELETE (F5); `bin/mcp-server.js` is gated-KEEP
+  (a blind delete would break a CICD check); surfaced the F8e spinner leak.
+* **2026-06-03 — F9 substrate coherence + F10 frozen-learning + F11 upstream file-org.** `.swarm/` is a substrate
+  federation, coherent-by-disjointness; learning frozen since 2026-04-04 (F1/F3a-gated); layout largely
+  upstream-aligned; withdrew a SQL-blob-fallback idea (violates no-fallbacks); withdrew the F9-prune (gratuitous divergence).
+* **2026-06-03 — Validation pass (5 agents).** Validated every finding + solution; refined F1 (60s `MCP_TIMEOUT`
+  cap, agentdb-revert first step), R2 (discriminated re-throw), T1 (wire-via-router; dead drain-bridge = a lie),
+  F3a (helper-target `.cjs` is load-bearing; upstream also bugged; un-retracted the createRequire claim), F8a
+  (2 reporters), F4 (PID-write already done).
+* **2026-06-03 — Daemon + MCP restarted onto node 24; live re-evaluation (authoritative).** **Correction:** the
+  node-22/sql.js processes were the **other ruflo projects on this machine (opda, hm)**, not ruflo-patch — the
+  "daemon/MCP runs sql.js" finding was a cross-project misattribution. ruflo-patch's own daemon (PID 49267) + MCP
+  server (PID 81846) are node-24/native; the live `memory_store`→`memory_search` round-trip works with real
+  embeddings (0.59). Net: **F1 + F4 downgraded** (surfaces healthy), **T3/T4 sql.js items dropped** (cross-project),
+  **F8a doubled** (MCP reporter also lies), **F3a still broken** (keystone). Reaffirmed: hand cherry-pick (not
+  `--theirs`); ledger = `docs/upstream/INTEGRATION-LEDGER.md`.
