@@ -169,10 +169,16 @@ first session after a version bump. *Status:* **surface UP this session** (tools
 **hard-caps it at ~60s**, so it's a ceiling, not a tunable) + warm the npx cache post-publish. **Durable fix =
 shrink the install tree** (revert the fork's `agentdb` optional→required amplification as the low-risk first
 step; adopt upstream ADR-100 cli-core split + ADR-094 xenova→optional) — its **own ADR** (cross-fork packaging
-risk). Note upstream's cold-start mechanisms exist (cli-core ~1.5s lite path; local `.cjs` not npx; RVF
-replaced sql.js) but its primary one — *not* using `npx@latest` — is overridden by
-`feedback-always-npx-for-ruflo`, and cli-core's lite MCP uses the JSON backend (not RVF), so we shrink the
-full cli rather than route through cli-core. Do not resurrect ADR-0104 §4a's direct-path. *Provenance:* bloat
+risk). **Upstream has no precaching step** (the `bin/preinstall.cjs` cache-repair was removed in 3.1.0-alpha.53;
+now a no-op). Its cold-start mechanisms all *avoid* the cost rather than precache it: **`@claude-flow/cli-core`**
+(a separate package handling **memory commands only — no SQLite/HNSW/ONNX**; ~1.5s cold via `CLI_CORE=1`, for
+*plugin scripts*), local `.cjs` (no npx, for statusline), and RVF replacing the sql.js WASM blob. **cli-core
+cannot serve our F1**: the MCP server needs the full stack for real RVF memory, and cli-core has none of it —
+routing the MCP through cli-core would yield a vector-less MCP. The mechanism that *would* cover the MCP is
+ADR-100's **full** cli-core split (boot lite, lazy-load the heavy extras on first `tools/call` — our server
+already defers init past the handshake, ADR-0204/0267, so only the npm *install* size remains), but ADR-100 is
+**Proposed / partially-implemented upstream** → track it, don't adopt. So we shrink the *full* cli install
+rather than route through the lite package. Do not resurrect ADR-0104 §4a's direct-path. *Provenance:* bloat
 inherited + fork-amplified.
 
 **F4 [downgraded → LOW] — daemon liveness reporting.** Re-evaluated live: with ruflo-patch's *own* daemon
