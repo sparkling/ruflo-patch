@@ -172,11 +172,26 @@ to `optionalDependencies`):** the fork holds `agentdb` in `dependencies` (upstre
 design** — ADR-0091 *removed the sql.js memory fallback* upstream keeps for edge envs, so RVF/agentdb is the
 **sole** memory substrate and must be present (no-fallbacks/fail-loud; reverting would reintroduce a banned
 silent-degradation). It also wouldn't help, since **npm installs `optionalDependencies` by default** — the
-section is not the lever. The real lever is getting the **heavy ML libs (onnxruntime/xenova/sharp/node-llama-cpp)
-out of the default install** (ADR-094 xenova→optional *and* actually skippable, fail-loud at call sites) and/or
-**ADR-100's cli-core split** where the lite path doesn't carry the ML stack. (This supersedes the validation
-pass's "revert agentdb optional→required as the low-risk first step", which missed ADR-0091 and the
-optional-deps-still-installed fact.) **Upstream has no precaching step** (the `bin/preinstall.cjs` cache-repair was removed in 3.1.0-alpha.53;
+section label is not the lever. (This supersedes the validation pass's "revert agentdb optional→required as the
+low-risk first step", which missed ADR-0091 and the optional-deps-still-installed fact.)
+
+**Honest critique of the durable fix (it is the least-baked disposition here):**
+- Marking ML libs `optional` (ADR-094) **does not shrink the `npx` download** for the same reason — npm installs
+  optional deps unless the install runs `--omit=optional`, which the MCP spawn does not. ADR-094 is about install
+  *resilience* (ARM/Alpine build failures), not size.
+- The **embedder is immovable**: the MCP server needs xenova/transformers.js (~150 MB) for real semantic memory
+  (the 0.59 match), and no-fallbacks forbids degrading to hash embeddings — so it cannot be omitted. The only
+  genuinely-omittable bulk is the **off-critical-path** deps — native `onnxruntime-node`/`-web` (~158 MB, *if*
+  transformers.js-WASM is the live path per F8c so the native runtime is installed-but-unused), `sharp` (~25 MB),
+  `node-llama-cpp` (~34 MB) — and only after a trace confirms nothing loads them. Real, but a fraction of 1.5 GB.
+- The **interim fixes don't reach end users**: `MCP_TIMEOUT` is a per-machine *launch-env* setting (operator
+  workaround, not fork-shipped); cache-warm only warms the *release machine's* `~/.npm/_npx`, not a user's.
+- **ADR-100 defers *load*, not *download*** — lazy-loading doesn't shrink the npm install unless the lite package
+  genuinely doesn't depend on the heavy stack and fetches it on demand (a large change; Proposed/partial upstream).
+- **Conclusion:** F1's realistic shape is "tolerate it (60 s timeout headroom, which a slow network still blows) +
+  a hard packaging project" — verify+omit the off-critical-path native libs (its own ADR), don't expect a relabel
+  or lazy-load to fix the download. Given F1 was already *downgraded* (surface up; intermittent, first-after-publish
+  only), the cost/benefit may favour the interim band-aids over the packaging project. **Upstream has no precaching step** (the `bin/preinstall.cjs` cache-repair was removed in 3.1.0-alpha.53;
 now a no-op). Its cold-start mechanisms all *avoid* the cost rather than precache it: **`@claude-flow/cli-core`**
 (a separate package handling **memory commands only — no SQLite/HNSW/ONNX**; ~1.5s cold via `CLI_CORE=1`, for
 *plugin scripts*), local `.cjs` (no npx, for statusline), and RVF replacing the sql.js WASM blob. **cli-core
