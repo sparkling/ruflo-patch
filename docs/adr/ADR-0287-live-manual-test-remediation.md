@@ -415,6 +415,13 @@ separate `agentdb-memory.rvf` (T1), `config.yaml`, 768-dim mpnet (deliberate, AD
 | own ADR (wiring decision) | **F10** | dormant-by-design, **NOT gated by F3a/F1**. 4-agent swarm (2026-06-03): write chain already LIVE (`hooks_post-task`→`agentdb_reflexion_store`→`episodes`, ADR-0268) — only the **trigger** is missing. Cheapest seam (a) = wire the file-based PostTask hook → `ruflo hooks post-task` (`hook-handler.mjs` / `settings-generator.ts`); no RVF-flock (SQLite carve-out). Completes ADR-0195's producer half; unblocks NightlyLearner→ADR-0280. **Learning is PII-free** (metadata-only; ADR-0289 = optional free-text only). Capture-wiring fix = **ADR-0290** (upstream-ADR-074-guided) | design |
 | keep / none | **T2, T3, T4, F6, F7, F8c, F9p, F11-RVF** | documented; no code change | — |
 
+**Implementation status (2026-06-04):** the decide-per-item reporter tier — **F8a, F8b, F4, F8e, F3b** — is
+**IMPLEMENTED** (honest fixes; no hardcoding/squelch) on fork branch `fix/adr0287-reporter-cosmetics`
+(`forks/ruflo`, commit `9767dc601`), verified compiling (`cli-core` + `cli` build green; memory *source* clean).
+INTEGRATION-LEDGER row added. Acceptance checks land **with the release** (they validate the *installed*
+package, so they cannot go green pre-release). Still open (gated on go-ahead): **F2**, **F5** (subsumed by
+ADR-0288), **T1**, **R2**, **F3a**, **F8d**, **F1**, and the keep/none set.
+
 **Implementation note (corrected):** F3a is **not** a keystone and gates nothing — it only suppresses an
 optional `[INFO] Routing…` advisory; demoted to a tier-3 noise/honesty fix. F5 + F2 are self-contained honesty
 fixes and the highest-value items. **F10 is NOT unblocked by F3a or F1** — the trajectory-capture trace + live
