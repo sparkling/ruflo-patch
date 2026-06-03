@@ -1,9 +1,9 @@
 ---
 status: proposed
 date: 2026-06-02
-tags: [mcp, observability, learning, honesty, infrastructure]
+tags: [mcp, observability, learning, memory, honesty, infrastructure]
 supersedes: []
-depends-on: [ADR-0204, ADR-0267, ADR-0274, ADR-0284, ADR-0177, ADR-0210, ADR-0277, ADR-0069, ADR-0207, ADR-0280, ADR-0235, ADR-0112, ADR-0180, ADR-0080, ADR-0094]
+depends-on: [ADR-0204, ADR-0267, ADR-0274, ADR-0284, ADR-0177, ADR-0210, ADR-0277, ADR-0069, ADR-0207, ADR-0280, ADR-0235, ADR-0112, ADR-0180, ADR-0080, ADR-0094, ADR-0285, ADR-0095, ADR-0166]
 implements: []
 ---
 
@@ -406,3 +406,75 @@ fork-only lie to delete (F5), one inherited lie to fix-with-merge-guard (F2), tw
 reachable bugs (spinner, doctor canonical inversion), and a short stale-data cleanup.
 Everything else flagged is honest KEEP or reachable-needs-wiring. No DELETE/CONSOLIDATE
 beyond F5.
+
+### 2026-06-03 — F9: Multi-substrate memory/learning coherence (the `.swarm/` split)
+
+Extends the manual memory/learning testing that produced this ADR. There is **one
+central `.swarm/`** (project-root-anchored; worktree/fixture `.swarm` dirs are isolated
+by design and out of scope). The question is coherence *within* it. A focused source
+trace (file:line below) found: **`.swarm/` is a federation of independently-owned
+substrates, not a synchronized store** — but the *primary* path is coherent, so this is
+mostly DOCUMENT-as-accepted-trade-off with two named risks and two scoped fixes.
+
+**Coherence map — who owns what (corrects the "dual-write" mental model):**
+- The **live user-memory path is single-substrate RVF.** `storage-factory.createStorage`
+  instantiates **only `RvfBackend`** (`storage-factory.ts:147-159`, rewrites `.db`→`.rvf` at `:99`).
+  `memory.rvf` (1,226 entries) is the **sole source of truth** for user memory; `RvfBackend`
+  has **zero SQLite INSERTs**. The `HybridBackend` dual-write (`hybrid-backend.ts:225-235`,
+  non-atomic `Promise.all([sqlite, agentdb])`) is **dead code on the live path** (imported only
+  by `database-provider.ts` + an example) — KEEP-AS-CAPABILITY, not the wiring.
+- **`memory.db` (SQLite) holds DISJOINT concerns**, not a mirror of user memory: AgentDB
+  controller tables (`causal_edges`=910, `hierarchical_memory`=292; `reasoning_patterns`/
+  `episodes`/`skills`/`learning_experiences`=0). It has **no `memory_entries` table** on the live
+  path (the DDL at `schema.sql:15` is a **stale artifact** — only `AgentDBBackend`/`SQLiteBackend`,
+  both off-path, ever create it). So there is **no SQLite↔RVF divergence on the hot path** —
+  they hold different things ("coherent by disjointness").
+- **Two RVF stores, siloed by design.** The cli/MCP process shares one `memory.rvf` (archivist
+  writes into it via `MemoryRvfAdapter`, "Option A", `memory-rvf-adapter.ts:35-46`). The
+  **auto-memory hook is a different process** that writes a **separate** `agentdb-memory.rvf`
+  (`auto-memory-hook.mjs:247-255`). They are **never merged/synced**.
+- Learning sidecars (`sona-patterns.json` present; `q-learning-model.json` / `action-values.json`
+  / `moe-weights.json` **absent**) are independent flat-file islands with **no coherence contract**
+  to the SQLite learning tables.
+
+**Divergence / failure modes:**
+- **R1 (real risk) — siloed `agentdb-memory.rvf`.** Auto-memory-hook insights land in a separate
+  RVF and are **invisible to `memory_search`** unless the `ruflo-rag-memory:memory-bridge` skill is
+  run. Designed Option-A/B split, but the recall-gap cost is an undocumented standing trade-off.
+- **R2 (real, the one code FIX) — silent row/vector split.** `AgentDBBackend.storeInAgentDB`
+  (`agentdb-backend.ts:777-844`) does the SQLite INSERT and the HNSW vector-add in **separate
+  try/catch blocks with a swallowing `catch{}`** (`:832`) → can strand a row-without-vector (or
+  in-memory-without-row). Only bites the `agentdb-memory.rvf`/dead-Hybrid paths today, but
+  violates `feedback-no-fallbacks` / `feedback-best-effort-must-rethrow-fatals`.
+- **Accepted/closed:** the cold sidecars (D7) are *never-triggered*, not broken (q-learning
+  auto-saves @100 updates; action-values after `nightlyLearner.run()`; moe @50). Lock/collision
+  data-loss windows are **closed** by ADR-0274 (rw-split) + ADR-0284 (single-flock + hash-ids);
+  the sql.js causal/recall bind bug is **closed** by ADR-0285 (purge reconciled `causal_edges`
+  1745→910). Past SQLite corruption (`.swarm/memory.db.corrupt-2026-05-19-bak`) was manual-repair
+  only — there is **no general RVF↔SQLite reconciler** (only ADR-0285 purge + the memory-bridge skill).
+
+**Vestigial store — `.claude/memory.db` (forensics):** a **384-dim legacy** SQLite memory DB
+created by the old `memory init` on **2026-03-04** (`metadata` table: `sql_js:true`,
+`dimensions:384` — pre-ADR-0068/0069 mpnet-768 unification), committed 2026-03-22 (`8035f1a`).
+It is **empty** (0 rows in all content tables; legacy `memory_entries`/`patterns`/`trajectories`
+schema, *different* from the live AgentDB schema). **ADR-0080 already removed the code that
+*created* it** (`memory-router.ts:1706` "dead-weight one-time copy"), yet its `-shm` is dated
+2026-06-02 because **discovery/fallback arrays still probe `.claude/memory.db`** as a candidate
+path (`memory-router.ts:39, 4062, 4341`). So a dead, wrong-dimension DB still gets opened.
+
+**F9 disposition — DOCUMENT (accepted trade-off) + scoped FIXes:**
+- DOCUMENT: `.swarm/` is a substrate federation; live user-memory = single-substrate RVF
+  (`memory.rvf` sole truth), `memory.db` = disjoint controller state. Primary path coherent-by-
+  disjointness, already hardened by ADR-0274/0284/0285. Not a data-loss bug.
+- **FIX (code):** re-throw fatal SQLite errors in `AgentDBBackend.storeInAgentDB:832` (or write
+  row+vector under one guarded block) — close the silent row/vector divergence (R2).
+- **FIX (cleanup):** prune `.claude/memory.db` from the discovery arrays (`memory-router.ts:39,
+  4062, 4341`) so nothing probes a 384-dim legacy DB; remove the empty file; drop the stale
+  `memory_entries` DDL at `schema.sql:15` (or document why it persists).
+- **DOCUMENT (R1):** record that auto-memory-hook content (`agentdb-memory.rvf`) is siloed from
+  `memory_search` and is reconciled only by the `memory-bridge` skill.
+
+File:line: `storage-factory.ts:97-159`, `hybrid-backend.ts:225-235`, `memory-router.ts:39,492-501,
+627-715,1706,4062,4341`, `archivist-init.ts:1640-1678`, `memory-rvf-adapter.ts:35-46`,
+`auto-memory-hook.mjs:247-255`, `agentdb-backend.ts:777-844`, `action-values.ts:50`,
+`q-learning-router.ts:149`, `moe-router.ts:165`, `schema.sql:15`.
