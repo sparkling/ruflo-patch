@@ -1,5 +1,12 @@
 # Live-System Findings & Research Plan — 2026-06-02
 
+> **STATUS: research complete (2026-06-03).** All items R1–R12 were answered by the
+> initial 4-agent research swarm; findings were then cross-checked against upstream
+> source + ADRs (4 agents) and a scoped dead-code audit (4 agents). Outcomes,
+> corrections, and the dead-code triage live in **`docs/adr/ADR-0287-live-manual-test-remediation.md`**
+> (§Amendments). This document is the historical plan, not open work. The remaining
+> *implementation* backlog (each gated on go-ahead) is tracked in ADR-0287, not here.
+
 Source: manual testing of the live ruflo stack in `ruflo-patch` (memory, learning,
 neural, routing, daemon, MCP). Tested via the live npx-cache bin
 (`@sparkleideas/ruflo@latest`, patch.408 — the same build the running MCP daemon
