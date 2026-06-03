@@ -333,3 +333,76 @@ delete; F3a's `.js`/`.mjs` helpers are live-but-misloading — rename, do not de
 Execution of any DELETE is a separate fork patch requiring go-ahead. The audit swarm
 will append a §"Dead-code triage (audit results)" subsection with the evidence-backed
 WIRE/KEEP/DELETE list before any removal lands.
+
+### 2026-06-03 — Dead-code triage (audit results, 4-agent scoped swarm)
+
+A read-only audit swarm (MCP/transport, learning/routing, AgentDB controllers,
+memory/helpers/config/data) applied the WIRE / KEEP-AS-CAPABILITY / DELETE /
+CONSOLIDATE triage with `git show origin/main` provenance per candidate. **Headline:
+exactly one confident CODE delete (F5), no siblings, no other dead code.** The fork's
+implement-ahead posture held — most "looks-dead" surfaces are honest KEEP or
+reachable-needs-fix. The discipline directly prevented a bad delete (see `bin/mcp-server.js`).
+
+**Confident CODE DELETE — one, self-contained:**
+- **F5 `initializePhase2RuVectorPackages`** (`agentic-flow/.../services/agentdb-service.ts:767-908` + call site `:457`). Re-confirmed by two agents: fork-only (zero hits in `origin/main`); calls `AgentDB.setController` which exists in neither fork nor upstream; the four controller names hit `default: throw "Unknown controller"`, and that string is **not** matched by `isModuleNotInstalledError`, so every boot prints a false `"… init failed (real error, not module-missing)"` banner; the fields it sets are read nowhere (Registry B does the real job via `controller-bridge.ts`). ADR-0210 lie. Delete the method + its single call site; leave the valid Phase-1/4 inits. **Merge risk: none.**
+
+**Lie to FIX (not a clean delete — inherited, merge-taxed):**
+- **F2 `resources` capability advert** — confirmed a real ADR-0210 lie on the live path,
+  but **inherited verbatim from upstream** (both `bin/cli.js:206` *and* `bin/mcp-server.js:192`;
+  upstream ships no handler either). Fix = set capabilities to `{ tools: { listChanged: true } }`
+  in **both** bins, + an INTEGRATION-LEDGER row + arch-test guard so an upstream `--theirs`
+  merge can't silently re-add it.
+
+**KEEP — looks-dead, isn't (do NOT delete):**
+- **`bin/mcp-server.js`** — *not* a consolidation target. Reachable via the `ruflo-mcp` /
+  `claude-flow-mcp` bins and exercised by a **CICD-gated** check (`lib/acceptance-adr0113-plugin-checks.sh:378`,
+  wired at `test-acceptance.sh:1133` + `collect_parallel:2883`); three ADR-0212 arch/unit
+  tests assert it must stay. (This is the no-consumer≠stub save: a blind delete would have
+  broken a gated check.) Supersedes the seed table's "consolidate pending evidence."
+- **CLI Q-router + SonaOptimizer + all 5 routers** — Q-router is **live-trained** (not
+  orphaned): `SonaOptimizer.processTrajectoryOutcome` (`sona-optimizer.ts:307`→`qLearningRouter.update:373`)
+  runs on the MCP hooks trajectory-end path (`hooks-tools.ts:3037`), and CLI `route` shares
+  the same `.swarm/q-learning-model.json`. The 5 routers (Q / Semantic / Enhanced+Model /
+  Coverage / action-values) are intentionally distinct surfaces, all live.
+- **Contrastive trainer** — KEEP-AS-CAPABILITY (honest self-inert: import→catch→null,
+  every caller null-guards; `neural status` reports "Unavailable" truthfully). [See F8d cause
+  correction above: the ruvllm *source* still exports it; the dist build is incomplete.]
+- **`enableGraph`/graphAdapter throw** (`agentdb/src/core/AgentDB.ts:154-160`) — a **live,
+  deliberate-inert guard** (Registry B forwards `enableGraph:true` into it; it loud-rejects to
+  prevent a silent no-op), and a future **WIRE** target per ADR-0177 — not dead.
+- **`controller-bridge.ts`** (live shim over Registry B), **Registry A switch**,
+  `mutationGuard`/`attentionService` `undefined`-returns (honest explicit-enable), and the
+  6 disabled daemon workers (real switch bodies, manually triggerable) — all KEEP.
+
+**WIRE / fix (not delete) — supersedes some original dispositions:**
+- **F3a helpers** — rename `router.js`/`session.js`/`memory.js` → `.cjs` + update the
+  generator (`helpers-generator.ts:1219-1221`) + `settings-generator.ts:253` + re-sync this
+  repo's stale `hook-handler.mjs` dogfood (which is the *live* handler here, just an old
+  patch.211 snapshot missing newer ADR-0211 handlers — not a dead duplicate). Inherited.
+- **F8a 0-dim** — add `dimensions: this.config.dimensions` to the `hnswStats` literal
+  (`rvf-backend.ts:1240-1245`).
+- **NEW — spinner non-TTY frame leak.** `cli-core/src/output.ts:595-632` (`Spinner.start()`/`render()`)
+  writes `\r…frame` to stdout with **no `isTTY` guard** (the getter already exists at `:103`),
+  so on non-TTY stdout every 100ms frame appends a line — the "Checking neural systems…" spam
+  seen in the original manual test. Inherited; affects all spinner sites. Low-risk fix.
+- **F8b — sharper than the seed.** Not just a stale `doctor.ts` comment: `doctor.ts:104-105,144-157`
+  **inverts the canonical pick** — it recommends "keep the YAML, archive the JSON" while the
+  daemon + ADR-0069 treat **JSON** as canonical. Reconcile doctor to JSON-canonical. Do NOT
+  touch the daemon's json-wins precedence (inherited + intended). No newly-dead config keys
+  re-emerged (project-config-gaps still holds).
+- **F4 liveness** — reachable, buggy → the targeted PID-centric fix (per the cross-check), not dead.
+
+**DATA housekeeping (stale `.swarm/*`, not code) — safe `rm` (untracked):**
+`.swarm/memory.db.backup-384d`, `.swarm/memory.db.corrupt-2026-05-19-bak`,
+`.swarm/memory.db.pre-fix-bak`, `.swarm/memory.rvf.meta.tmp.60748.447`,
+`.swarm/memory-rvf.sqlite` (+`.lock`). **Verify-first (do not auto-delete):**
+`.swarm/memory.rvf.meta.tmp.92578.1128` (recent — confirm pid 92578 dead) and
+`.swarm/memory.graph` (git-tracked — needs `git rm`; confirm nothing reads the `.swarm/`
+copy — statusline reads a *different* `.claude-flow/data/` path). `agentdb-memory.rvf*`,
+live `memory.rvf*`/`memory.db*` = KEEP.
+
+**Net:** the audit confirms the codebase is **not** carrying broad dead code — one
+fork-only lie to delete (F5), one inherited lie to fix-with-merge-guard (F2), two new
+reachable bugs (spinner, doctor canonical inversion), and a short stale-data cleanup.
+Everything else flagged is honest KEEP or reachable-needs-wiring. No DELETE/CONSOLIDATE
+beyond F5.
