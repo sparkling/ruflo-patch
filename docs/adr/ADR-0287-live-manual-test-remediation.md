@@ -23,10 +23,11 @@ Changelog; raw evidence is in `docs/research/2026-06-02-live-system-findings-res
 ("JWT refresh token rotation…" → "token-based login flow…") returns **0.59 cosine** via the
 `archivist (RVF + HNSW)` backend with real mpnet-768 embeddings; the corpus holds 1,226 entries;
 `agentdb_health` reports 41 controllers live from the canonical registry. The findings below are
-defects and **honesty gaps around that healthy core** — most are reporters/wiring, one is a
-keystone load bug, and several first-pass conclusions were **corrected** by the later passes
-(notably: the node-22/sql.js processes were *other projects* — opda/hm — not ruflo-patch; the
-daemon "Not running" and the write-visibility "lag" did not hold up).
+defects and **honesty gaps around that healthy core** — most are reporters/wiring, and several
+first-pass conclusions were **corrected** by the later passes (notably: the node-22/sql.js processes
+were *other projects* — opda/hm — not ruflo-patch; the daemon "Not running" and the write-visibility
+"lag" did not hold up; and **F3a is not the keystone it was first scored as** — the trajectory-capture
+trace showed it gates nothing, and F10's frozen learning is dormant-by-design, not F3a/F1-gated).
 
 **Terminology:** "upstream" = the ruvnet repos we forked from (`forks/* → origin/main`); upstream
 ADRs are 3-digit (`ADR-100`), ours are 4-digit (`ADR-0287`). We integrate by **hand cherry-pick
@@ -51,7 +52,8 @@ ADRs are 3-digit (`ADR-100`), ours are 4-digit (`ADR-0287`). We integrate by **h
 * **A — Record validated dispositions in one ADR, implement later under separate go-aheads.**
 * **B — Fix everything in the forks now** (violates no-execute-without-go-ahead + patches-in-fork batching).
 * **C — One ADR per finding** (fragments the shared two-registry / multi-substrate / upstream-intent context).
-* **D — Do nothing** (ignores the keystone F3a, which fails every turn).
+* **D — Do nothing** (leaves the catalogued honesty gaps — false boot alarms, lying reporters, the dead
+  drain-bridge — unaddressed, and never resolves F10's dormant-by-design learning).
 
 ## Decision Outcome
 
@@ -61,7 +63,7 @@ below carries its **validated root cause, current status, disposition, and prove
 
 ### Findings
 
-**F3a [HIGH — keystone] — Hook-time router fails to load ("Router not available" every turn).**
+**F3a [LOW — cosmetic noise; does NOT gate F10] — Hook-time router fails to load ("Router not available" every turn).**
 `.claude/helpers/{router,session,memory}.js` are CommonJS, but the project `package.json` declares
 `"type":"module"`, so Node parses them as ESM and the load throws (`module is not defined`); the
 hook-handler's loader swallows it → `router = null` → the `[INFO] Router not available` branch.
@@ -69,14 +71,22 @@ Reproduced in a fresh `init` sandbox. **The load-bearing fix is renaming the hel
 `.cjs`** — neither `createRequire` nor a `.cjs` *dispatcher* helps, because Node resolves
 `router.js` by the package's `type:module` regardless of the requiring module's scope (upstream's
 own generator is therefore *also* bugged here; only the fork-root dogfood went fully `.cjs`).
-*Status:* **still firing live** this session even with MCP connected (it's independent of MCP).
-*Disposition:* rename `router/session/memory.js → .cjs` in the generator (`helpers-generator.ts`
-~:1212-1221) + `executor.ts` + adopt upstream's `hook-handler.cjs` dispatcher; re-dogfood this
-repo's `.claude/`; **add an execution smoke** (run the route hook in a `type:module` sandbox, assert
-≠ "Router not available") — its *absence* is why this shipped through every green release. Rewrite
-the `init-helpers-parity.test.mjs` assertion that wrongly blesses `createRequire` as the fix.
-*Provenance:* inherited generator, fork ahead on `.cjs`; merge risk moderate (collides with
-upstream's in-flight `.mjs→.cjs` dispatcher migration — converge on it).
+*Impact (corrected — was mis-scored "HIGH keystone"):* the failure suppresses one optional
+`[INFO] Routing task → <agent>` advisory line per prompt. The target — `.claude/helpers/router.{js,cjs}` —
+is a **pure `routeTask(task)` regex recommender** (`module.exports = { routeTask, AGENT_CAPABILITIES,
+TASK_PATTERNS }`); it captures **nothing**. The live file-based hook `intelligence.cjs` imports only
+`fs/path/os` and writes only JSON (`pending-insights.jsonl`, `ranked-context.json`,
+`auto-memory-store.json`) — it never touches `episodes`/`sona_trajectories`/`lastAdaptation`/agentdb.
+So fixing F3a changes only whether the advisory prints; it does **not** unblock F10 (see F10 + the
+trajectory-capture trace). *Status:* **still firing live** this session even with MCP connected (it's
+independent of MCP — and of learning). *Disposition:* still worth doing as honesty hygiene — rename
+`router/session/memory.js → .cjs` in the generator (`helpers-generator.ts` ~:1212-1221) + `executor.ts`
++ adopt upstream's `hook-handler.cjs` dispatcher; re-dogfood this repo's `.claude/`; **add an execution
+smoke** (run the route hook in a `type:module` sandbox, assert ≠ "Router not available"). Rewrite the
+`init-helpers-parity.test.mjs` assertion that wrongly blesses `createRequire` as the fix. But it is
+**not** a keystone and unblocks no other finding. *Provenance:* inherited generator, fork ahead on
+`.cjs`; merge risk moderate (collides with upstream's in-flight `.mjs→.cjs` dispatcher migration —
+converge on it).
 
 **F5 [MED] — Dead Phase-2 controller-activation block emits a false "real error" banner.**
 `initializePhase2RuVectorPackages` (`agentic-flow/.../services/agentdb-service.ts:767-908` + call
@@ -128,8 +138,10 @@ legacy read-fallback; daemon precedence is json-wins and **must not change**). `
 confirm nothing emits/reads it). *Provenance:* inherited; low merge risk.
 
 **F3b [LOW] — `ruflo route` default box reads cold/meaningless.** The CLI Q-router shares
-`.swarm/q-learning-model.json` with `SonaOptimizer.processTrajectoryOutcome` (live-trained via the MCP hook
-path, `hooks-tools.ts:3037`), so it is **not** orphaned — just cold here (no trajectory traffic; F10/F3a).
+`.swarm/q-learning-model.json` with `SonaOptimizer.processTrajectoryOutcome` (trained via the explicit
+`hooks_intelligence_trajectory-end` MCP tool, `hooks-tools.ts:3037`), so it is **not** orphaned — just cold here
+because nothing automatically drives that tool (the F10 dormant-by-design capture gap; the file actually didn't
+exist on disk this session). NB this is the SONA q-table, distinct from the `episodes`/`lastAdaptation` writers.
 The default `route <task>` box prints `Confidence 12.5% / Q 0.000 / Exploration` with no cold-state signal
 (`route stats` already shows `updateCount`/`qTableSize`). *Disposition:* **relabel the default box** as
 untrained when `updateCount===0` (from live `getStats()`). Do **not** wire routing-outcomes→Q-table (a
@@ -142,18 +154,32 @@ does the SQLite INSERT and HNSW vector-add in separate try/catch blocks with a s
 off the live user-memory path (ADR-0095); it only bites the dead-Hybrid path + the separate
 `agentdb-memory.rvf` process. *Disposition:* a **discriminated** re-throw of the data-integrity subset
 (`err.name`-matched, per `feedback-best-effort-must-rethrow-fatals` + ADR-0082/0085), **not** a blanket throw;
-ledger row + arch test (forced write-failure ⇒ throws). Sequence **before** any T1 wiring that puts
-`AgentDBBackend` back on a hot path. *Provenance:* inherited verbatim (fork added only a comment) → merge-taxed.
+ledger row + arch test (forced write-failure ⇒ throws). **Sequencing claim corrected — R2 stays latent
+regardless of T1.** `routeMemoryOp({type:'store'})` routes through `createStorage` →
+`@claude-flow/memory/storage-factory` → **`RvfBackend`** (`memory-router.ts:775-783`, ADR-0086/0095); it never
+calls `AgentDBBackend.storeInAgentDB`. And T1 is now **DELETE the dead bridge** (no re-wire), so nothing puts
+`AgentDBBackend` back on a hot path. The "R2 is a precondition for T1" ordering is therefore **moot**; keep R2
+as standalone defensive hardening for the dead-Hybrid / `agentdb-memory.rvf` paths. *Provenance:* inherited
+verbatim (fork added only a comment) → merge-taxed.
 
-**T1 [MED] — auto-memory hook's `agentdb-memory.rvf` silo + a dead drain-bridge.** The SessionStart hook
-(`auto-memory-hook.mjs:247-255`) writes a **separate** `.swarm/agentdb-memory.rvf` in its own process,
-**invisible to `memory_search`** unless the `memory-bridge` skill runs. Worse, its in-process "drain into
-main memory" path (`:319-341`) is **dead code** — it imports the `memory-initializer` that ADR-0086 deleted
-(`existsSync` permanently false). ADR-0083 already mandates converging silos through the single write path.
-*Disposition:* **WIRE** the drain through `routeMemoryOp('store')` (replace the dead import); retire
-`agentdb-memory.rvf` as a durable store — *not* "keep as tenant" (that ratifies a silo ADR-0083 set out to
-remove and doubles the `flock` surface, ADR-0032/0284). Closes an ADR-0210 lie. *Provenance:* hook inherited,
-RVF-target + dead-bridge fork-only; low merge risk; ledger the hook divergence.
+**T1 [MED — disposition corrected: DELETE the dead bridge, do NOT re-wire a drain] — auto-memory hook's
+`agentdb-memory.rvf` silo + a dead drain-bridge.** The SessionStart hook (`auto-memory-hook.mjs:247-255`)
+writes a **separate** `.swarm/agentdb-memory.rvf` in its own process, **invisible to `memory_search`** unless
+the `memory-bridge` skill runs. Its in-process "drain into main memory" path (`:316-341`) is **dead code** — it
+imports `cli/dist/src/memory/memory-initializer.js`, which ADR-0086 **deleted** (`existsSync` permanently false →
+the whole block never runs; it would also embed at the wrong 384-dim if it ever did). **Correction (re-checked
+ADR-0083):** ADR-0083 "Phase 5 — Single Data Flow Path" (accepted 2026-04-12) does **not** mandate a write-path
+drain — it **abandoned** that approach. It explicitly *removed* the ADR-0074 `doSync()` drain from this very
+hook (ADR-0083 §"Remove ADR-0074 `doSync()` drain from auto-memory-hook.mjs (60 lines)"), ruled out a direct
+write-bridge, and made **"the Router the single write path"**; a standing acceptance check
+`check_adr0083_no_dosync_drain` **verifies the drain is absent from the published hook**. So the prior
+disposition ("WIRE the drain through `routeMemoryOp('store')`") would *resurrect* exactly the drain ADR-0083
+deleted and would **trip `check_adr0083_no_dosync_drain`**. *Disposition (corrected):* **DELETE** the dead
+drain-bridge block; rely on the read-time merge / `memory-bridge` skill (the ADR-0083 design) for cross-silo
+visibility, and retire `agentdb-memory.rvf` as a durable store — *not* "keep as tenant" (that ratifies a silo
+ADR-0083 set out to remove and doubles the `flock` surface, ADR-0032/0284). Closes the ADR-0210 dead-bridge lie
+without re-introducing a banned drain. *Provenance:* hook inherited, RVF-target + dead-bridge fork-only; low
+merge risk; ledger the hook divergence.
 
 **T2 [triage] — `.swarm/action-values.json` (fork-only RL sidecar).** Fully live (writer
 `memory-router.ts:2586` after `nightlyLearner.run()`; consumers blend β/γ uplift, on by default; ADR-0280/0279/0277).
@@ -220,16 +246,41 @@ ruvllm 2.5.x" is **false** (the class ships in published `@ruvector/ruvllm@2.5.5
 which **nothing sets**; (3) the false comment. *Disposition:* republish ruvllm at the pinned version + wire the
 stats global + delete the comment; a rebuild alone won't fix it. *Provenance:* fork-only pipeline.
 
-**F10 [HIGH-impact, gated] — the learning/adaptation layer is frozen.** SONA last adapted **2026-04-04**
-(`neural/stats.json` `lastAdaptation`; all 7 `neural/patterns.json` share that timestamp); the `learn` worker
-finds 0 episodes; every AgentDB learning table (`episodes`/`learning_experiences`/`reasoning_patterns`/`skills`)
-= 0; RL sidecars never written. Only the **ADR knowledge graph** is populated (`causal_edges`=910,
-`adr_node_ids`=215, `hierarchical_memory`=292 — written by `adr-index`, not learning). *Root cause:* the
-AgentDB/SONA learning **input** path (episode/trajectory capture) flows through the MCP/hook surface, which is
-gated by **F1 + F3a**; the file-based intelligence-graph JSON stays warm, but the learning substrate is starved.
-*Status:* MCP being up this session is **necessary-not-sufficient** — F3a is still down, so no trajectory capture
-flows. *Disposition:* **gated on F3a** (+ F1); after fixing, confirm episodes accrue and `lastAdaptation`
-advances. The stores are not broken — they are **starved**.
+**F10 [HIGH-impact — dormant BY DESIGN, not gated by F3a/F1] — the learning/adaptation layer is frozen.**
+SONA last adapted **2026-04-04** (`neural/stats.json` `lastAdaptation` = `1775259120916`;
+`trajectoriesRecorded` frozen at 715); the `learn` worker finds 0 episodes; every AgentDB learning table
+(`episodes`/`sona_trajectories`/`learning_experiences`/`reasoning_patterns`/`skills`) = 0 in `.swarm/memory.db`;
+RL sidecars never written (`q-learning-model.json` doesn't even exist). Only the **ADR knowledge graph** is
+populated (`causal_edges`=910, `adr_node_ids`=215, `hierarchical_memory`=292 — written by `adr-index`, not
+learning). **Root cause (CORRECTED — the prior "gated by F1+F3a" claim was wrong, see the trajectory-capture
+trace):** there is **no automatic episode/trajectory-capture caller in normal Claude Code operation.** F10's
+three symptoms are three *independent* metrics with three *separate* writers, and **none of them sits on any
+hook path** (file-based or MCP-connection):
+- **`episodes` table** ← `ReflexionMemory.storeEpisode` (`forks/agentdb .../controllers/ReflexionMemory.ts:190`),
+  reachable only via the explicit `agentdb_reflexion-store` MCP tool / `agentdb reflexion store` CLI.
+- **`sona_trajectories` table** ← `SonaTrajectoryService.recordTrajectory` (agentdb), reachable only via the
+  explicit `agentdb_sona_trajectory_store` tool / archivist dispatch.
+- **SONA `lastAdaptation`** ← `cli/src/memory/intelligence.ts` (`recordStep`/`recordTrajectory`/
+  `endTrajectoryWithVerdict`/`distillLearning`, lines 998/1088/1256/1281), reached only by the `ruflo neural`
+  CLI subcommand (`commands/neural.ts:252/265/852`).
+
+The MCP `hooks_intelligence_trajectory-start/-step/-end` tools (`hooks-tools.ts:2837/2877/2961`) are **not on a
+hook** either — they are tools the model would have to call deliberately, are marked `enabled:false`
+(`:1510-1512`), and even when driven do **not** write `episodes`, `sona_trajectories`, or `lastAdaptation`:
+`trajectory-end` persists into the user-memory RVF `trajectories` namespace and updates only
+`.swarm/sona-patterns.json` (the `SonaOptimizer` JSON, `sona-optimizer.ts:902`). **Live empirical proof (this
+session, MCP connected, node 24):** before — `episodes=0`, `sona_trajectories=0`, `lastAdaptation=2026-04-03`.
+Drove a full trajectory `start→step→end` (`sonaUpdate:true`, `patternsExtracted:1`) **and** one
+`agentdb_reflexion-store`. After — `episodes=0→1` **only from the reflexion-store call** (its
+`session_id=adr0287-trace-probe` row), `sona_trajectories` **still 0**, `lastAdaptation` **still 2026-04-03**,
+`trajectoriesRecorded` **still 715**. So MCP-up does not feed the substrate, and F3a (router) is irrelevant —
+the capture tools simply have no automatic caller. *Disposition:* **NOT gated on F3a/F1.** The stores are not
+broken and not starved-by-a-bug — they are **dormant by design**: learning only happens if something explicitly
+calls the capture tools, which normal operation never does. The real next step is a **wiring decision** — e.g.
+emit an `agentdb_reflexion-store` (and/or `intelligence.recordTrajectory`) from a real PostTask/Stop hook so
+agent outcomes accrue episodes for the (live-but-idle) NightlyLearner — which is **its own ADR**, not a
+side-effect of fixing F3a. (Caveat for the F10 acceptance: assert `episodes`/`lastAdaptation` advance **after
+the chosen capture wiring**, NOT "after F3a + F1".)
 
 **Non-bugs (documented, no change):** **F6** — the multiple pattern/graph stores are independent by design
 (intelligence JSON 148/144, neural JSON 7/715, GNN graph uncreated, RVF 1,226), no data loss. **F7** — the
@@ -256,27 +307,32 @@ separate `agentdb-memory.rvf` (T1), `config.yaml`, 768-dim mpnet (deliberate, AD
 
 | Tier | Item | Action | Risk |
 |---|---|---|---|
-| 1 keystone | **F3a** | rename helpers → `.cjs` in the generator + re-dogfood + **execution smoke**; rewrite the parity test | moderate (converge w/ upstream `.mjs→.cjs`) |
-| 2 code lies | **F5** | delete the Phase-2 block + call site | none (fork-only) |
-| 2 code lies | **F2** | add `{resources:[]}` handler to **both** bins + ledger + arch-guard | negligible |
-| 3 reporters | **F8a** | plumb real dim into CLI + MCP reporters (+ type + native literal) | ~none |
-| 3 reporters | **F8e** | `isTTY` guard on Spinner/ProgressBar | low |
-| 3 reporters | **F8b** | reconcile `doctor.ts` to JSON-canonical (verify drop-yaml separately) | low |
-| 3 reporters | **F3b** | relabel the default `route` box as untrained from live stats | low |
-| 4 storage | **T1** | wire auto-memory drain via `routeMemoryOp`; retire `agentdb-memory.rvf` | low |
-| 4 storage | **R2** | discriminated re-throw (before any T1 hot-path wiring) + ledger + arch test | merge-taxed |
-| 4 storage | **F4** | anchor `doctor.ts:166` PID path to project root | low |
-| 5 pipeline | **F8d** | republish ruvllm @ pin + wire `__claudeFlowSonaStats` + fix comment | pipeline |
+| 1 code lies | **F5** | delete the Phase-2 block + call site | none (fork-only) |
+| 1 code lies | **F2** | add `{resources:[]}` handler to **both** bins + ledger + arch-guard | negligible |
+| 2 reporters | **F8a** | plumb real dim into CLI + MCP reporters (+ type + native literal) | ~none |
+| 2 reporters | **F8e** | `isTTY` guard on Spinner/ProgressBar | low |
+| 2 reporters | **F8b** | reconcile `doctor.ts` to JSON-canonical (verify drop-yaml separately) | low |
+| 2 reporters | **F3b** | relabel the default `route` box as untrained from live stats | low |
+| 3 storage | **T1** | **DELETE** the dead drain-bridge (do NOT re-wire — ADR-0083 = router-as-single-write-path); retire `agentdb-memory.rvf` | low |
+| 3 storage | **R2** | discriminated re-throw + ledger + arch test (standalone; **not** a T1 precondition — `routeMemoryOp` hits RvfBackend, not AgentDBBackend) | merge-taxed |
+| 3 storage | **F4** | anchor `doctor.ts:166` PID path to project root | low |
+| 3 noise fix | **F3a** | rename helpers → `.cjs` in the generator + re-dogfood + **execution smoke**; rewrite the parity test. **Cosmetic only — suppresses an advisory line; gates nothing** | moderate (converge w/ upstream `.mjs→.cjs`) |
+| 4 pipeline | **F8d** | republish ruvllm @ pin + wire `__claudeFlowSonaStats` + fix comment | pipeline |
 | band-aid (decided) | **F1** | `MCP_TIMEOUT=60000` in Claude Code's launch env — only. Tree-shrink + cache-warm dropped (downgraded; not worth it) | none (operator env) |
-| gated | **F10** | re-verify learning resumes after F3a + F1 | — |
+| own ADR (wiring decision) | **F10** | learning is **dormant-by-design** (no automatic capture caller; NOT gated by F3a/F1). Decide a capture seam — emit `agentdb_reflexion-store` / `intelligence.recordTrajectory` from a PostTask/Stop hook — then assert episodes/`lastAdaptation` advance | design |
 | keep / none | **T2, T3, T4, F6, F7, F8c, F9p, F11-RVF** | documented; no code change | — |
 
-**Implementation note:** F3a is the only finding actively breaking on every turn, and it gates F10 — do it
-first. F5 + F2 are self-contained honesty fixes. Everything in tier 3+ is low-risk cleanup.
+**Implementation note (corrected):** F3a is **not** a keystone and gates nothing — it only suppresses an
+optional `[INFO] Routing…` advisory; demoted to a tier-3 noise/honesty fix. F5 + F2 are self-contained honesty
+fixes and the highest-value items. **F10 is NOT unblocked by F3a or F1** — the trajectory-capture trace + live
+test prove the learning substrate has no automatic writer in normal operation (it is dormant by design), so it
+needs a deliberate *capture-wiring* decision in its own ADR, not a side-effect of any fix here. Everything in
+tier 2-3 is low-risk cleanup.
 
 ### Consequences
 
-* Good — fixing F3a restores hook-time routing (failing every turn) and unblocks F10's learning input.
+* Good — fixing F3a restores the hook-time routing advisory (failing every turn). It does **not** unblock F10
+  (F3a and the file-based hook are not on the learning-capture path — trajectory-capture trace).
 * Good — F5 removes a recurring false boot alarm and keeps Registry B the single controller authority.
 * Good — the reporter fixes (F8a×2, F4, F8b) stop the diagnostics lying about a working system.
 * Good — the validation/live-re-eval caught real errors *before* implementation (F2 drop→add, the F1 60s
@@ -290,12 +346,14 @@ first. F5 + F2 are self-contained honesty fixes. Everything in tier 3+ is low-ri
 Each fix lands with an acceptance check wired into `test-acceptance*.sh` + `.github/workflows/` (per
 `feedback-always-wire-tests-into-cicd`):
 * **F3a** — run the route hook in a `type:module` sandbox; assert output ≠ "Router not available" (the
-  previously-missing execution test).
+  previously-missing execution test). (Scope: routing advisory only — this check does **not** speak to F10.)
 * **F5** — MCP boot log shows no `"real error, not module-missing"`; the live services init via Registry B.
 * **F2** — `resources/list` returns `{ resources: [] }` (no `-32601`); arch-guard asserts the handler exists.
 * **F8a** — `neural status` (CLI + MCP) reports 768-dim; **F4** — `doctor` reports Running including from a
   subdirectory; **F8e** — non-TTY output has no `\r`-frame spam.
-* **F10** — after F3a + F1, episodes/trajectories accrue and `lastAdaptation` advances.
+* **F10** — after the chosen **capture-wiring** lands (its own ADR — emit `agentdb_reflexion-store` /
+  `intelligence.recordTrajectory` from a PostTask/Stop hook), episodes accrue and `lastAdaptation` advances.
+  **Not** "after F3a + F1" — those gate nothing here.
 * Inherited-surface fixes (F2, R2, F4, F8b, F8e) each get an INTEGRATION-LEDGER row.
 
 ## More Information
@@ -346,6 +404,19 @@ on-disk only.)
   cap, agentdb-revert first step), R2 (discriminated re-throw), T1 (wire-via-router; dead drain-bridge = a lie),
   F3a (helper-target `.cjs` is load-bearing; upstream also bugged; un-retracted the createRequire claim), F8a
   (2 reporters), F4 (PID-write already done).
+* **2026-06-03 — Trajectory-capture trace (live, MCP-connected; authoritative on F3a↔F10).** Traced every
+  writer of `episodes`/`sona_trajectories`/`lastAdaptation` and its caller. **F3a does NOT gate F10:** the F3a
+  target (`router.cjs`) is a pure `routeTask` recommender and `intelligence.cjs` (the live hook) writes only JSON
+  — neither touches the learning substrate; F3a demoted HIGH-keystone → LOW cosmetic. **F10 root cause corrected:**
+  not F1/F3a-gated but **dormant-by-design** — `episodes` is written only by the explicit `agentdb_reflexion-store`
+  tool / CLI (`ReflexionMemory.storeEpisode`), `sona_trajectories` only by `agentdb_sona_trajectory_store`, and
+  `lastAdaptation` only by the `ruflo neural` CLI (`intelligence.ts`); the `hooks_intelligence_trajectory-*` MCP
+  tools are `enabled:false`, write only RVF `trajectories` + `sona-patterns.json`, and have no automatic caller.
+  **Live proof:** a full trajectory `start→step→end` left `episodes`/`sona_trajectories`/`lastAdaptation`
+  unchanged; only an explicit `agentdb_reflexion-store` moved `episodes` 0→1. **T1 corrected DELETE-not-rewire**
+  (ADR-0083 = router-as-single-write-path; deleted the doSync drain + `check_adr0083_no_dosync_drain` guards it).
+  **R2 sequencing mooted** (`routeMemoryOp`→RvfBackend, never `AgentDBBackend.storeInAgentDB`). F10 reframed as
+  its own capture-wiring ADR.
 * **2026-06-03 — Daemon + MCP restarted onto node 24; live re-evaluation (authoritative).** **Correction:** the
   node-22/sql.js processes were the **other ruflo projects on this machine (opda, hm)**, not ruflo-patch — the
   "daemon/MCP runs sql.js" finding was a cross-project misattribution. ruflo-patch's own daemon (PID 49267) + MCP
