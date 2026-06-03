@@ -478,3 +478,70 @@ File:line: `storage-factory.ts:97-159`, `hybrid-backend.ts:225-235`, `memory-rou
 627-715,1706,4062,4341`, `archivist-init.ts:1640-1678`, `memory-rvf-adapter.ts:35-46`,
 `auto-memory-hook.mjs:247-255`, `agentdb-backend.ts:777-844`, `action-values.ts:50`,
 `q-learning-router.ts:149`, `moe-router.ts:165`, `schema.sql:15`.
+
+### 2026-06-03 — F10: Learning layer frozen + full storage inventory + orphan stores
+
+Live inspection of the actual on-disk stores (not just the code) surfaced the most
+operationally significant finding of this whole ADR: **the learning/adaptation layer
+has been frozen for ~2 months, because its input path is the same MCP/hook path that
+is down (F1/F3a).** Plus two more orphan/duplicate stores.
+
+**The freeze (evidence):**
+- `.claude-flow/neural/stats.json`: `lastAdaptation` = **2026-04-04 00:32**; `trajectoriesRecorded` = 715 (frozen).
+- `.claude-flow/neural/patterns.json`: all 7 patterns share timestamp `step_17752591209xx` = **2026-04-04 00:32** — populated once, never since.
+- `.claude-flow/metrics/learn.json` (daemon `learn` worker, ran 2026-06-02): `edgesDiscovered: 0`, `skillsCreated: 0`, recommendation *"collect more diverse episode data."*
+- `.swarm/memory.db`: every learning table (`episodes`, `learning_experiences`, `reasoning_patterns`, `skills`, `sona_trajectories`, `consolidation_*`) = **0 rows**. Only the **ADR knowledge graph** is populated (`causal_edges`=910 = ADR `depends-on`/`supersedes` edges, `adr_node_ids`=215, `hierarchical_memory`=292 = ADR metadata) — written directly by `adr-index`, not by learning.
+- RL sidecars `.swarm/{q-learning-model,action-values,moe-weights}.json` = **never written**.
+
+**Why (causal chain — strong, confirm post-fix):** there are TWO hook paths
+(`project-two-hook-paths-cli-vs-handler`). The **file-based** path (settings.json →
+`intelligence.cjs`) IS live — `.claude-flow/data/graph-state.json` (148 nodes/144 edges)
+was updated **today**, and `[INTELLIGENCE]` fires every prompt. But the **AgentDB/SONA
+learning** path (episodes, trajectories, RL uplift) flows through the **MCP** tools
+(`hooks-tools.ts:3037` `processTrajectoryOutcome` → q-learning update; `nightlyLearner`
+→ action-values) — and the MCP server's tools **never connect** (F1: npm cold-start >30s)
+and the hook-time router is dead (F3a). So: **F1+F3a → no episode/trajectory capture →
+learning starved → frozen since the last time MCP worked (2026-04-04).** The intelligence
+JSON graph stays warm; the AgentDB/SONA learning substrate is inert. This is the concrete
+answer to "we have learning pipelines that rely on storing data" — **they are storing
+almost nothing new.**
+
+**Orphan / duplicate stores (extends F9):**
+- `.claude-flow/agentdb/agentdb.sqlite` (528 KB) — a **second, fully-initialized but
+  ENTIRELY EMPTY** AgentDB SQLite, alongside the real `.swarm/memory.db`. A different init
+  path resolved a different `dbPath`. Dead weight; ambiguous which is authoritative.
+- `.claude/memory.db` — vestigial 384-dim legacy DB; **DELETED 2026-06-03** (empty, nothing
+  opened it, `.swarm` always won). Discovery arrays (`swarm.ts:39`, `hooks.ts:4062,4341`)
+  still list it → prune them so it can't resurface (F9 cleanup).
+
+**Full storage inventory** (project root; `~/.claude/projects/.../memory/` is the separate
+cross-session auto-memory, outside the repo):
+
+| Store | Path | Purpose | State |
+|---|---|---|---|
+| User-memory vectors | `.swarm/memory.rvf` (+`.meta`) | `memory_store`/`memory_search` corpus (768-dim HNSW) — **the real memory** | ✅ 1,226 entries, live |
+| AgentDB relational/graph | `.swarm/memory.db` | causal graph, hierarchical mem, episodes, skills, reasoning, learning tables | ⚠️ only ADR graph populated (910/215/292); learning tables = 0 |
+| AgentDB SQLite #2 | `.claude-flow/agentdb/agentdb.sqlite` | duplicate AgentDB init | ❌ empty orphan |
+| Auto-memory RVF | `.swarm/agentdb-memory.rvf` (+`.meta`) | auto-memory-hook insights (separate process) | ⚠️ siloed from `memory.rvf` (R1) |
+| Auto-memory source | `.claude-flow/data/auto-memory-store.json` | 148 MEMORY.md/cross-project entries imported by the hook | ✅ 148 |
+| Intelligence graph | `.claude-flow/data/graph-state.json` | 148 nodes/144 edges; `[INTELLIGENCE]` suggestions | ✅ live (updated today) |
+| Intelligence aux | `.claude-flow/data/{intelligence-snapshot.json,ranked-context.json,pending-insights.jsonl}`, `cjs-intelligence-signals.json` | snapshots, ranked context, pending-insight queue | ✅ active |
+| Neural patterns | `.claude-flow/neural/patterns.json` + `stats.json` | 7 patterns, 715 trajectories | ❌ frozen @ 2026-04-04 |
+| SONA patterns | `.swarm/sona-patterns.json` | SONA optimizer state | ⚠️ stale |
+| RL sidecars | `.swarm/{q-learning-model,action-values,moe-weights}.json` | Q-table / action-value uplift / MoE weights | ❌ never written |
+| Archivist audit | `.claude-flow/data/archivist-audit.jsonl` (8.4 MB) | append-only audit log (ADR-0263 replay) | ✅ live |
+| Daemon/agents state | `.claude-flow/{daemon-state.json,agents.json,agents/store.json,claims/claims.json,metrics/learn.json}`, `.swarm/{swarm-state.json,state.json}` | worker run history, agent registry, claims, learn metrics | ✅/⚠️ |
+| Config | `.claude-flow/config.json` (May) + `config.yaml` (Apr) + `embeddings.json` | runtime config; **json wins, yaml dead** (F8b) | ⚠️ collision |
+| Federation | `.claude-flow/federation/key-node-*.json` (~50) | federation node identities | ⚠️ transport broken (F1-adjacent) |
+| Legacy/cruft | `.swarm/{memory.graph,memory-rvf.sqlite,memory.db.*-bak,memory.rvf.meta.tmp.*}` | old graph, backups, corruption snapshot (2026-05-19), orphaned temps | 🗑️ stale |
+
+**Consolidated concerns (all findings):**
+1. **[HIGH] Learning frozen/starved** (F10) — adaptation dead since 2026-04-04; episodes/RL tables empty; root cause is the broken MCP/hook input path (F1/F3a). The learning pipeline runs but has no input.
+2. **[HIGH] MCP tools never connect** (F1) — entire surface offline this session; npm cold-start >30s.
+3. **[HIGH] Hook router dead** (F3a) — CJS-under-`type:module` → "Router not available" every turn.
+4. **[MED] Substrate sprawl** — 3 AgentDB SQLites (one real, one empty orphan, one deleted) + 2 RVFs + many JSON sidecars; ambiguous authority, no general reconciler.
+5. **[MED] Auto-memory silo (R1)** + **silent row/vector catch (R2, `agentdb-backend.ts:832`)**.
+6. **[MED] Config collision (F8b)**; **[LOW] corruption history** (`memory.db.corrupt-2026-05-19-bak`, no auto-repair).
+7. **[LOW] reporter/cosmetic**: F2 resources lie, F8a 0-dim, spinner non-TTY leak, F4 daemon liveness, F5 dead block, doctor JSON-canonical inversion.
+
+**F10 disposition:** the fix is **upstream of the stores** — restore the MCP/hook input path (F1 timeout + F3a `.cjs` rename), then confirm learning resumes (episodes/trajectories accrue, `lastAdaptation` advances). Separately, remove the empty `.claude-flow/agentdb/agentdb.sqlite` orphan and prune the `.claude/memory.db` discovery paths. The stores themselves are not broken — they are **starved**.
