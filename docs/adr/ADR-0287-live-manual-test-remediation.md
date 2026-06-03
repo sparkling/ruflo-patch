@@ -107,13 +107,20 @@ merge risk.**
 
 **Reachability correction (2026-06-03 — agentic-flow provenance trace).** This finding's "every boot logs"
 overstated *which* boot. The live ruflo MCP server is **`@sparkleideas/ruflo` = claude-flow v3** (`.mcp.json`:
-`npx @sparkleideas/ruflo@latest mcp start`, `CLAUDE_FLOW_MODE=v3`) and does **not** import or boot
-agentic-flow's `AgentDBService` — the v3 tree's only static use of the agentic-flow package is
-`agentic-flow/transport/loader` (federation plugin) plus dynamic embedder/token-optimizer imports; none touch
-`AgentDBService`/memory/learning. (An earlier "ruflo doesn't import agentic-flow" grep was meaningless — it
-searched a non-existent top-level `ruflo/src`; `forks/ruflo` is the v3 monorepo, code under `v3/@claude-flow/*`.)
-So the false banner fires on **agentic-flow's own fastmcp surface**, not the stack the manual test exercised —
-the F5 acceptance check must boot agentic-flow's MCP/CLI, not the ruflo server. **`AgentDBService` is 100%
+`npx @sparkleideas/ruflo@latest mcp start`, `CLAUDE_FLOW_MODE=v3`) never reaches `AgentDBService` on **plain
+MCP-server boot or memory operations** — the v3 MCP package has zero `AgentDBService`/fastmcp reference, and the
+memory/agentdb tools route to claude-flow v3 + `forks/agentdb`'s archivist, not agentic-flow. (An earlier "ruflo
+doesn't import agentic-flow" grep was meaningless — it searched a non-existent top-level `ruflo/src`;
+`forks/ruflo` is the v3 monorepo under `v3/@claude-flow/*`, which statically imports ~15 *other* agentic-flow
+subpaths — reasoningbank/workers/core/hooks/transport — none reaching `AgentDBService`.) **Correction (retirement
+swarm, 2026-06-03 — supersedes this note's first draft):** the banner *is* reachable inside the live claude-flow
+process, just not on the boot/memory path — via the **autopilot edge**: `tryLoadLearning()`
+(`autopilot-state.ts:334`) → `import('agentic-flow/coordination/autopilot-learning')` →
+`AutopilotLearning.initialize()` → `getAgentDBService()` → `getInstance()` (auto-runs `initialize()` → Phase-2).
+So it fires whenever an autopilot feature runs (autopilot CLI / `autopilot_*` MCP tools / `doctor`), **and** on
+agentic-flow's own standalone MCP/CLI — but NOT on `memory_store`/`search`/`health`, which is why the manual
+test never observed it. *F5 acceptance:* exercise the autopilot path (or agentic-flow's MCP) and assert no
+banner — NOT "boot the ruflo MCP server" (that path never triggers it). **`AgentDBService` is 100%
 fork-authored** (no `class AgentDBService` anywhere on agentic-flow `origin/main`; the whole file is absent) ⇒
 "what about upstream" = nothing to lose, zero parity to maintain. **No functionality is lost by the delete:**
 the four controllers live in `forks/agentdb`'s canonical Registry B (archivist; 41 controllers in
@@ -535,3 +542,16 @@ on-disk only.)
   `AgentDBService`); `AgentDBService` is 100% fork-authored (absent from agentic-flow `origin/main`); delete
   loses no functionality (controllers live in agentdb Registry B). Opened a separate `/ruflo-swarm:swarm` to
   assess retiring the whole agentic-flow `AgentDBService`+fastmcp surface.
+* **2026-06-03 — agentic-flow retirement swarm (5 agents) + F5 banner correction.** Verdict: the fork's
+  `AgentDBService` + fastmcp `stdio-full` island (14 files, ~80+ tools — not "12") is **retirable** —
+  fork-authored, reached by no live ruflo path except one duck-typed autopilot edge, **zero capability lost**
+  (every method delegates to a surviving `forks/agentdb` controller; the fork's own `controller-bridge.ts`
+  already calls it the legacy "Phase 5 will remove" path), and retiring **ALIGNS with upstream** (which
+  re-exports the standalone `agentdb` package, whose 41-tool MCP is the canonical surface). Scope = retire the
+  island in-fork, **KEEP** the agentic-flow dep (the live tree needs ~15 other subpaths). Orthogonal to F10
+  (seam (a) uses the SQLite path, never `AgentDBService`). **F5 correction:** the false banner IS reachable in
+  the live claude-flow process via the autopilot edge (`tryLoadLearning` → `autopilot-learning.initialize` →
+  `getAgentDBService` → `getInstance`→`initialize`→Phase-2), not only agentic-flow's standalone surface —
+  supersedes the prior "agentic-flow-surface-only" wording. Recommend a successor ADR, gated on the
+  product-decision "is agentic-flow's standalone MCP server still wanted?" Synthesis + facets:
+  `docs/research/agentic-flow-retirement/00-SYNTHESIS.md` + `01-05`.
