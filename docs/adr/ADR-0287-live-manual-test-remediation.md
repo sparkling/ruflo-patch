@@ -105,6 +105,25 @@ is superseded by ADR-0177, which *reverses* that retirement (still unimplemented
 comment misapplies it. *Provenance:* fork-only (intro `2f372931`, absent from `origin/main`); **zero
 merge risk.**
 
+**Reachability correction (2026-06-03 — agentic-flow provenance trace).** This finding's "every boot logs"
+overstated *which* boot. The live ruflo MCP server is **`@sparkleideas/ruflo` = claude-flow v3** (`.mcp.json`:
+`npx @sparkleideas/ruflo@latest mcp start`, `CLAUDE_FLOW_MODE=v3`) and does **not** import or boot
+agentic-flow's `AgentDBService` — the v3 tree's only static use of the agentic-flow package is
+`agentic-flow/transport/loader` (federation plugin) plus dynamic embedder/token-optimizer imports; none touch
+`AgentDBService`/memory/learning. (An earlier "ruflo doesn't import agentic-flow" grep was meaningless — it
+searched a non-existent top-level `ruflo/src`; `forks/ruflo` is the v3 monorepo, code under `v3/@claude-flow/*`.)
+So the false banner fires on **agentic-flow's own fastmcp surface**, not the stack the manual test exercised —
+the F5 acceptance check must boot agentic-flow's MCP/CLI, not the ruflo server. **`AgentDBService` is 100%
+fork-authored** (no `class AgentDBService` anywhere on agentic-flow `origin/main`; the whole file is absent) ⇒
+"what about upstream" = nothing to lose, zero parity to maintain. **No functionality is lost by the delete:**
+the four controllers live in `forks/agentdb`'s canonical Registry B (archivist; 41 controllers in
+`agentdb_health`); the consumer-method fallbacks (LearningSystem / CausalGraph / keyword routing) remain. The
+**complete** delete scope was verified safe — Phase-1/4 are independently live (valid `getController` switch
+cases) and every Phase-2 consumer guard (`if (this.<x>Enabled && this.<x>)`) is already false today. *Scope
+note:* F5 is the smallest chip off a **larger, possibly-vestigial agentic-flow `AgentDBService` + 12-tool
+fastmcp surface** that `forks/agentdb` + claude-flow v3 appear to have superseded — now under a **separate
+retirement investigation** (`/ruflo-swarm:swarm`, 2026-06-03).
+
 **F2 [MED] — `resources/list` returns `-32601` though the server advertises `resources`.**
 Both bins advertise `capabilities.resources` with no handler → falls to `-32601`. The **live** path is
 `bin/cli.js:206` (advert) / `:309` (`-32601`), **not** `bin/mcp-server.js:192` (reachable only via the
@@ -282,6 +301,69 @@ agent outcomes accrue episodes for the (live-but-idle) NightlyLearner — which 
 side-effect of fixing F3a. (Caveat for the F10 acceptance: assert `episodes`/`lastAdaptation` advance **after
 the chosen capture wiring**, NOT "after F3a + F1".)
 
+**F10 capture-wiring investigation (2026-06-03 — 4-agent swarm: upstream ADRs · upstream impl · fork impl ·
+project ADRs; raw findings `docs/research/f10/01-04`).** The dormant-by-design verdict holds and is now
+grounded across upstream + fork + corpus, and the fix is de-risked:
+
+- **Upstream INTENDS auto-capture but is wiring it incrementally and has DEFERRED the Claude-Code seam.**
+  claude-flow ADR-074 (self-learning-wiring) wired `hooks_task-completed→recordTrajectory()` and frames the
+  prior no-op as a *bug* ("surfaces advertise capabilities they never invoke"); its "Deliberately NOT in this
+  round" list names exactly our gap — "wire post-edit/post-command to feed the trajectory pipeline (design
+  call: which store wins)" + "schedule the consolidation worker" — deferred pending the store-ownership
+  question ADR-075 (unified-learning-stats) is resolving, each step behind a benchmark+CI gate. (Citation fix:
+  no literal upstream `ADR-057`; RVF-native = agentdb ADR-003, unified-self-learning = agentdb ADR-006
+  [Proposed/unbuilt], cli-core = claude-flow ADR-100.)
+- **Upstream and fork are at PARITY on the dormant seam.** Upstream's fired Claude-Code hook also terminates
+  in `intelligence.cjs.feedback()` (JSON only — no episode/trajectory/SONA write). The fork is in fact
+  **ahead** on the *manually-invoked* `hooks_post-task` (ADR-0268 episode write + reward integrity); upstream
+  is ahead only on the `#2245 Round B` synthesise-trajectory-from-post-edit path — which also runs only on
+  explicit MCP call. The fork is **not behind**; there is nothing to port.
+- **Correction to this finding's "only via the explicit tool" wording — the episode write chain is already
+  LIVE.** `hooks_post-task` (`hooks-tools.ts:1769`, ADR-0268) already dispatches `agentdb_reflexion_store →
+  ReflexionMemory.storeEpisode → episodes` (substrate-registry "Phase 7 LIVE"). What is missing is **only the
+  trigger**: the live file-based hook (settings.json `Task` matcher → `hook-handler.mjs post-task` →
+  `intelligence.cjs.feedback()`) terminates in JSON sidecars and never calls it (`settings-generator.ts:397`
+  wires the JSON-only Path A, never the episode-writing Path B).
+- **F10 is the unfinished PRODUCER half of ADR-0195.** The fork shipped a consumer cluster (ADR-0195
+  bus+subscriber, ADR-0277/0279/0280 action-value substrate) that ASSUMED a producer never built — ADR-0279
+  §R3 literally names "the post-task hook (`hooks_post-task → agentdb_reflexion-store`)" as the producer, and
+  that hook does not exist. The autopilot event bus is a **half-seam**: subscriber wired
+  (`agentdb-service.ts:1427`), emitter present (`autopilot-learning.ts:1107`) but `_record()` has no live
+  caller AND the file-hook runs in a separate short-lived process that cannot reach the in-process bus — so the
+  event-bus seam is expensive, not "just needs an emitter."
+- **Most-starved consumer: NightlyLearner.** It runs hourly (`worker-daemon.ts` `learn` row, enabled, 60-min)
+  against an empty `episodes` table → `action-values.json` never populated → the ON-by-default ADR-0280 β/γ
+  routing de-confounding is permanently self-inert. Filling `episodes` is what activates the headline routing
+  feature.
+- **Recommended cheapest correct seam (a):** wire the live file-based PostTask (`Task` matcher) hook to invoke
+  the existing `ruflo hooks post-task` CLI, which already writes the episode. Insertion: minimal =
+  `.claude/helpers/hook-handler.mjs` `post-task` handler (additive to the JSON feedback); durable fork fix =
+  `settings-generator.ts:~399` so fresh inits inherit it (`feedback-patches-in-fork`). Forward
+  `--task`/`--success`/`--agent`/`--quality` (today `postTaskCommand` drops `task`/`quality` → episodes record
+  `task='task_…'`, reward 0.6; a one-line `callMCPTool` arg addition fixes it so NightlyLearner's `task_type`
+  grouping is meaningful). **No RVF-flock exposure** — episodes are the SQLite carve-out (`.swarm/memory.db`),
+  not the `.jslock` surface ADR-0284 addressed; the write is already discriminating-non-fatal (ADR-0268 R3).
+- **Constraints the capture-wiring ADR MUST decide** (priority): (1) **PII/redaction — NEW, ungoverned, the
+  biggest design question.** An episode row carries `subject`+`critique` = user-prompt content, file paths,
+  possibly secrets — and capture turns transient turn content into a durable, embedded, cross-session,
+  potentially federated (ADR-0196) store. Mechanism exists (`aidefence_has_pii`/`transfer_detect-pii`) but no
+  policy → must decide redaction-before-write. (2) **Router single-write-path / flock** (ADR-0083 +
+  `check_adr0083_no_dosync_drain`; ADR-0032/0284) — seam (a) sidesteps this (SQLite carve-out, not RVF), but
+  must open no new RVF writer. (3) **No-fallbacks/fail-loud** (ADR-0286) — discriminated re-throw, never
+  swallow-to-stay-green (that recreates the dormant-but-green illusion F10 exposed). (4) **Embedding cost** —
+  no per-turn mpnet-768 embed on the hot path; defer to the daemon. (5) **Anti-sprawl** (ADR-0098)
+  one-hook-one-write; **CICD must assert the HOOK fires the write, not a manual tool call.**
+
+*Refined disposition:* unchanged in kind — **still its own capture-wiring ADR; do NOT implement here (no
+go-ahead)** — but de-risked: the write path is live, the cheapest seam is identified (seam a), it **completes
+ADR-0195** and aligns with upstream's ADR-074 direction, and the genuinely-open *decisions* are the constraints
+above (PII foremost), not "does a seam exist." *Acceptance (refined):* after seam (a) lands, drive a real Task
+completion through the **file-based hook** (not a manual tool) and assert `episodes` accrues a row with real
+`task_type`/`reward`, then NightlyLearner's hourly run populates `action-values.json`. (Corpus citation fixes:
+project `ADR-0125` = Hive-mind queen-types, *not* MemoryConsolidator — that is upstream 3-digit ADR-125; §F11's
+"MemoryConsolidator starved" overstates, only the episode-adjacent paths are dry; `ADR-0166` is superseded,
+only its Phase-3 controller-wiring is F10-relevant.)
+
 **Non-bugs (documented, no change):** **F6** — the multiple pattern/graph stores are independent by design
 (intelligence JSON 148/144, neural JSON 7/715, GNN graph uncreated, RVF 1,226), no data loss. **F7** — the
 cross-process write-visibility "lag" did not reproduce; the RVF write path is synchronous-durable (ADR-0284).
@@ -307,7 +389,7 @@ separate `agentdb-memory.rvf` (T1), `config.yaml`, 768-dim mpnet (deliberate, AD
 
 | Tier | Item | Action | Risk |
 |---|---|---|---|
-| 1 code lies | **F5** | delete the Phase-2 block + call site | none (fork-only) |
+| 1 code lies | **F5** | **DELETE (complete scope)**: Phase-2 block + call site + the 4 orphaned consumer branches + fields + teardown. Banner is on agentic-flow's *own* fastmcp surface (NOT the live ruflo boot); `AgentDBService` is 100% fork-authored → acceptance check boots agentic-flow's MCP, not ruflo's | none (fork-only) |
 | 1 code lies | **F2** | add `{resources:[]}` handler to **both** bins + ledger + arch-guard | negligible |
 | 2 reporters | **F8a** | plumb real dim into CLI + MCP reporters (+ type + native literal) | ~none |
 | 2 reporters | **F8e** | `isTTY` guard on Spinner/ProgressBar | low |
@@ -319,7 +401,7 @@ separate `agentdb-memory.rvf` (T1), `config.yaml`, 768-dim mpnet (deliberate, AD
 | 3 noise fix | **F3a** | rename helpers → `.cjs` in the generator + re-dogfood + **execution smoke**; rewrite the parity test. **Cosmetic only — suppresses an advisory line; gates nothing** | moderate (converge w/ upstream `.mjs→.cjs`) |
 | 4 pipeline | **F8d** | republish ruvllm @ pin + wire `__claudeFlowSonaStats` + fix comment | pipeline |
 | band-aid (decided) | **F1** | `MCP_TIMEOUT=60000` in Claude Code's launch env — only. Tree-shrink + cache-warm dropped (downgraded; not worth it) | none (operator env) |
-| own ADR (wiring decision) | **F10** | learning is **dormant-by-design** (no automatic capture caller; NOT gated by F3a/F1). Decide a capture seam — emit `agentdb_reflexion-store` / `intelligence.recordTrajectory` from a PostTask/Stop hook — then assert episodes/`lastAdaptation` advance | design |
+| own ADR (wiring decision) | **F10** | dormant-by-design, **NOT gated by F3a/F1**. 4-agent swarm (2026-06-03): write chain already LIVE (`hooks_post-task`→`agentdb_reflexion_store`→`episodes`, ADR-0268) — only the **trigger** is missing. Cheapest seam (a) = wire the file-based PostTask hook → `ruflo hooks post-task` (`hook-handler.mjs` / `settings-generator.ts`); no RVF-flock (SQLite carve-out). Completes ADR-0195's producer half; unblocks NightlyLearner→ADR-0280. Open decisions = constraints (**PII-redaction foremost**), not seam existence | design |
 | keep / none | **T2, T3, T4, F6, F7, F8c, F9p, F11-RVF** | documented; no code change | — |
 
 **Implementation note (corrected):** F3a is **not** a keystone and gates nothing — it only suppresses an
@@ -438,3 +520,18 @@ on-disk only.)
   embeddings (0.59). Net: **F1 + F4 downgraded** (surfaces healthy), **T3/T4 sql.js items dropped** (cross-project),
   **F8a doubled** (MCP reporter also lies), **F3a still broken** (keystone). Reaffirmed: hand cherry-pick (not
   `--theirs`); ledger = `docs/upstream/INTEGRATION-LEDGER.md`.
+* **2026-06-03 — F10 capture-wiring swarm (4 agents) + F5 reachability trace.** **F10:** confirmed
+  dormant-by-design across upstream+fork+corpus and de-risked. Upstream INTENDS auto-capture but DEFERRED the
+  Claude-Code seam (claude-flow ADR-074 calls the no-op a *bug*; post-edit/command deferred pending
+  store-ownership, ADR-075); upstream+fork at PARITY on the dormant hook seam (fork ahead on `hooks_post-task`).
+  Corrected this finding's "only via explicit tool" — the episode write chain is LIVE
+  (`hooks_post-task`→`agentdb_reflexion_store`→`episodes`, ADR-0268); only the *trigger* is missing. F10 =
+  unfinished PRODUCER half of ADR-0195 (ADR-0279 §R3 names a non-existent producer hook); most-starved consumer
+  = NightlyLearner (hourly vs empty episodes) → ADR-0280 self-inert. Cheapest seam (a): wire file-based PostTask
+  hook → `ruflo hooks post-task` (`hook-handler.mjs` / `settings-generator.ts`); no RVF-flock (SQLite carve-out).
+  Biggest open decision = PII-redaction-before-write (new, ungoverned). Still its own ADR; no implementation.
+  Raw findings: `docs/research/f10/01-04`. **F5:** reachability trace — the false banner is on agentic-flow's
+  *own* fastmcp surface, not the live ruflo MCP boot (`@sparkleideas/ruflo` = claude-flow v3 never imports
+  `AgentDBService`); `AgentDBService` is 100% fork-authored (absent from agentic-flow `origin/main`); delete
+  loses no functionality (controllers live in agentdb Registry B). Opened a separate `/ruflo-swarm:swarm` to
+  assess retiring the whole agentic-flow `AgentDBService`+fastmcp surface.

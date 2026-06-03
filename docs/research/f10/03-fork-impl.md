@@ -1,0 +1,272 @@
+# F10 Facet 3 — Fork implementation: writer wiring & the cheapest correct seam
+
+READ-ONLY investigation. All paths verified against the **current working tree** of
+the three fork repos on 2026-06-03. Corrects several file:line references from the
+F10 brief.
+
+---
+
+## 0. Path corrections vs the brief
+
+| Brief said | Actual (current tree) |
+|---|---|
+| `cli/src/memory/intelligence.ts` | `forks/ruflo/v3/@claude-flow/cli/src/memory/intelligence.ts` |
+| ReflexionMemory `~:190` | `storeEpisode` def at **ReflexionMemory.ts:104**; `INSERT INTO episodes` at **:190** |
+| SonaTrajectoryService `recordTrajectory` | `services/SonaTrajectoryService.ts:239`; `INSERT INTO sona_trajectories` at **:281** |
+| intelligence `recordStep/recordTrajectory/endTrajectoryWithVerdict/distillLearning ~998/1088/1256/1281` | **945 / 1012 / 1246 / 1270**; `lastAdaptation=Date.now()` at 998/1088/1256/1281 (those were the *assignment* lines, not the fn defs) |
+| `commands/neural.ts:252/265/852` | ruvector `recordTrajectory` at **neural.ts:244**; intelligence writers reached elsewhere |
+| hooks-tools `~2837/2877/2961` | trajectory-start/step/end handlers near **2870 / 2900 / 2961**; `hooks_post-task` at **1634/1649** |
+| sona-optimizer `~:902` | present; not on any live path (see §3) |
+
+---
+
+## 1. The three writers → verified caller map
+
+### Writer 1 — `ReflexionMemory.storeEpisode()` → SQLite `episodes` table
+`forks/agentdb/src/controllers/ReflexionMemory.ts:104` (INSERT at :190).
+
+| Caller | File:line | On a hook path? |
+|---|---|---|
+| MCP tool `agentdb_reflexion-store` | `cli/.../mcp-tools/agentdb-tools.ts` (handler ~1003, per archivist comments) | No — manual MCP tool |
+| Archivist mutation handler `agentdb_reflexion_store` | `agentdb/src/archivist/handlers/agentdb/reflexion-store.ts:80` → `requireReflexionStoreWriter().storeEpisode` | **Indirectly YES** — dispatched by `hooks_post-task` (see below) |
+| CLI capability writer `makeCliReflexionStoreWriter` | `cli/.../memory/archivist-init.ts:524` (`getController('reflexion').storeEpisode`) | This is the concrete impl behind the archivist handler |
+| CLI `agentdb reflexion store` | `agentdb/src/cli/agentdb-cli.ts:534` | No — manual CLI |
+| **MCP `hooks_post-task` → archivist dispatch** | `cli/.../mcp-tools/hooks-tools.ts:1769` dispatches `agentdb_reflexion_store` (ADR-0268) | **The one write that is reachable from a "post-task" surface** |
+| agentic-flow `AutopilotLearning._record` | `agentic-flow/.../coordination/autopilot-learning.ts:1055` | No live caller (see §3) |
+| db-unified / GraphDatabaseAdapter / benchmarks / examples / vendored `agentic-flow/src/agentdb/*` | various | Not hook paths (vendored agentdb copy is the deleted-but-present v1.3.3, dated 3 Apr — not the canonical 5th fork) |
+
+**Key correction to the brief:** episodes are NOT only written via the manual
+`agentdb_reflexion-store` tool. **`hooks_post-task` (hooks-tools.ts:1738-1782, ADR-0268)
+already dispatches `agentdb_reflexion_store`** → `episodes`. The episode-writing seam
+*exists*; it is simply not on the live *file-based* hook path (§2).
+
+### Writer 2 — `SonaTrajectoryService.recordTrajectory()` → SQLite `sona_trajectories`
+`forks/agentdb/src/services/SonaTrajectoryService.ts:239` (INSERT at :281).
+
+| Caller | File:line | On a hook path? |
+|---|---|---|
+| Archivist handler `agentdb_sona_trajectory_store` | `agentdb/src/archivist/handlers/agentdb/sona-trajectory-store.ts:136` | No |
+| MCP tool `agentdb_sona_trajectory_store` | `cli/.../mcp-tools/agentdb-tools.ts:2231` → `archivist.dispatch('agentdb_sona_trajectory_store')` :2319 | No — manual MCP tool only |
+| `SelfLearningRvfBackend` internal | `agentdb/src/backends/rvf/SelfLearningRvfBackend.ts:275` | Different `recordTrajectory` (RVF session handle), not the SQLite service |
+| `agentdb-service.ts:1276` (agentic-flow) | `this.sonaService.recordTrajectory('agent', …)` | Not a Claude-Code hook path |
+
+**`sona_trajectories` has NO hook caller and no auto-invoker whatsoever.** Reachable
+only by an operator explicitly calling the `agentdb_sona_trajectory_store` MCP tool.
+
+### Writer 3 — SONA `lastAdaptation` (in-memory module global) → `intelligence.ts`
+`forks/ruflo/v3/@claude-flow/cli/src/memory/intelligence.ts`.
+
+| Setter | File:line | Reached by |
+|---|---|---|
+| `recordStep` | :945 (sets lastAdaptation :998 after distill) | `ruflo neural` CLI only |
+| `recordTrajectory` | :1012 (:1088) | `ruflo neural` CLI only |
+| `endTrajectoryWithVerdict` | :1246 (:1256) | `ruflo neural` CLI only |
+| `distillLearning` | :1270 (:1281) | `ruflo neural` CLI only |
+
+Callers are `commands/neural.ts` (the `ruflo neural` CLI). **No hook path.** `lastAdaptation`
+is process-local module state in the CLI process — it does not even persist across
+invocations except via the `.ruvector/intelligence.json` snapshot the neural CLI writes.
+
+---
+
+## 2. Both hook paths traced end-to-end — where they DIE
+
+Live settings.json wiring (`ruflo-patch/.claude/settings.json`) generated by
+`cli/src/init/settings-generator.ts`.
+
+### Path A — file-based settings.json hooks → `hook-handler.mjs` → `intelligence.cjs`
+Live files: `ruflo-patch/.claude/helpers/hook-handler.mjs` + `intelligence.cjs`.
+
+- `PostToolUse` matcher `Task` → `hook-handler.mjs post-task` (settings.json:83-89;
+  generated at settings-generator.ts:397).
+- `hook-handler.mjs` `post-task` handler (**:231-238**):
+  ```js
+  'post-task': () => {
+    if (intelligence && intelligence.feedback) {
+      try { intelligence.feedback(true); } catch { /* non-fatal */ }
+    }
+    console.log('[OK] Task completed');
+  },
+  ```
+- `post-edit` (:161-173) → `intelligence.recordEdit(file)`.
+
+**TERMINAL CODE** (intelligence.cjs):
+- `feedback(success)` (**:681**) → `boostConfidence(matchedIds, ±)` (:689) → mutates
+  `ranked-context.json` + `graph-state.json` **confidence floats only**.
+- `recordEdit(file)` (**:666**) → `fs.appendFileSync(PENDING_PATH …)` →
+  `pending-insights.jsonl`.
+- The ONLY write sinks in the whole file (grep): `auto-memory-store.json`,
+  `ranked-context.json`, `pending-insights.jsonl`, `graph-state.json`. RVF is **read-only**
+  (binary RVF reader at :30-67 for context ranking; no write, no flock).
+
+**Path A writes ZERO of `episodes` / `sona_trajectories` / `lastAdaptation`.** It never
+imports agentdb, never dispatches the archivist, never shells to the CLI. Confirmed by
+grep: no `hooks_post-task` / `reflexion` / `storeEpisode` / `recordTrajectory` token
+anywhere in `*.mjs`/`*.cjs` helpers.
+
+The Stop hook (settings.json:146) → `auto-memory-hook.mjs sync` likewise writes only the
+auto-memory JSON store (writeFileSync :125); reads an RVF path (:247) but no learning-table
+write.
+
+### Path B — MCP tool `hooks_post-task` (and CLI `ruflo hooks post-task`)
+`cli/.../mcp-tools/hooks-tools.ts:1634` `hooksPostTask`, registered into `hooksTools[]`
+(:4611) → `mcp-client.ts:86` → the MCP server tool registry. CLI `commands/hooks.ts:1900`
+`postTaskCommand` calls `callMCPTool('hooks_post-task', …)` (:1953) — **same handler**.
+
+**TERMINAL CODE** — `hooks_post-task` handler does FIVE writes:
+1. `routeFeedbackOp({type:'record', …})` (:1662) — feedback controller.
+2. `routeCausalOp({type:'edge', …})` (:1686) — causal edge.
+3. archivist `agentdb_graph_edge` `reinforced-by` (:1713) on success.
+4. **archivist `agentdb_reflexion_store` (:1769) → `episodes` table** (ADR-0268). Reward =
+   provided quality, else `success?0.6:0.2`; `action` = model||agent; `task_type` derived.
+5. `saveRoutingOutcomes` (:1810) → `.claude-flow/routing-outcomes.json`.
+
+The trajectory tools (`hooks_intelligence_trajectory-end`, :2961) persist to RVF memory
+namespace **`trajectories`** (`storeFn({…, namespace:'trajectories'})` :2998) + (via
+SonaOptimizer) `.swarm/sona-patterns.json` — NOT the SQLite `sona_trajectories` table.
+They are `enabled:false` (hooks-tools.ts:1510-1511) and on no hook.
+
+**Where Path B dies:** `hooks_post-task` is `enabled:true` (hooks-tools.ts:1492), BUT it is
+a **Claude-invoked MCP tool / manual CLI** — it is NOT wired into any settings.json hook.
+`settings-generator.ts:397` wires the `Task` PostToolUse matcher to **`hookHandlerCmd('post-task')`
+= Path A** (the JSON-only handler), never to `ruflo hooks post-task` or the MCP tool. So in
+normal Claude Code operation Path B *never fires unless the model itself decides to call
+`hooks_post-task`* (which nothing instructs it to do automatically).
+
+**Net:** the episode-writing logic already exists and is LIVE-wired through the archivist
+(`substrate-registry.ts:10` — `agentdb_reflexion_store → storeEpisode (Phase 7, LIVE)`),
+but the only live *hook* (Path A) terminates in JSON sidecars and never reaches it.
+
+---
+
+## 3. Autopilot event bus (`_attachLearningSubscriber`) — READY or INERT?
+
+`agentic-flow/.../services/agentdb-service.ts`.
+
+**Subscriber (consumer) — wired:**
+- `_attachLearningSubscriber()` called at `initialize()` time (**:450**).
+- `this.learningEvents.on('episode:recorded', …)` (**:1427**) → `setImmediate` →
+  `LearningSystem.submitFeedback(...)` with a synthesized per-subject sessionId (the
+  translator at :1477+).
+- `this.learningEvents.on('trajectory:step', …)` (**:1458**) — gated behind a flag,
+  default off → zero overhead when unset (:1452 comment).
+- `this.learningEvents.on('error', …)` (:1422) — log-only, never re-throws.
+
+**Emitter (producer) — exists but has NO live trigger:**
+- `AutopilotLearning._emitLearningEvent('episode:recorded', …)` is emitted inside
+  `_record()` (**autopilot-learning.ts:1107**), AFTER `storeEpisode` succeeds.
+- `_record()` is reached only via `recordTaskCompletion` (:445) / `recordTaskFailure` (:449).
+- **Those have NO live caller** in the claude-flow CLI. grep for
+  `recordTaskCompletion|recordTaskFailure` across `cli/src` returns only doc comments;
+  the one `recordTaskFailure` at `swarm-completion.ts:115` is on `DriftDetector`, a
+  *different class*, not `AutopilotLearning`.
+- The CLI's only bridge into `AutopilotLearning` is `autopilot-state.ts:tryLoadLearning()`
+  (:314), and **every consumer of it is READ-only** — `getMetrics()` /
+  `discoverSuccessPatterns()` (commands/autopilot.ts:261, mcp-tools/autopilot-tools.ts
+  `autopilot_learn`/`_history`/`_predict`, doctor.ts, archivist-init.ts adapter). None
+  calls `recordTaskCompletion`.
+
+**Verdict: the event bus is a half-seam — the SUBSCRIBER side is fully wired, the
+PRODUCER side is fully present but never invoked, because `_record()` (which both
+storeEpisode-writes AND emits `episode:recorded`) is dead at the CLI boundary.** Worse,
+even if you only wired an emitter, `AutopilotLearning` lives in the **agentic-flow
+optionalDependency**, loaded lazily and per-call via `tryLoadLearning()` into the CLI/MCP
+process — a fresh instance each time, with no shared event bus across the file-based hook
+boundary. So this seam is NOT "just needs an emitter": it needs (i) a live caller of
+`recordTaskCompletion`, AND (ii) that caller to run inside the same process that holds the
+`AgentDBService` whose `learningEvents` bus the subscriber attached to. The file-based
+hooks run in their own short-lived `node hook-handler.mjs` process — they cannot reach
+that in-process bus at all.
+
+---
+
+## 4. Candidate seams (ranked)
+
+| # | Seam | Exists | Missing | Cost | Captures | Risk |
+|---|---|---|---|---|---|---|
+| **a** | **File-based PostTask hook shells out to `ruflo hooks post-task`** (or `npx … hooks post-task`) | `hooks_post-task` handler + CLI subcommand + archivist `agentdb_reflexion_store` (Phase 7 LIVE) all exist | One added `command` in `settings-generator.ts` PostToolUse/Task block (+ optionally a Stop hook); pass `--task`/`--success`/`--agent`/`--quality` from hook stdin | **Lowest.** ~1 settings line + small arg-mapping in hook-handler.mjs | `episodes` (reward, action, task_type) — exactly what NightlyLearner reads | New `npx`/CLI subprocess per task (cold-start cost). **No RVF flock** — episodes are SQLite carve-out (`.swarm/memory.db`), not the `.jslock`/flock surface ADR-0284 deadlocked on. Quality defaults sub-threshold (0.6) so it won't auto-manufacture skills. |
+| b | Wire an emitter into the autopilot event bus | Subscriber fully wired (agentdb-service.ts:1427); emitter present (autopilot-learning.ts:1107) | A live caller of `recordTaskCompletion`, co-located in the `AgentDBService`-holding process; cross-process bridge from file hooks | **High** — see §3: cross-process bus problem + optionalDep lazy-instantiation; not reachable from the short-lived hook process | episodes (via `_record`'s storeEpisode) **and** LearningSystem.submitFeedback Q-updates | Highest architectural risk; agentic-flow is an optionalDep (may be absent); concurrency of multiple `tryLoadLearning` instances |
+| c | CLI `ruflo hooks post-task` writes the capture | Already does (it IS the `hooks_post-task` handler) | Nothing in the writer; only a *trigger* | Identical to (a) — (a) *is* the act of triggering (c) from the hook | episodes | Same as (a) |
+| d | Archivist dispatch / MCP PostTask | `hooks_post-task` MCP tool exists and is `enabled:true` | An auto-trigger; MCP tools only fire on explicit model tool-calls | Medium — would need the model to be *instructed* to call `hooks_post-task` after every task (prompt/CLAUDE.md change), which is unreliable vs a deterministic hook | episodes | Non-deterministic (depends on model compliance); not a code seam |
+
+(a) and (c) are the same write reached two ways; (a) is the *insertion act*. (d) is the
+same handler but triggered by model behaviour instead of a hook — strictly worse
+determinism. (b) is a genuinely different (richer) capture but far more expensive and not
+reachable from the live file-hook process.
+
+---
+
+## 5. Recommended cheapest correct seam
+
+**Seam (a): make the live file-based PostTask (Task-matcher) hook invoke the existing
+`ruflo hooks post-task` CLI, which already dispatches `agentdb_reflexion_store` →
+`episodes`.**
+
+### Precise insertion point
+`forks/ruflo/v3/@claude-flow/cli/src/init/settings-generator.ts:392-401` — the
+`{ matcher: 'Task', hooks: [ … hookHandlerCmd('post-task') … ] }` block. Add a second
+command (or extend `hook-handler.mjs post-task` to shell out) that runs:
+
+```
+npx -y @sparkleideas/ruflo@latest hooks post-task \
+  --success <bool> --agent <subagent_type> --task "<description>" [--quality <n>]
+```
+
+mapping fields from the Task-tool PostToolUse stdin payload. Two viable shapes:
+- **Minimal-blast-radius:** add the shell-out *inside* `hook-handler.mjs`'s `post-task`
+  handler (ruflo-patch/.claude/helpers/hook-handler.mjs:231) so the file-based path keeps
+  its JSON `feedback` AND additionally records the episode. This keeps the generator's
+  hook list unchanged and is the single smallest change.
+- **Generator-native:** add a second `command` entry in the settings-generator Task block
+  (:399) so freshly-init'd projects get it. (Per `feedback-patches-in-fork`, the durable
+  fix lives in the fork generator; the live `.claude/helpers/hook-handler.mjs` in this repo
+  is the hand-deployed copy.)
+
+`--task` must be forwarded (the CLI `postTaskCommand` at hooks.ts:1953 currently does NOT
+pass `task`, so `taskText` collapses to `taskId` and `quality` stays undefined → episodes
+record with `task='task_…'` and reward 0.6). To make NightlyLearner's `task_type`
+grouping (`computeActionValues`, NightlyLearner.ts:244) meaningful, the seam should pass a
+real `--task` (the description) and `--agent` (the subagent type) through; that may require
+a one-line addition to `postTaskCommand`'s `callMCPTool` args to forward `task`/`quality`.
+
+### Why this is correct and cheap
+- The whole write chain is already **LIVE** (`substrate-registry.ts:10`,
+  `archivist-init.ts:1157/1362` capability factory registered, `ensureSqliteWired`
+  operational). Nothing new to implement — only a trigger.
+- **No RVF-flock / ADR-0284 exposure:** `agentdb_reflexion_store` classifies to the SQLite
+  carve-out (`.swarm/memory.db`, separate handle), not the RVF `.jslock` surface that
+  ADR-0284's single-lock-collapse addressed. (Caveat: the live MCP daemon runs the sql.js
+  fallback per `[[project-mcp-daemon-runs-sqljs-fallback]]`; the episode write goes through
+  whatever SQLite handle `getControllerRegistryAgentDb()` resolves — exercise it on the
+  live daemon, not a fresh better-sqlite3 smoke.)
+- Reward-integrity guard already in place (ADR-0268 skeptic R3, hooks-tools.ts:1757) —
+  an absent quality records sub-threshold so a single run can't auto-promote a skill.
+- The episode write is **discriminating-non-fatal** (hooks-tools.ts:1783-1792) — a learning
+  write failure logs but does not abort the hook.
+
+### What then advances (the consumer chain is already complete once episodes flow)
+- **NightlyLearner.run()** (NightlyLearner.ts:142) → `consolidateEpisodesIntoSkills`
+  (:189) over the `episodes` table → `skills`/`skill_embeddings`.
+- **NightlyLearner.computeActionValues()** (:231-260) → `E[reward | action, task_type]`
+  with per-type baseline → the **ADR-0279 action-value uplift** routers consume.
+- **ADR-0280 β/γ consumers** (NightlyLearner / LearningSystem / ReflexionMemory /
+  CausalRecall) read the same episode stream; once episodes carry `action` + `reward` +
+  `task_type` + temporally-ordered `ts`, the causal pair-discovery and reward-shaping have
+  input. (NightlyLearner is "live but idle" precisely because the `episodes` table stays
+  empty under normal operation — seam (a) is what fills it.)
+- One precondition to verify: NightlyLearner must actually be *scheduled/triggered* (it is
+  not auto-run by the file hooks). Filling `episodes` is necessary but the learner still
+  needs its own invocation (cron/`agentdb_learner_run`/`ruflo` schedule) — that is a
+  *separate* trigger question (its own facet), but it cannot do anything until episodes
+  exist, which seam (a) provides.
+
+### Caveats
+- The vendored `agentic-flow/agentic-flow/src/agentdb/*` tree is the deleted-but-present
+  v1.3.3 (3 Apr) — ignore it; canonical agentdb is `forks/agentdb`.
+- Seam (a) adds an `npx`/CLI subprocess per Task-completion; on a multi-agent fan-out this
+  is N subprocesses. The cold-start cost is the main downside (mitigable with `_cli_cmd`
+  per `[[reference-cli-cmd-helper]]`, or by calling the daemon's MCP tool over the socket
+  instead of spawning the CLI).
+- If instead the project wants the *richest* capture (Q-updates via LearningSystem), that
+  is seam (b) and requires the in-process-bus + live-`recordTaskCompletion` work in §3 —
+  out of scope for "cheapest correct".
