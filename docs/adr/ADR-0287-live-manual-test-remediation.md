@@ -949,10 +949,17 @@ Four corrections from review; they sharpen the backlog (and one adds a new fix):
   `project-agentdb-neural-disabled-redherring-and-node-abi` mise-22-vs-24 split, still live on the
   **daemon-spawn path** (the ABI fix set the mise *global* to 24.14.1, but the daemon spawn still resolves 22).
   **It should NOT run sql.js** (native is faster; sql.js's WASM cold-start is what RVF was adopted to kill).
-  **New fix: pin the daemon spawn to node 24.14.1** (the version its native bindings target). High value: this
-  **likely moots the T3/T4 sql.js-path verification** (the sql.js read path is only live because the daemon is
-  mis-Noded) and removes a class of sql.js-only bugs (cf. ADR-0285 NAMED-bind). Trace the daemon-spawn Node
-  resolution (hook/`startBackgroundDaemon` env) as the fix site.
+  **UPDATE — the ABI fix is already in place; this is a stale spawn, likely just needs a restart.** `.tool-versions`
+  pins `nodejs 24`, mise global = `24.14.1`, the shell resolves 24.14.1, and native `better-sqlite3` loads under it.
+  PID 59757 is on node 22 only because the **auto-spawn hook** (`.claude/settings.json:129`
+  → `npx @sparkleideas/ruflo@latest daemon start --quiet`) fired at 15:34 today in an env that resolved 22 — a
+  **stale process**, not a failed fix. So the immediate fix is **restart the daemon from a node-24 context and
+  verify the new PID's node** (`ps -o command -p <pid>`). Caveat: it's hook-respawned, so the durable fix is to
+  ensure the **daemon-spawn hook reliably resolves node 24** (the bare hook subprocess may not honour mise
+  activation even though `.tool-versions` pins 24); if the respawn ever resolves 22 again, harden the hook command
+  to an explicit node-24 invocation. High value: a node-24 daemon **likely moots the T3/T4 sql.js-path
+  verification** (the sql.js read path is only live because the daemon is mis-Noded) and removes a class of
+  sql.js-only bugs (cf. ADR-0285 NAMED-bind).
 
 **Backlog readiness (Q: "do we have fixes outlined?"):** ready-to-implement — F5, F2, F8a, F8e, F3b, T1, R2,
 F8b(doctor), F3a(+smoke). Need-more-before-implementing — **F1** (durable fix = tree-shrink, its own ADR),
