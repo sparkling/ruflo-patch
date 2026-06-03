@@ -128,8 +128,9 @@ the four controllers live in `forks/agentdb`'s canonical Registry B (archivist; 
 **complete** delete scope was verified safe — Phase-1/4 are independently live (valid `getController` switch
 cases) and every Phase-2 consumer guard (`if (this.<x>Enabled && this.<x>)`) is already false today. *Scope
 note:* F5 is the smallest chip off a **larger, possibly-vestigial agentic-flow `AgentDBService` + 12-tool
-fastmcp surface** that `forks/agentdb` + claude-flow v3 appear to have superseded — now under a **separate
-retirement investigation** (`/ruflo-swarm:swarm`, 2026-06-03).
+fastmcp surface** that `forks/agentdb` + claude-flow v3 appear to have superseded — now recorded as its own
+decision in **ADR-0288** (the `/ruflo-swarm:swarm` retirement investigation, 2026-06-03; status `proposed`,
+gated — it authorises no removal).
 
 **F2 [MED] — `resources/list` returns `-32601` though the server advertises `resources`.**
 Both bins advertise `capabilities.resources` with no handler → falls to `-32601`. The **live** path is
@@ -396,7 +397,7 @@ separate `agentdb-memory.rvf` (T1), `config.yaml`, 768-dim mpnet (deliberate, AD
 
 | Tier | Item | Action | Risk |
 |---|---|---|---|
-| 1 code lies | **F5** | **DELETE (complete scope)**: Phase-2 block + call site + the 4 orphaned consumer branches + fields + teardown. Banner is on agentic-flow's *own* fastmcp surface (NOT the live ruflo boot); `AgentDBService` is 100% fork-authored → acceptance check boots agentic-flow's MCP, not ruflo's | none (fork-only) |
+| 1 code lies | **F5** | **DELETE (complete scope)**: Phase-2 block + call site + the 4 orphaned consumer branches + fields + teardown. Banner fires via the live **autopilot edge** (`tryLoadLearning`→`getAgentDBService`→Phase-2) **and** agentic-flow's own MCP — NOT on plain ruflo MCP boot; acceptance exercises the autopilot path. `AgentDBService` 100% fork-authored. (Broader island retirement = **ADR-0288**.) | none (fork-only) |
 | 1 code lies | **F2** | add `{resources:[]}` handler to **both** bins + ledger + arch-guard | negligible |
 | 2 reporters | **F8a** | plumb real dim into CLI + MCP reporters (+ type + native literal) | ~none |
 | 2 reporters | **F8e** | `isTTY` guard on Spinner/ProgressBar | low |
@@ -552,6 +553,7 @@ on-disk only.)
   (seam (a) uses the SQLite path, never `AgentDBService`). **F5 correction:** the false banner IS reachable in
   the live claude-flow process via the autopilot edge (`tryLoadLearning` → `autopilot-learning.initialize` →
   `getAgentDBService` → `getInstance`→`initialize`→Phase-2), not only agentic-flow's standalone surface —
-  supersedes the prior "agentic-flow-surface-only" wording. Recommend a successor ADR, gated on the
-  product-decision "is agentic-flow's standalone MCP server still wanted?" Synthesis + facets:
+  supersedes the prior "agentic-flow-surface-only" wording. **Recorded as ADR-0288** (successor to this F5;
+  `proposed`, authorises nothing), gated on the product-decision "is agentic-flow's standalone MCP server still
+  wanted?" Synthesis + facets:
   `docs/research/agentic-flow-retirement/00-SYNTHESIS.md` + `01-05`.
