@@ -545,3 +545,28 @@ cross-session auto-memory, outside the repo):
 7. **[LOW] reporter/cosmetic**: F2 resources lie, F8a 0-dim, spinner non-TTY leak, F4 daemon liveness, F5 dead block, doctor JSON-canonical inversion.
 
 **F10 disposition:** the fix is **upstream of the stores** — restore the MCP/hook input path (F1 timeout + F3a `.cjs` rename), then confirm learning resumes (episodes/trajectories accrue, `lastAdaptation` advances). Separately, remove the empty `.claude-flow/agentdb/agentdb.sqlite` orphan and prune the `.claude/memory.db` discovery paths. The stores themselves are not broken — they are **starved**.
+
+### 2026-06-03 — Legacy storage cleanup (executed)
+
+Safely removed the stale/orphan artifacts after verifying **no open handles** (`lsof`
+clean), **owner pids dead** (60748, 92578), and **no code reads the `.swarm/` copies**
+(AgentDB loads its schema from the package `dist/schemas/`, not `.swarm/schema.sql`).
+Removed:
+- `.swarm/memory.db.backup-384d`, `.swarm/memory.db.corrupt-2026-05-19-bak`,
+  `.swarm/memory.db.pre-fix-bak` (manual backups + a 2026-05-19 corruption snapshot)
+- `.swarm/memory-rvf.sqlite` (+`.lock`) (pre-RVF legacy stub)
+- `.swarm/memory.rvf.meta.tmp.60748.447`, `.swarm/memory.rvf.meta.tmp.92578.1128` (orphaned atomic-write temps; both pids dead)
+- `.swarm/memory.graph` (1.5 MB legacy graph format), `.swarm/schema.sql` (stray schema copy)
+- `.claude-flow/agentdb/agentdb.sqlite` (+`-shm`/`-wal`) (the empty orphan AgentDB #2)
+- (earlier) `.claude/memory.db` (+`-shm`/`-wal`) — vestigial 384-dim legacy DB
+
+**Verified intact (live stores, untouched):** `.swarm/memory.rvf` (76 MB) + `.meta`,
+`.swarm/memory.db` (ADR graph), `.swarm/agentdb-memory.rvf`, `.swarm/sona-patterns.json`,
+`.swarm/swarm-state.json`, `.swarm/state.json`. **Kept (ambiguous, not deleted):**
+`.swarm/adr-0116-0117-impl.json`, `.swarm/adr-status-cleanup.json` (tiny ad-hoc namespace
+dumps; no reader confirmed, left for conservatism). These are local runtime files
+(`.swarm/` is gitignored) — cleanup is on-disk only, no commit of the data itself.
+
+Still-open (code, needs go-ahead): prune `.claude/memory.db` from the discovery arrays
+(`swarm.ts:39`, `hooks.ts:4062,4341`) and remove the empty `.claude-flow/agentdb/` dir's
+re-creation path so the orphan #2 doesn't reappear.
