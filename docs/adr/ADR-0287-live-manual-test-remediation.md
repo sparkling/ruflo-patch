@@ -965,3 +965,33 @@ Four corrections from review; they sharpen the backlog (and one adds a new fix):
 F8b(doctor), F3a(+smoke). Need-more-before-implementing — **F1** (durable fix = tree-shrink, its own ADR),
 **F4** (fold in the daemon-Node finding + resolve the live `daemon.pid`-absent tension), **T3/T4** (re-scope
 after the daemon moves to node 24 — the sql.js path may no longer be live). New: **daemon-Node-pin** (above).
+
+### 2026-06-03 — Node-22 affects TWO processes; worker-daemon restarted, MCP server NOT (so what's actually fixed)
+
+Restarted the **worker daemon** (`daemon start`) from the node-24 shell → new PID **49267 on node 24.14.1**
+(native better-sqlite3); old node-22 PID 59757 is gone. **But the wrong-node problem affects TWO separate
+long-running processes, and only one was fixed:**
+- **Worker daemon** (`daemon start` — runs the `learn`/`consolidate`/`map`/etc. workers): **FIXED → node 24 / native.**
+- **MCP server** (`mcp start` — the `mcp__ruflo__*` surface, and the *actual* subject of
+  `project-mcp-daemon-runs-sqljs-fallback`): **STILL node 22.21.1 → sql.js** (PIDs 70385/43875, orphaned from
+  2026-06-02 sessions; `lsof txt` confirms the `mise/installs/node/22.21.1` binary). The worker-daemon restart
+  did **not** touch it.
+
+**What the restart actually fixes (don't overclaim):**
+- ✅ The **worker daemon's own agentdb writes** (causal/consolidate/nightlyLearner via the `learn` worker) now run
+  on native better-sqlite3 → removes sql.js-path exposure (ADR-0285 NAMED-bind class) **for the daemon's writes**.
+- ⚠️ **T3/T4 are only HALF de-risked.** Their sql.js concern was about the **MCP server's** read path — which is
+  *still* on sql.js. So "verify the sql.js read path fails loud (T3)" and "`.meta` is load-bearing for sql.js (T4)"
+  **still apply to the MCP server** until it too restarts under node 24. (The current session has no MCP server
+  connected — F1 — so these two are orphaned zombies, but a freshly-spawned MCP server would still land on
+  whatever node the spawn env resolves.)
+- ❌ **Nothing else is fixed by Node version** — F1 (npm cold-install), F3a (CJS/ESM module-system), F5 (dead code),
+  F8a/F8b/F8e (reporters), F8d (publish+plumbing), and **F10's core starvation** (no episodes because the MCP/hook
+  trajectory path is down — F1/F3a) are all node-agnostic and unchanged.
+
+**Generalised fix:** this is a **session-spawn Node-resolution problem**, not a one-daemon bug — *both* `daemon
+start` (hook `settings.json:129`) and `mcp start` (`.mcp.json` autoStart) spawn under node 22 in some session
+contexts despite mise global + `.tool-versions` both pinning 24 (the bare subprocess PATH doesn't honour mise
+activation). Durable fix = ensure **both** spawn commands resolve node 24 (explicit node-24 invocation, or mise
+activation in the spawn env). Interim: the orphaned node-22 MCP servers (70385/43875) can be killed; the next
+MCP spawn must come up on 24 to fully close T3/T4. **F4 should own this** (it's the daemon/process-lifecycle finding).
