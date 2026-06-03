@@ -3,7 +3,7 @@ status: proposed
 date: 2026-06-02
 tags: [mcp, observability, learning, memory, honesty, infrastructure]
 supersedes: []
-depends-on: [ADR-0204, ADR-0267, ADR-0274, ADR-0284, ADR-0177, ADR-0210, ADR-0277, ADR-0069, ADR-0207, ADR-0280, ADR-0235, ADR-0112, ADR-0180, ADR-0080, ADR-0094, ADR-0285, ADR-0095, ADR-0166]
+depends-on: [ADR-0204, ADR-0267, ADR-0274, ADR-0284, ADR-0177, ADR-0210, ADR-0277, ADR-0069, ADR-0207, ADR-0280, ADR-0235, ADR-0112, ADR-0180, ADR-0080, ADR-0094, ADR-0285, ADR-0095, ADR-0166, ADR-0068, ADR-0073, ADR-0086]
 implements: []
 ---
 
@@ -570,3 +570,82 @@ dumps; no reader confirmed, left for conservatism). These are local runtime file
 Still-open (code, needs go-ahead): prune `.claude/memory.db` from the discovery arrays
 (`swarm.ts:39`, `hooks.ts:4062,4341`) and remove the empty `.claude-flow/agentdb/` dir's
 re-creation path so the orphan #2 doesn't reappear.
+
+### 2026-06-03 — F11: File organization vs upstream storage intent (3-agent upstream analysis)
+
+Analysed our file layout against **upstream INTENT** (ruvnet ADRs + `origin/main` source
+across ruflo/agentdb/agentic-flow/RuVector). This **revises the "sprawl" framing of F9/F10**:
+most of our multi-store layout is **upstream-designed or upstream-anticipated**, not fork
+accretion. Two prior assumptions were wrong and are corrected here.
+
+**CORRECTION 1 — RVF is UPSTREAM, not a fork swap-in.** (Supersedes the stale memory note
+"upstream computes cosine directly, no RVF" — true only of the 2026-05-06 thin-spinoff.)
+RVF/RuVector are first-class upstream, ADR-governed in **all three** repos:
+- RuVector **ADR-029** (Accepted): "RVF = the single canonical binary format for all
+  RuVector libraries"; **ADR-032** (lock model: one `flock` writer / unlimited readers /
+  30 s stale recovery — exactly what our ADR-0274/0284 re-implement).
+- agentdb **ADR-002/003**: RuVector>RVF>HNSWLib backend priority (`backends/factory.ts`).
+- claude-flow **ADR-057** (Proposed): "replace sql.js with RVF as the native backend",
+  names `memory.rvf`/`events.rvf`/`embeddings.rvf`; `database-provider.ts:290` already
+  rewrites `.db`→`.rvf` for `provider:'rvf'`. **ADR-046** even makes "ruflo" upstream.
+- So our RVF choice is **on upstream's roadmap, and we are AHEAD**: we ship RVF as the live
+  single substrate; upstream still defaults to `hybrid` (SQLite+AgentDB) with RVF "Proposed".
+
+**CORRECTION 2 — the `.swarm`/`.claude-flow` split and the JSON sidecars are UPSTREAM
+defaults, not fork sprawl.** `cleanup.ts:27-30` defines three purpose-dirs by design:
+`.swarm/` (memory + RL state), `.claude-flow/` (config/metrics/sessions/daemon/data),
+`.hive-mind/` (consensus). `.swarm/memory.db` is the upstream canonical heavy default
+(`memory-initializer.ts:89`). The RL sidecars are upstream defaults verbatim:
+`.swarm/sona-patterns.json` (`sona-optimizer.ts:124`), `.swarm/q-learning-model.json`
+(`q-learning-router.ts:154`), `.swarm/moe-weights.json` (`moe-router.ts:156`). Upstream's
+own store-discovery probe (`system-tools.ts:325-331`, issue #1843) enumerates almost
+exactly our file set (`.claude-flow/memory/agentdb.sqlite`, `store.rvf`, `.swarm/memory.db`,
+`agentdb.rvf`, `ruvector.db`).
+
+**Upstream's intended architecture (synthesised):** a **federation of purpose-specific
+files** under one **unified `MemoryService` API** (claude-flow ADR-006/ADR-125), on a
+backend trajectory **sql.js → hybrid(SQLite+AgentDB) → RVF-native** (ADR-057). Two
+layers hold *different* source-of-truth models, and upstream is mid-migration between them:
+- **agentdb layer (ADR-002/003):** SQLite `*_embeddings` BLOBs are durable ground-truth;
+  the vector backend is an **ephemeral accelerator** (no `storagePath` by default).
+- **RuVector layer (ADR-029/032):** **RVF is the canonical source of truth; the companion
+  SQL/KV store is a rebuildable cache.** Consolidation target for learning = a single
+  `RvfLearningStore` (claude-flow `rvf-learning-store.ts`, ADR-057 Phase 6) folding
+  sona/lora/ewc/trajectory sidecars into one RVF — **implement-ahead, no live caller yet.**
+
+**Where our layout actually stands:**
+
+| Our artifact | Upstream status | Verdict |
+|---|---|---|
+| `.swarm/memory.db` | canonical heavy default | ✅ aligned |
+| `.swarm/` + `.claude-flow/` + `.hive-mind/` 3-dir split | upstream design (`cleanup.ts:27-30`) | ✅ aligned |
+| `.swarm/memory.rvf` user-memory (RVF single substrate) | upstream ADR-057 endpoint (Proposed) | ✅ **aligned & AHEAD** |
+| `.swarm/{sona-patterns,q-learning-model,moe-weights}.json` | upstream defaults verbatim | ✅ aligned (upstream wants them folded into RvfLearningStore *later*) |
+| `.claude-flow/data/*.json|jsonl`, config.json | upstream `STATE_DIR` + config path | ✅ aligned (dir) |
+| **RVF-as-sole-truth (SQLite `*_embeddings` empty)** | agentdb keeps SQLite-blob ground-truth + accelerator; RuVector ADR-029 says RVF-is-truth | ⚠️ **ahead of agentdb, aligned with ADR-029** — but we gave up the brute-force SQL-blob fallback (relevant to corruption history) |
+| `.swarm/agentdb-memory.rvf` (auto-memory hook's separate RVF) | upstream auto-memory = the `~/.claude/projects/<key>/memory/` **markdown bridge**, not a project-local RVF | ⚠️ **fork-added** — triage WIRE-into-`memory.rvf` vs KEEP-as-tenant |
+| `.swarm/action-values.json` | **not present anywhere upstream** | ⚠️ **fork-only** (ADR-0280) — keep as enhancement, but it's a 3rd RL sidecar; fold into RvfLearningStore when that lands |
+| `.swarm/memory.rvf.meta` (20 MB) | RVF format keeps meta **in-file segments**; no `.rvf.meta` in the upstream format (claude-flow's *hybrid* uses `.hnsw`+`.meta.json`, a different backend) | ⚠️ **fork artifact** — large external sidecar the RVF format doesn't prescribe |
+| `.claude-flow/agentdb/agentdb.sqlite` (empty) | location is upstream-probed, but an empty 2nd SQLite has no basis | 🗑️ accretion — **deleted** (F10) |
+| `.claude-flow/neural/*.json` location | upstream puts MoE at `.swarm/`, not `.claude-flow/neural/` | ⚠️ minor location divergence |
+| `config.yaml` | upstream recognizes `.json` only | ⚠️ fork-added (F8b) |
+| 768-dim mpnet | upstream default = 384 MiniLM | ⚠️ deliberate fork choice (ADR-0068/0069) |
+
+**The one real tension:** RuVector (ADR-029) wants **everything in one `.rvf`** (anti-
+fragmentation, "an agentdb file can't be queried by claude-flow"); claude-flow ships a
+**federation + unified API** with sidecars as the live default. The fork inherits both
+visions. `RvfLearningStore` is upstream's bridge between them — and it's the thing to
+**track, not pre-empt**.
+
+**F11 disposition — our file organization is largely sound; do NOT over-consolidate.**
+The earlier "fragmentation/sprawl" worry (F9/F10) is mostly **upstream-intended federation**.
+Genuinely fork-only and worth triage: (1) `.swarm/agentdb-memory.rvf` — decide WIRE-into-
+`memory.rvf` vs keep as an isolated tenant (it doubles the `flock` surface, ADR-032/0284);
+(2) `.swarm/action-values.json` — keep (ADR-0280) but earmark for RvfLearningStore folding;
+(3) empty `.claude-flow/agentdb/agentdb.sqlite` — done (deleted); (4) `config.yaml` — drop
+(F8b); (5) the 20 MB `.rvf.meta` — confirm whether the fork's RVF wiring needs it or it's
+recoverable in-file. **Strategic:** the RVF-as-sole-truth choice (dropping the SQLite-blob
+fallback) is the deepest divergence and the one with a real robustness cost — worth an
+explicit decision (accept, or restore a rebuildable SQL/blob cache per ADR-032 KI-2).
+Do **not** invent a fork sidecar-consolidation scheme; adopt upstream's `RvfLearningStore`
+(ADR-057 Phase 6) if/when it ships a live caller.
