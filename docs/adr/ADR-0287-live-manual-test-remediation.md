@@ -649,3 +649,43 @@ fallback) is the deepest divergence and the one with a real robustness cost — 
 explicit decision (accept, or restore a rebuildable SQL/blob cache per ADR-032 KI-2).
 Do **not** invent a fork sidecar-consolidation scheme; adopt upstream's `RvfLearningStore`
 (ADR-057 Phase 6) if/when it ships a live caller.
+
+**F11 follow-up (2026-06-03) — consolidation status, verified in our fork.** "Consolidation"
+is TWO distinct upstream mechanisms; checked both in `forks/ruflo`:
+- **Runtime entry-consolidation = `MemoryConsolidator` (ADR-125): LIVE in our fork.** We carry
+  `memory/src/consolidator.ts` + `MemoryService`; the `consolidate` daemon worker
+  (`worker-daemon.ts:1610` `runConsolidateWorker`, 2,607 runs/100%) routes it, `nightlyLearner`
+  delegates to `MemoryConsolidator.runAll()`, and `agentdb_consolidate` exposes it. Same upstream
+  lineage (not a fork build), proven by the B5 acceptance ("8 episodic memories → 1 cluster").
+  **Our architecture already takes care of this** — it's just starved here (`consolidation_*`
+  tables = 0 because `episodes` = 0; F10). Nothing to emulate.
+- **Store/sidecar-consolidation = `RvfLearningStore` (ADR-057 P6): implement-ahead in our fork,
+  same as upstream.** We carry `memory/src/rvf-learning-store.ts` (magic `RVLS`) +
+  `persistent-sona.ts` (`PersistentSonaCoordinator`), but they have **no live caller** — SONA
+  still writes the separate `.swarm/sona-patterns.json` sidecar. We are **in lockstep with
+  upstream** (code present, unwired). So there is nothing to "emulate" or import — wiring
+  `PersistentSonaCoordinator` ahead of upstream would *diverge* (and add merge tax); the correct
+  move is to wire it **when upstream wires its live caller**, staying merge-aligned.
+
+Net: on consolidation we are **not behind upstream** — runtime consolidation is live (and works,
+when fed), and sidecar-consolidation is implement-ahead in both. The only consolidation-relevant
+problem is the same F10 starvation (the layer runs but has no episodes to consolidate).
+
+**F11 correction (2026-06-03) — the "restore a rebuildable SQL/blob cache" recommendation is
+WITHDRAWN; it contradicts `feedback-no-fallbacks`.** Earlier in F11 I framed RVF-as-sole-truth
+(empty SQLite `*_embeddings`) as "a robustness cost — accept it, or restore a rebuildable SQL/blob
+cache (ADR-032 KI-2)." That second option is wrong for this fork: ADR-032's companion-as-
+rebuildable-cache is consulted *on RVF failure* — i.e. it **is** a fallback, exactly the silent
+degrade-on-failure path our philosophy forbids (`feedback-no-fallbacks`,
+`feedback-best-effort-must-rethrow-fatals`). Under **fail-hard / fail-fast / no-fallbacks**,
+RVF-as-the-single-source-of-truth is the **correct and coherent** choice, and we already have the
+matching behaviour: **ADR-0286 — "RVF vector backend fail-loud on init failure."** So this is *not*
+a robustness gap and *not* a divergence with a cost; it is a deliberate, philosophy-consistent
+departure from upstream's fallback-tolerant model. (This is a place our fork's principles
+*intentionally* diverge from upstream ADR-032 KI-2 — and that divergence is right.)
+
+The only legitimate residual (and it is NOT a fallback): **no-fallbacks ≠ no-backups.** Ensure
+(a) RVF corruption/loss fails **loud** at *read/runtime* too, not just init (ADR-0286 covers init —
+confirm the read path also throws rather than returning empty), and (b) recovery is a **deliberate
+operator restore** from a backup/snapshot, never an automatic in-process cache. That preserves
+fail-hard while still giving a recovery story. Do **not** add a SQL/blob auto-fallback.
