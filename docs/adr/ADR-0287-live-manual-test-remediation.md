@@ -916,4 +916,45 @@ All findings VALID (some PARTIAL with corrected root cause). Net work, by tier:
 for T3/T4 (the live daemon runs sql.js, so native-traced behaviour must be confirmed there, not assumed). F3a's
 **missing execution test** is why a router that fails every turn shipped through green releases — the durable fix
 includes that smoke. Several proposed fixes are **inherited surfaces** → each carries an INTEGRATION-LEDGER row
-+ arch-guard so an upstream `--theirs` merge can't silently undo them.
++ arch-guard so a future hand cherry-pick can't silently undo them (corrected below — we never `--theirs`).
+
+### 2026-06-03 — Clarifications & corrections (review feedback)
+
+Four corrections from review; they sharpen the backlog (and one adds a new fix):
+
+- **(merge policy) We never do `--theirs` merges — we hand cherry-pick (`-x`).** Replace every "survive a
+  `--theirs` merge" rationale above with: the **INTEGRATION-LEDGER row is the primary record** of each
+  intentional divergence (F2, R2, F4, F8b, F8e), and the arch-guard is a *secondary* net that catches a future
+  **hand cherry-pick** of an upstream commit silently re-introducing an inherited surface (re-adding the
+  `resources` advert, the swallow, the yaml-first precedence, etc.) that a reviewer might miss in a large port.
+- **(ledger already exists) The ledger is `docs/upstream/INTEGRATION-LEDGER.md` (364 rows).** "Add an
+  INTEGRATION-LEDGER row" everywhere above means **append to that existing file** (per
+  `feedback-update-integration-ledger`), not create a new one.
+- **(F1 / cold-start — upstream already has the mechanism) Adopt, don't reinvent.** USERGUIDE confirms upstream's
+  cold-start story: **`@claude-flow/cli-core`** (zero-dependency, ~1.5 s cold, ADR-100; 8 plugin scripts already
+  use it), **local `.cjs` scripts instead of npx** (USERGUIDE:2617), and **RVF replacing sql.js** to kill the
+  ~2 s WASM-compile cold start (USERGUIDE:3144). (A `preinstall.cjs` cache-repair/precache step existed and was
+  **removed in 3.1.0-alpha.53** — now a no-op.) **Catch:** upstream's primary mitigation is *not using
+  `npx@latest`*, which our `feedback-always-npx-for-ruflo` mandate deliberately overrides for freshness — and
+  cli-core's lite MCP uses the **JSON backend, not RVF/agentdb**, so we can't route our full MCP through it
+  without downgrading memory. So F1's durable fix = **shrink the full `cli` install** (revert `agentdb`
+  optional→required + gate the ML optionalDeps, the ADR-094/ADR-100 *tree-reduction* direction) — confirming
+  F1's "tree-shrink is the only durable fix" and that we should **track/adopt cli-core's reduction, not invent
+  a parallel scheme**. (Its own ADR.)
+- **(NEW FINDING — why the daemon runs sql.js: wrong Node) F4-adjacent.** The running ruflo daemon (PID 59757)
+  is spawned under **`mise/installs/node/22.21.1`**, while the npx-cached native `better-sqlite3` is built for
+  **node 24** → ABI mismatch → it can't load → **sql.js WASM fallback**. Verified: native `better-sqlite3`
+  **loads fine under the shell's node 24.14.1**, and `doctor` (cache-bin, node 24) reports
+  `Initialized with better-sqlite3`. So "the daemon runs sql.js" is **NOT inherent** — it's the
+  `project-agentdb-neural-disabled-redherring-and-node-abi` mise-22-vs-24 split, still live on the
+  **daemon-spawn path** (the ABI fix set the mise *global* to 24.14.1, but the daemon spawn still resolves 22).
+  **It should NOT run sql.js** (native is faster; sql.js's WASM cold-start is what RVF was adopted to kill).
+  **New fix: pin the daemon spawn to node 24.14.1** (the version its native bindings target). High value: this
+  **likely moots the T3/T4 sql.js-path verification** (the sql.js read path is only live because the daemon is
+  mis-Noded) and removes a class of sql.js-only bugs (cf. ADR-0285 NAMED-bind). Trace the daemon-spawn Node
+  resolution (hook/`startBackgroundDaemon` env) as the fix site.
+
+**Backlog readiness (Q: "do we have fixes outlined?"):** ready-to-implement — F5, F2, F8a, F8e, F3b, T1, R2,
+F8b(doctor), F3a(+smoke). Need-more-before-implementing — **F1** (durable fix = tree-shrink, its own ADR),
+**F4** (fold in the daemon-Node finding + resolve the live `daemon.pid`-absent tension), **T3/T4** (re-scope
+after the daemon moves to node 24 — the sql.js path may no longer be live). New: **daemon-Node-pin** (above).
