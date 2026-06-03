@@ -165,10 +165,14 @@ regress a working feature). *Provenance:* fork-only; no merge risk.
 connect timeout.** The server answers `initialize` in 0.14s (init deferred past the handshake, ADR-0204/0267);
 the timeout is **100% npm cold-install** of a ~1.5GB / 444-package tree (~38s) under `npx @latest`, on the
 first session after a version bump. *Status:* **surface UP this session** (tools connect; memory works).
-*Disposition:* interim — `MCP_TIMEOUT=60000` in Claude Code's **launch env** (not `.mcp.json`; Claude
-**hard-caps it at ~60s**, so it's a ceiling, not a tunable) + warm the npx cache post-publish. **Durable fix =
-shrink the install tree** — its **own ADR** (cross-fork packaging risk). **Correction (do NOT revert `agentdb`
-to `optionalDependencies`):** the fork holds `agentdb` in `dependencies` (upstream has it optional) **by
+*Disposition (DECIDED 2026-06-03): `MCP_TIMEOUT=60000` in Claude Code's launch env — that's it.* Claude
+**hard-caps it at ~60 s** (a ceiling, not a tunable), and the cold install (~38 s) fits under it with headroom.
+**Dropped:** the post-publish cache-warm (only warms the release machine, not users) and the durable tree-shrink
+(a hard packaging project that can't touch the immovable embedder — see critique). F1 is already downgraded
+(surface up; bites only the first session after a version bump), so the band-aid is the proportionate fix.
+*Revisit only if* cold-start pain becomes frequent — then the one worthwhile sub-task is verify-and-omit the
+**off-critical-path** native libs (onnxruntime/sharp/node-llama-cpp), its own small ADR after a load-trace.
+**Correction (do NOT revert `agentdb` to `optionalDependencies`):** the fork holds `agentdb` in `dependencies` (upstream has it optional) **by
 design** — ADR-0091 *removed the sql.js memory fallback* upstream keeps for edge envs, so RVF/agentdb is the
 **sole** memory substrate and must be present (no-fallbacks/fail-loud; reverting would reintroduce a banned
 silent-degradation). It also wouldn't help, since **npm installs `optionalDependencies` by default** — the
@@ -263,7 +267,7 @@ separate `agentdb-memory.rvf` (T1), `config.yaml`, 768-dim mpnet (deliberate, AD
 | 4 storage | **R2** | discriminated re-throw (before any T1 hot-path wiring) + ledger + arch test | merge-taxed |
 | 4 storage | **F4** | anchor `doctor.ts:166` PID path to project root | low |
 | 5 pipeline | **F8d** | republish ruvllm @ pin + wire `__claudeFlowSonaStats` + fix comment | pipeline |
-| separate ADR | **F1 durable** | shrink the install tree (revert agentdb amplification; adopt ADR-100/094) | cross-fork |
+| band-aid (decided) | **F1** | `MCP_TIMEOUT=60000` in Claude Code's launch env — only. Tree-shrink + cache-warm dropped (downgraded; not worth it) | none (operator env) |
 | gated | **F10** | re-verify learning resumes after F3a + F1 | — |
 | keep / none | **T2, T3, T4, F6, F7, F8c, F9p, F11-RVF** | documented; no code change | — |
 
