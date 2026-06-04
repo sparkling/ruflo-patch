@@ -145,8 +145,18 @@ re-convergence stands; R1 restores the general-entity write path it left out of 
   justification against demonstrated upstream behaviour (not just upstream's docs).
 * Good, because the C2 corpus's premise hygiene is now on record (24/24 demonstrated, DA-sampled) —
   the "fixes built on assumed brokenness" failure mode did not occur in C2.
-* Bad, because R1's dual-write adds a second write per ADR-structural edge; mitigated by scoping
-  `causal_edges` writes to the ADR case only.
+* Bad, because R1's dual-write adds a second write per edge. **Corrected per the implementation DA
+  (2026-06-04):** the `causal_edges` write was ALREADY unconditional pre-R1 (the original
+  "mitigated by scoping `causal_edges` to the ADR case" aside was factually wrong and would have
+  regressed J2 — entity edges must keep round-tripping through `causal-query`); R1's net change is
+  purely additive (+1 `graph_edges` write, embedding_ref NULL per the upstream-faithful optional
+  contract — semantic mode needs embeddings and is asserted reachability-only). The pre-existing
+  `from_memory_type:'adr'` coercion on entity edges is real but functionally inert
+  (causal-query reverse-maps); out of R1's scope.
+* Neutral, because O1's batch episodes are excluded from learner consumption by THREE independent
+  structural filters (action=NULL, reward 0.5 < 0.7, attempt_count 1) — DA-verified no
+  contamination of E[reward|action,task_type]; a `metadata.source:'batch-insert'` marker is added
+  as cheap insurance against future filter drift.
 * Neutral, because O1 may end as a documented precondition rather than a fix (both sides are
   unproven today).
 
