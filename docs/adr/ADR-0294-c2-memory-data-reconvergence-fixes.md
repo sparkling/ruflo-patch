@@ -178,3 +178,32 @@ release.
   fix as D1).
 * Method note carried forward: **cold-vs-warm process** is a named generalization of the
   counters-vs-content bar point (controllers warm lazily; a single cold call mis-reports).
+
+## Amendments
+
+### Implementation record (2026-06-04, queen-led swarm; three DA rounds; PUSHED)
+
+* **Fork commits (forks/ruflo `main`, pushed `2ac876754..17ea132aa`):** R1 `cdc6e6d3b` (unconditional
+  `graph_edges` write added alongside the pre-existing unconditional `causal_edges` write), R3
+  `0beac9a06` (3 rabitq tools registered; loader hardened), O2 `b9673bad1` (honest no-routes
+  envelope), O1 `bd43fbf2b`+`7c477911c` (TWO bugs: `tryConsume('batch')`→NaN cold rate-limit;
+  Episode-shape `session_id` NOT NULL), X `fd7f08b1c`, B1-loader `c59d1b6c9` (3-shape wasm-bindgen
+  handling: web-legacy/web-auto/nodejs; absent→honest-null, skewed→throw), nits `17ea132aa`
+  (+ `metadata.source:'batch-insert'` learner-insurance marker). **forks/ruvector:** `ea1cf534d`
+  (rabitq-wasm discoverable package.json stub, ruvllm-wasm precedent; pushed after rebase onto the
+  parallel session's `cc2ccc5e6`).
+* **Mirror published:** `@sparkleideas/ruvector-rabitq-wasm@0.1.0` (web shape) on Verdaccio; the
+  durable pipeline (WASM_PACKAGES + codemod UNSCOPED_MAP + publish-levels level 0) rebuilds
+  `--target nodejs` next cycle — the loader handles both shapes (DA-judged sound insurance).
+* **Worktree commits:** `0b4a5eb` (smoke + acceptance + CI), `93bf3a6` (pipeline wiring + ledger
+  row), `ff54fdd` (N2 node-scoped R1c, N3 O1 gating, N8 node-24 workflows), `618ee55` (5
+  registry-consistency fixes incl. PHANTOM_TOOL_SUBSTRINGS `embeddings_rabitq` removal — the tools
+  are now real).
+* **DA round 1:** caught B1 — R3 was production-unreachable (renamed mirror 404, optionalDep
+  silently skipped; overlay PASS used a hand-injected unrenamed package). **DA round 2:** B1
+  package+loader UPHELD via fresh production install (smoke 14/14 through the renamed import); new
+  blocker — 5 release-gating registry-consistency test failures. **Round 3 (queen-verified
+  oracle):** pipeline suite 0-fail/0-skip exit-0; production smoke 14/14; FAIL baseline 3/11 on
+  patch.415; guards adr0293 12/12 + adr0285 9/9.
+* Status stays `proposed`; flips with the release that ships these commits and turns
+  `adr0294-c2-reconvergence` green.
