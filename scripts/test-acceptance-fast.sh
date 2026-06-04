@@ -535,6 +535,17 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0293"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
   fi
 fi
 
+if [[ "$_FAST_RUN_GROUPS" == *"adr0294"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0294-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0294-checks.sh"
+    echo "── ADR-0294 (C2 re-convergence: graph_edges · rabitq · semantic-route · batch) ──"
+    export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+    echo "[fast] adr0294 reusing ACCEPT_TEMP: ${ACCEPT_TEMP}"
+    _fast_run "adr0294-c2-reconvergence" check_adr0294_c2_reconvergence
+    unset ADR0255_SMOKE_SHARED_TEMP
+  fi
+fi
+
 if [[ "$_FAST_RUN_GROUPS" == *"adr0176qk"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
   if [[ -f "$PROJECT_DIR/lib/acceptance-adr0176-query-key.sh" ]]; then
     source "$PROJECT_DIR/lib/acceptance-adr0176-query-key.sh"

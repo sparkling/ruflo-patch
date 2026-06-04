@@ -914,6 +914,8 @@ adr0290_lib="${PROJECT_DIR}/lib/acceptance-adr0290-checks.sh"
 [[ -f "$adr0290_lib" ]] && source "$adr0290_lib"
 adr0293_lib="${PROJECT_DIR}/lib/acceptance-adr0293-checks.sh"
 [[ -f "$adr0293_lib" ]] && source "$adr0293_lib"
+adr0294_lib="${PROJECT_DIR}/lib/acceptance-adr0294-checks.sh"
+[[ -f "$adr0294_lib" ]] && source "$adr0294_lib"
 
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
@@ -4088,6 +4090,30 @@ if [[ -f "$adr0293_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
   rm -rf "$PARALLEL_DIR" 2>/dev/null
 fi
 _record_phase "phase-adr0293-c1-reconvergence" "$(_elapsed_ms "$_adr0293_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0294 — C2 Memory & Data re-convergence (graph_edges write · RaBitQ
+# wiring · semantic-route honesty · batch cold rate-limit). One long-lived
+# MCP stdio session asserts R1/R3/O1/O2 against the installed CLI — the same
+# bin chain Claude Code uses. FAILs against the published packages (regressions
+# present: graph-query empty, rabitq tools absent, semantic-route bare/unhelpful,
+# batch cold-rate-limited).
+# ════════════════════════════════════════════════════════════════════
+_adr0294_start=$(_ns)
+if [[ -f "$adr0294_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
+  log "── ADR-0294: C2 re-convergence (graph_edges · rabitq · semantic-route · batch) ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+  export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+
+  run_check_bg "adr0294-c2-reconvergence" "ADR-0294 C2 re-convergence: graph_edges write + rabitq wiring + semantic-route honesty + batch cold rate-limit" check_adr0294_c2_reconvergence "adr0294"
+
+  collect_parallel "adr0294" \
+    "adr0294-c2-reconvergence|ADR-0294 C2 re-convergence: graph_edges write + rabitq wiring + semantic-route honesty + batch cold rate-limit"
+
+  unset ADR0255_SMOKE_SHARED_TEMP
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0294-c2-reconvergence" "$(_elapsed_ms "$_adr0294_start" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
 # Results

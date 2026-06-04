@@ -1,0 +1,81 @@
+# ADR-0294 — CI stanza for the C2 Memory & Data re-convergence smoke.
+#
+# Per `feedback-always-wire-tests-into-cicd`: the C2 re-convergence smoke is
+# wired into the standard runner (scripts/test-acceptance.sh,
+# adr0294-c2-reconvergence check) AND here. The smoke drives ONE long-lived MCP
+# stdio JSON-RPC session against an installed CLI (`ruflo mcp start`) and
+# asserts the four fork-regression / open-item fixes:
+#   R1 general-entity graph_edges write restored — causal-edge(entity) →
+#      graph-query k-hop/pagerank non-empty (+semantic reachable) →
+#      graph-pathfinder ≥1 path → causal-query STILL returns the edge (ADR-0276
+#      narrowed causal-edge to causal_edges; R1 restores the graph_edges write
+#      the graph-traversal + kg composition reads).
+#   R3 embeddings_rabitq_* wired — the 3 tools are registered; status honest;
+#      build returns a compression envelope; search returns ranked results
+#      (embedder-gated, LOUD-SKIP without a real embedder).
+#   O2 agentdb_semantic-route honest envelope — cold AND warm return a
+#      structured envelope (success:false + message + agentdb_route
+#      recommendation); never bare null.
+#   O1 agentdb_batch{insert} cold rate-limit fixed — first batch insert of 3
+#      lands 3 (string→token-count bug + episodes.session_id constraint fix).
+# FAILs against the published packages (regressions present). Per
+# `feedback-no-tail-tests`: the smoke writes its log to SMOKE_LOG_DIR.
+
+name: ADR-0294 C2 re-convergence
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-orchestration.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/embeddings-tools.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/memory/rabitq-index.ts'
+      - 'scripts/smoke-adr0294-c2-reconvergence.mjs'
+      - 'lib/acceptance-adr0294-checks.sh'
+  pull_request:
+    paths:
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-orchestration.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/embeddings-tools.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/memory/rabitq-index.ts'
+      - 'scripts/smoke-adr0294-c2-reconvergence.mjs'
+      - 'lib/acceptance-adr0294-checks.sh'
+
+env:
+  REGISTRY: http://localhost:4873
+  CLI_PKG: '@sparkleideas/ruflo'
+  SMOKE_LOG_DIR: ${{ github.workspace }}/smoke-logs
+
+jobs:
+  c2-reconvergence:
+    name: C2 re-convergence (ADR-0294)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Start local Verdaccio + publish fork packages
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/ruflo-publish.sh 2>&1 | tee "${SMOKE_LOG_DIR}/publish.log"
+
+      - name: Run ADR-0294 C2 re-convergence smoke via fast runner
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/test-acceptance-fast.sh adr0294 2>&1 | tee "${SMOKE_LOG_DIR}/adr0294.log"
+
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs-c2-reconvergence
+          path: ${{ env.SMOKE_LOG_DIR }}
