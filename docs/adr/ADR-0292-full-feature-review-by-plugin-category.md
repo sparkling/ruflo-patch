@@ -89,7 +89,7 @@ go-ahead.
 
 | # | Category | Plugins | Notes / priority |
 |---|---|---|---|
-| C1 | **Learning & Intelligence** | ruflo-intelligence, ruflo-autopilot, ruflo-graph-intelligence, ruflo-ruvector, ruflo-ruvllm | **First** — half-done: ADR-0291 holds the upstream proof for trajectory/SONA; remaining: prove the rest, fork root-cause (when did fork `lastAdaptation` stop and which fork change coincides), fork-fix ADR incl. re-evaluation of ADR-0268/0277/0279/0280/0290 premises |
+| C1 | **Learning & Intelligence** | ruflo-intelligence, ruflo-autopilot, ruflo-graph-intelligence, ruflo-ruvector, ruflo-ruvllm | **✅ REVIEWED 2026-06-04** — findings: `docs/research/c1-learning-intelligence/01..04`; re-convergence ADR: **ADR-0293** (4 regressions D1–D4 incl. ruvllm WASM init skew; 4 fork-ahead keeps D5–D8; ADR-0291 F1 retracted — `enabled:false` was hooks_list display metadata; 9/10 fork ADR premises DEMONSTRATED; upstream-broken: 0). D1–D4 implementation gated on go-ahead |
 | C2 | **Memory & Data substrate** | ruflo-rag-memory, ruflo-agentdb, ruflo-rvf, ruflo-knowledge-graph, ruflo-migrations | Second — the substrate the fork diverged from hardest (RVF-as-sole-truth, sql.js removal, ADR-0091/0086); highest patch density |
 | C3 | **Orchestration & Agents** | ruflo-core, ruflo-swarm, ruflo-hive-mind, ruflo-agent, ruflo-wasm, ruflo-daa, ruflo-workflows, ruflo-goals | ruflo-core carries the hook layer (partially proven in ADR-0291) |
 | C4 | **Quality & Process** | ruflo-testgen, ruflo-sparc, ruflo-ddd, ruflo-adr, ruflo-docs, ruflo-jujutsu | |
