@@ -910,6 +910,8 @@ adr0285_lib="${PROJECT_DIR}/lib/acceptance-adr0285-checks.sh"
 [[ -f "$adr0285_lib" ]] && source "$adr0285_lib"
 adrcreatematrix_lib="${PROJECT_DIR}/lib/acceptance-adr-create-checks.sh"
 [[ -f "$adrcreatematrix_lib" ]] && source "$adrcreatematrix_lib"
+adr0290_lib="${PROJECT_DIR}/lib/acceptance-adr0290-checks.sh"
+[[ -f "$adr0290_lib" ]] && source "$adr0290_lib"
 
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
@@ -4031,6 +4033,33 @@ if [[ -f "$adrcreatematrix_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; th
   rm -rf "$PARALLEL_DIR" 2>/dev/null
 fi
 _record_phase "phase-adr-create-storage-matrix" "$(_elapsed_ms "$_adrcreatematrix_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0290: automatic learning capture — hook → episode → learner → action-values.
+# Drives a real PostToolUse(Task) payload through the FILE-BASED hook (the
+# init-generated hook-handler.mjs, never a manual MCP call) and asserts the
+# whole Phase-1 loop: metadata-only episode (task_type derived from the
+# description, action = subagent_type, reward 0.6 skeptic default; NO raw
+# free text / PII canaries / episode_embeddings), no-fabrication on an
+# underivable outcome, then `daemon trigger -w learn` populates
+# .swarm/action-values.json with the captured (task_type, action) row.
+# FAILs pre-impl (cli rejects --task/--session; generated hook lacks capture).
+# ════════════════════════════════════════════════════════════════════
+_adr0290_start=$(_ns)
+if [[ -f "$adr0290_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
+  log "── ADR-0290: learning capture loop (hook → episode → learner → action-values) ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+  export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+
+  run_check_bg "adr0290-learning-loop" "ADR-0290 learning capture: hook → episode → learner → action-values" check_adr0290_learning_loop "adr0290"
+
+  collect_parallel "adr0290" \
+    "adr0290-learning-loop|ADR-0290 learning capture: hook → episode → learner → action-values"
+
+  unset ADR0255_SMOKE_SHARED_TEMP
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0290-learning-loop" "$(_elapsed_ms "$_adr0290_start" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
 # Results

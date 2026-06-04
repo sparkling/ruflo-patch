@@ -513,6 +513,17 @@ if [[ "$_FAST_RUN_GROUPS" == *"adrmatrix"* || "$_FAST_RUN_GROUPS" == "all" ]]; t
   fi
 fi
 
+if [[ "$_FAST_RUN_GROUPS" == *"adr0290"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0290-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0290-checks.sh"
+    echo "── ADR-0290 (learning capture: hook → episode → learner → action-values) ──"
+    export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+    echo "[fast] adr0290 reusing ACCEPT_TEMP: ${ACCEPT_TEMP}"
+    _fast_run "adr0290-learning-loop" check_adr0290_learning_loop
+    unset ADR0255_SMOKE_SHARED_TEMP
+  fi
+fi
+
 if [[ "$_FAST_RUN_GROUPS" == *"adr0176qk"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
   if [[ -f "$PROJECT_DIR/lib/acceptance-adr0176-query-key.sh" ]]; then
     source "$PROJECT_DIR/lib/acceptance-adr0176-query-key.sh"
