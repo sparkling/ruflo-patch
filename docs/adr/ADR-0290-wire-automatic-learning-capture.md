@@ -208,8 +208,11 @@ drives the same worker code path deterministically.
 through the **file-based hook** (never a manual MCP call) and asserts the metadata-only episode row
 (task_type/action/reward/session, PII canaries absent, free-text columns NULL, zero `episode_embeddings`), the
 no-fabrication path, and the learner run populating `action-values.json`. Wired into `test-acceptance.sh`
-(adr0290 group), `test-acceptance-fast.sh adr0290`, and `v3-ci-learning-capture.yml`. The smoke FAILs against
-the pre-fix release (verified) and PASSes post-release.
+(adr0290 group), `test-acceptance-fast.sh adr0290`, and `v3-ci-learning-capture.yml`. **Gate verified both
+ways (2026-06-04):** vs pre-fix cli patch.408 — exit 1, 5 FAILs (no generated-hook capture, no dispatch, no
+episode, no action-values); vs published post-fix cli patch.415 / agentdb patch.427 — **17/17 PASS**, ending in
+`action-values.json` row `(taskType=authentication, action=<smoke agent>, samples=1, meanReward=0.6)` — the
+frozen learning loop demonstrably unfrozen against installed packages.
 
 **ADR-0268 flywheel surfaces regression-checked:** its smoke's `-a <tag>` agentType-tier derivation, skill
 consolidation (SQL-only grouping, no `episode_embeddings` dependency), and promotion assertions are unaffected.
