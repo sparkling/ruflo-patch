@@ -912,6 +912,8 @@ adrcreatematrix_lib="${PROJECT_DIR}/lib/acceptance-adr-create-checks.sh"
 [[ -f "$adrcreatematrix_lib" ]] && source "$adrcreatematrix_lib"
 adr0290_lib="${PROJECT_DIR}/lib/acceptance-adr0290-checks.sh"
 [[ -f "$adr0290_lib" ]] && source "$adr0290_lib"
+adr0293_lib="${PROJECT_DIR}/lib/acceptance-adr0293-checks.sh"
+[[ -f "$adr0293_lib" ]] && source "$adr0293_lib"
 
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
@@ -4060,6 +4062,32 @@ if [[ -f "$adr0290_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
   rm -rf "$PARALLEL_DIR" 2>/dev/null
 fi
 _record_phase "phase-adr0290-learning-loop" "$(_elapsed_ms "$_adr0290_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0293: C1 Learning & Intelligence re-convergence — the four fork
+# regressions. ONE long-lived MCP stdio session asserts: D1 ruvllm WASM init
+# skew fixed (create→add→route returns a real score; status reports wasm
+# loaded), D2 hooks_transfer no longer fabricates demo-data (nonexistent
+# source ⇒ success:false/transferred:0; real source ⇒ success:true), D3
+# neural_* wired to the real mpnet embedder + the confidence@similarity:0
+# scoring bug fixed, D4 neural_compress documents its quantize capability
+# boundary. FAILs against the published packages (regressions present).
+# ════════════════════════════════════════════════════════════════════
+_adr0293_start=$(_ns)
+if [[ -f "$adr0293_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
+  log "── ADR-0293: C1 re-convergence (ruvllm wasm · hooks_transfer · neural embedder/confidence · neural_compress) ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+  export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+
+  run_check_bg "adr0293-c1-reconvergence" "ADR-0293 C1 re-convergence: ruvllm wasm + hooks_transfer + neural embedder/confidence + neural_compress" check_adr0293_c1_reconvergence "adr0293"
+
+  collect_parallel "adr0293" \
+    "adr0293-c1-reconvergence|ADR-0293 C1 re-convergence: ruvllm wasm + hooks_transfer + neural embedder/confidence + neural_compress"
+
+  unset ADR0255_SMOKE_SHARED_TEMP
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0293-c1-reconvergence" "$(_elapsed_ms "$_adr0293_start" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
 # Results

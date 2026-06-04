@@ -524,6 +524,17 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0290"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
   fi
 fi
 
+if [[ "$_FAST_RUN_GROUPS" == *"adr0293"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0293-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0293-checks.sh"
+    echo "── ADR-0293 (C1 re-convergence: ruvllm wasm · hooks_transfer · neural embedder/confidence · neural_compress) ──"
+    export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+    echo "[fast] adr0293 reusing ACCEPT_TEMP: ${ACCEPT_TEMP}"
+    _fast_run "adr0293-c1-reconvergence" check_adr0293_c1_reconvergence
+    unset ADR0255_SMOKE_SHARED_TEMP
+  fi
+fi
+
 if [[ "$_FAST_RUN_GROUPS" == *"adr0176qk"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
   if [[ -f "$PROJECT_DIR/lib/acceptance-adr0176-query-key.sh" ]]; then
     source "$PROJECT_DIR/lib/acceptance-adr0176-query-key.sh"
