@@ -1,0 +1,70 @@
+# ADR-0296 — CI stanza for the C4 Quality & Process re-convergence grep-contract.
+#
+# Per `feedback-always-wire-tests-into-cicd`: the C4 re-convergence check is
+# wired into the standard runner (scripts/test-acceptance.sh,
+# adr0296-c4-reconvergence check) AND here. C4 is doc/contract-only — the check
+# is a pure source grep against the fork plugin tree (no MCP server, no install,
+# no paid calls):
+#   F1 adr filename contract (two axes) converged on the canonical
+#      ADR-NNNN-<slug>.md form — both the plugin command (adr.md) and the plugin
+#      skill (adr-create/SKILL.md) state it; the "NO `ADR-` filename prefix"
+#      prescription is absent (the `agentdb index` glob `ADR-*.md` is the
+#      canonical contract — a skill-shaped no-prefix file is un-indexable).
+#   F2 spot-greps — adr-index SKILL no longer claims adr-edges retired;
+#      testgen test-gaps SKILL no longer advertises a phantom
+#      `coverage-gaps --limit` CLI flag; jujutsu diff-analyze names the real ref.
+# FAILs against the unfixed plugin tree (no-prefix + 3-digit present). Per
+# `feedback-no-tail-tests`: the runner writes its log to SMOKE_LOG_DIR.
+
+name: ADR-0296 C4 re-convergence
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'forks/ruflo/plugins/ruflo-adr/commands/adr.md'
+      - 'forks/ruflo/plugins/ruflo-adr/skills/adr-create/SKILL.md'
+      - 'forks/ruflo/plugins/ruflo-adr/skills/adr-index/SKILL.md'
+      - 'forks/ruflo/plugins/ruflo-testgen/skills/test-gaps/SKILL.md'
+      - 'forks/ruflo/plugins/ruflo-jujutsu/skills/diff-analyze/SKILL.md'
+      - 'lib/acceptance-adr0296-checks.sh'
+  pull_request:
+    paths:
+      - 'forks/ruflo/plugins/ruflo-adr/commands/adr.md'
+      - 'forks/ruflo/plugins/ruflo-adr/skills/adr-create/SKILL.md'
+      - 'forks/ruflo/plugins/ruflo-adr/skills/adr-index/SKILL.md'
+      - 'forks/ruflo/plugins/ruflo-testgen/skills/test-gaps/SKILL.md'
+      - 'forks/ruflo/plugins/ruflo-jujutsu/skills/diff-analyze/SKILL.md'
+      - 'lib/acceptance-adr0296-checks.sh'
+
+env:
+  SMOKE_LOG_DIR: ${{ github.workspace }}/smoke-logs
+
+jobs:
+  c4-reconvergence:
+    name: C4 re-convergence (ADR-0296)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          # node-24 for parity with the other re-convergence CI stanzas; the
+          # check itself only needs node to parse config/upstream-branches.json.
+          node-version: '24'
+
+      - name: Run ADR-0296 C4 re-convergence grep-contract via fast runner
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/test-acceptance-fast.sh adr0296 2>&1 | tee "${SMOKE_LOG_DIR}/adr0296.log"
+
+      - name: Upload check logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs-c4-reconvergence
+          path: ${{ env.SMOKE_LOG_DIR }}

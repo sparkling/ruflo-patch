@@ -1,0 +1,84 @@
+# ADR-0295 — CI stanza for the C3 Orchestration & Agents re-convergence smoke.
+#
+# Per `feedback-always-wire-tests-into-cicd`: the C3 re-convergence smoke is
+# wired into the standard runner (scripts/test-acceptance.sh,
+# adr0295-c3-reconvergence check) AND here. The smoke drives ONE long-lived MCP
+# stdio JSON-RPC session against an installed CLI (`ruflo mcp start`) and asserts
+# the four fork-regression / honesty fixes — NO paid LLM calls (resolver-level
+# + no-key paths):
+#   R1 agent_execute MODEL_MAP ported to current Claude 4.x ids — spawn →
+#      agent_execute (haiku + sonnet) resolves a current-allowlist id and NOT a
+#      deprecated claude-3-5-*; no-key envelope is the honest "No LLM provider"
+#      message, never a deprecated-id 400 (un-merged paired half of #2042, M-C1).
+#   R2 hooks_task-completed alias REGISTERED + returns real training evidence
+#      (patternsLearned>=1 + learningPath:'trajectory-pipeline'); SONA half
+#      LOUD-SKIPs without a real embedder; the trajectory graph_edges write
+#      LOUD-SKIPs if the AgentDB controller registry is unavailable.
+#   W1 wasm_agent_prompt no-key NOTE on the MCP path.
+#   W2 wasm content[0].text is a JSON string, not an object.
+# FAILs against the published packages (agent_execute resolves claude-3-5-*;
+# hooks_task-completed absent; wasm prompt bare-echo object). Per
+# `feedback-no-tail-tests`: the smoke writes its log to SMOKE_LOG_DIR.
+
+name: ADR-0295 C3 re-convergence
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agent-execute-core.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/ruvector/agent-wasm.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/wasm-agent-tools.ts'
+      - 'scripts/smoke-adr0295-c3-reconvergence.mjs'
+      - 'lib/acceptance-adr0295-checks.sh'
+  pull_request:
+    paths:
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agent-execute-core.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/ruvector/agent-wasm.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/wasm-agent-tools.ts'
+      - 'scripts/smoke-adr0295-c3-reconvergence.mjs'
+      - 'lib/acceptance-adr0295-checks.sh'
+
+env:
+  REGISTRY: http://localhost:4873
+  CLI_PKG: '@sparkleideas/ruflo'
+  SMOKE_LOG_DIR: ${{ github.workspace }}/smoke-logs
+
+jobs:
+  c3-reconvergence:
+    name: C3 re-convergence (ADR-0295)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          # node-24: the project needs native better-sqlite3 (R2's trajectory
+          # graph_edges write + the AgentDB controller registry throw on a
+          # non-SQLite substrate); the daemon-node-version trap
+          # (project-mcp-daemon-runs-sqljs-fallback) is the cautionary tale.
+          node-version: '24'
+
+      - name: Start local Verdaccio + publish fork packages
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/ruflo-publish.sh 2>&1 | tee "${SMOKE_LOG_DIR}/publish.log"
+
+      - name: Run ADR-0295 C3 re-convergence smoke via fast runner
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/test-acceptance-fast.sh adr0295 2>&1 | tee "${SMOKE_LOG_DIR}/adr0295.log"
+
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs-c3-reconvergence
+          path: ${{ env.SMOKE_LOG_DIR }}

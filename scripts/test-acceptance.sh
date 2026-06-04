@@ -916,6 +916,10 @@ adr0293_lib="${PROJECT_DIR}/lib/acceptance-adr0293-checks.sh"
 [[ -f "$adr0293_lib" ]] && source "$adr0293_lib"
 adr0294_lib="${PROJECT_DIR}/lib/acceptance-adr0294-checks.sh"
 [[ -f "$adr0294_lib" ]] && source "$adr0294_lib"
+adr0295_lib="${PROJECT_DIR}/lib/acceptance-adr0295-checks.sh"
+[[ -f "$adr0295_lib" ]] && source "$adr0295_lib"
+adr0296_lib="${PROJECT_DIR}/lib/acceptance-adr0296-checks.sh"
+[[ -f "$adr0296_lib" ]] && source "$adr0296_lib"
 
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
@@ -4114,6 +4118,52 @@ if [[ -f "$adr0294_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
   rm -rf "$PARALLEL_DIR" 2>/dev/null
 fi
 _record_phase "phase-adr0294-c2-reconvergence" "$(_elapsed_ms "$_adr0294_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0295 — C3 Orchestration & Agents re-convergence (agent_execute MODEL_MAP
+# port · task-completed alias · wasm prompt NOTE + envelope shape). One
+# long-lived MCP stdio session asserts R1/R2/W1/W2 against the installed CLI —
+# the same bin chain Claude Code uses. NO paid LLM calls (resolver-level +
+# no-key paths). FAILs against the published packages (agent_execute resolves
+# claude-3-5-*; hooks_task-completed absent; wasm prompt bare-echo object).
+# ════════════════════════════════════════════════════════════════════
+_adr0295_start=$(_ns)
+if [[ -f "$adr0295_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
+  log "── ADR-0295: C3 re-convergence (MODEL_MAP · task-completed alias · wasm NOTE/envelope) ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+  export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+
+  run_check_bg "adr0295-c3-reconvergence" "ADR-0295 C3 re-convergence: agent_execute MODEL_MAP 4.x port + hooks_task-completed alias + wasm prompt NOTE + envelope shape" check_adr0295_c3_reconvergence "adr0295"
+
+  collect_parallel "adr0295" \
+    "adr0295-c3-reconvergence|ADR-0295 C3 re-convergence: agent_execute MODEL_MAP 4.x port + hooks_task-completed alias + wasm prompt NOTE + envelope shape"
+
+  unset ADR0255_SMOKE_SHARED_TEMP
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0295-c3-reconvergence" "$(_elapsed_ms "$_adr0295_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0296 — C4 Quality & Process re-convergence (doc/contract only). A
+# grep-contract check against the fork plugin source tree: F1 adr filename
+# contract (both surfaces canonical ADR-NNNN-<slug>.md; no no-prefix string)
+# + F2 spot-greps (adr-index namespace, testgen coverage-gaps --limit phantom,
+# jujutsu ref arg). No MCP smoke, no install — pure source grep. FAILs against
+# the unfixed plugin tree (no-prefix + 3-digit present).
+# ════════════════════════════════════════════════════════════════════
+_adr0296_start=$(_ns)
+if [[ -f "$adr0296_lib" ]]; then
+  log "── ADR-0296: C4 re-convergence (adr filename contract + doc-drift grep-contract) ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+
+  run_check_bg "adr0296-c4-reconvergence" "ADR-0296 C4 re-convergence: adr filename contract (ADR-NNNN-<slug>.md) + F2 doc-drift grep-contract" check_adr0296_c4_reconvergence "adr0296"
+
+  collect_parallel "adr0296" \
+    "adr0296-c4-reconvergence|ADR-0296 C4 re-convergence: adr filename contract (ADR-NNNN-<slug>.md) + F2 doc-drift grep-contract"
+
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0296-c4-reconvergence" "$(_elapsed_ms "$_adr0296_start" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
 # Results

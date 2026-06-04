@@ -546,6 +546,26 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0294"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
   fi
 fi
 
+if [[ "$_FAST_RUN_GROUPS" == *"adr0295"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0295-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0295-checks.sh"
+    echo "── ADR-0295 (C3 re-convergence: MODEL_MAP · task-completed alias · wasm NOTE/envelope) ──"
+    export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+    echo "[fast] adr0295 reusing ACCEPT_TEMP: ${ACCEPT_TEMP}"
+    _fast_run "adr0295-c3-reconvergence" check_adr0295_c3_reconvergence
+    unset ADR0255_SMOKE_SHARED_TEMP
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0296"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0296-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0296-checks.sh"
+    echo "── ADR-0296 (C4 re-convergence: adr filename contract + doc-drift grep-contract) ──"
+    # Grep-contract against the fork plugin tree — no ACCEPT_TEMP / install needed.
+    _fast_run "adr0296-c4-reconvergence" check_adr0296_c4_reconvergence
+  fi
+fi
+
 if [[ "$_FAST_RUN_GROUPS" == *"adr0176qk"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
   if [[ -f "$PROJECT_DIR/lib/acceptance-adr0176-query-key.sh" ]]; then
     source "$PROJECT_DIR/lib/acceptance-adr0176-query-key.sh"
