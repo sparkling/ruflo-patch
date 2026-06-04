@@ -61,7 +61,12 @@ const DELETED_PLUGIN_NAMES = ['ruflo-graph-intelligence'];
 // F-07-002: phantom MCP tools that were never registered in the
 // central cli registry. Substring match catches both bare tool name
 // and `mcp__ruflo__<name>` qualified form.
-const PHANTOM_TOOL_SUBSTRINGS = ['embeddings_rabitq'];
+// `embeddings_rabitq` removed per ADR-0294 R3 (2026-06-04): the 3
+// embeddings_rabitq_* tools ARE now registered in the cli MCP registry
+// (embeddings-tools.ts) and the WASM mirror ships (ADR-0294 B1), so the
+// contract ADR / plugin surfaces legitimately name them — the phantom
+// guard no longer applies. (Empty = no phantom substrings currently.)
+const PHANTOM_TOOL_SUBSTRINGS = [];
 
 // F-07-006 / F-07-007: over-promising patterns. These are forbidden
 // in plugin .claude-plugin/plugin.json `description` field; reviewers

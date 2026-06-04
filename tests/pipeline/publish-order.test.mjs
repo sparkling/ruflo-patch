@@ -42,6 +42,7 @@ const KNOWN_DEPS = {
   '@sparkleideas/ruvector-attention-unified-wasm': [],
   '@sparkleideas/ruvector-rvagent-wasm': [],
   '@sparkleideas/ruvector-ruvllm-wasm': [],
+  '@sparkleideas/ruvector-rabitq-wasm': [],  // ADR-0294 R3/B1 — leaf wasm mirror, no internal deps
   '@sparkleideas/ruvector-learning-wasm': [],
   '@sparkleideas/config-chain': [],  // ADR-0177 Phase 1.6 — no internal deps; consumed by memory + agentdb
   '@sparkleideas/agentdb': [],
@@ -194,23 +195,23 @@ describe('Topological publish order (ADR-0014)', () => {
   // ---------- 2. Package completeness ----------
 
   describe('Package completeness', () => {
-    it('all expected packages are present across all levels (31+5+5+22+2)', () => {
+    it('all expected packages are present across all levels (32+5+5+22+2)', () => {
       const allPackages = LEVELS.flat();
-      // ADR-0014 + ADR-0071 + F3 + W3 + ADR-0113 Fix 5 + ADR-0239 cleanup + ADR-0242 errors + ADR-0265 quic-native + Phase 2 all 5 platforms.
-      // L1=31 (was 30; +agentic-flow-quic-native-win32-x64-msvc ADR-0265 Phase 2b complete),
+      // ADR-0014 + ADR-0071 + F3 + W3 + ADR-0113 Fix 5 + ADR-0239 cleanup + ADR-0242 errors + ADR-0265 quic-native + Phase 2 all 5 platforms + ADR-0294 rabitq.
+      // L1=32 (was 31; +@sparkleideas/ruvector-rabitq-wasm ADR-0294 R3/B1 wasm mirror),
       // L2=5 (was 4 post-ADR-0239; +errors ADR-0242 Batch 5),
       // L3=5 (was 6; -ruvector-upstream ADR-0239 cluster 5a; ADR-0203 -hooks earlier),
       // L4=22 (was 24; -testing ADR-0239 cluster 1, -plugin-cognitive-kernel ADR-0239 cluster 5a),
-      // L5=2. Total: 65 (was 64; +1 win32 sub-package).
-      assert.equal(LEVELS[0].length, 31, 'Level 1 should have 31 packages (ADR-0265 Phase 2 complete — all 5 platforms + parent)');
+      // L5=2. Total: 66 (was 65; +1 rabitq-wasm mirror).
+      assert.equal(LEVELS[0].length, 32, 'Level 1 should have 32 packages (ADR-0265 Phase 2 complete — all 5 platforms + parent; +ADR-0294 ruvector-rabitq-wasm)');
       assert.equal(LEVELS[1].length, 5, 'Level 2 should have 5 packages (ADR-0242 added @sparkleideas/errors)');
       assert.equal(LEVELS[2].length, 5, 'Level 3 should have 5 packages (ADR-0239 cluster 5a removed ruvector-upstream)');
       assert.equal(LEVELS[3].length, 22, 'Level 4 should have 22 packages (ADR-0239 removed testing + plugin-cognitive-kernel)');
       assert.equal(LEVELS[4].length, 2, 'Level 5 should have 2 packages');
       assert.equal(
         allPackages.length,
-        65,
-        `Expected 65 packages total (62 pre-ADR-0239, -4 deleted, +errors ADR-0242, +quic-native ADR-0265, +5 platform sub-packages), got ${allPackages.length}`
+        66,
+        `Expected 66 packages total (62 pre-ADR-0239, -4 deleted, +errors ADR-0242, +quic-native ADR-0265, +5 platform sub-packages, +rabitq-wasm ADR-0294), got ${allPackages.length}`
       );
     });
 
