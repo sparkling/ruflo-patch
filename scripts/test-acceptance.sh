@@ -920,6 +920,8 @@ adr0295_lib="${PROJECT_DIR}/lib/acceptance-adr0295-checks.sh"
 [[ -f "$adr0295_lib" ]] && source "$adr0295_lib"
 adr0296_lib="${PROJECT_DIR}/lib/acceptance-adr0296-checks.sh"
 [[ -f "$adr0296_lib" ]] && source "$adr0296_lib"
+adr0297_lib="${PROJECT_DIR}/lib/acceptance-adr0297-checks.sh"
+[[ -f "$adr0297_lib" ]] && source "$adr0297_lib"
 
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
@@ -4164,6 +4166,33 @@ if [[ -f "$adr0296_lib" ]]; then
   rm -rf "$PARALLEL_DIR" 2>/dev/null
 fi
 _record_phase "phase-adr0296-c4-reconvergence" "$(_elapsed_ms "$_adr0296_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0297 — C5 Security & Safety re-convergence (the program's first
+# security-consequence fix). Drives the installed cli: R1 aidefence ADR-118
+# detection both-ways across TWO surfaces (MCP aidefence_is_safe + CLI
+# `security defend --output json`), one probe per ported pattern family; W1
+# `security defend` default-text render exits 0 on a detected threat; R2 a
+# fresh-npx federation `init` (isolated cache, no agentic-flow) exits 0
+# (graceful local-only) with ed25519 key perms intact. Synthetic strings only;
+# no paid LLM calls. FAILs against the published artifacts (the two must-alert
+# strings pass as safe; federation init crashes; defend text crashes).
+# ════════════════════════════════════════════════════════════════════
+_adr0297_start=$(_ns)
+if [[ -f "$adr0297_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
+  log "── ADR-0297: C5 re-convergence (aidefence ADR-118 · federation unbreak · defend text render) ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+  export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+
+  run_check_bg "adr0297-c5-reconvergence" "ADR-0297 C5 re-convergence: aidefence ADR-118 detection refresh (both-ways, per family) + federation graceful loader + security defend text renderer" check_adr0297_c5_reconvergence "adr0297"
+
+  collect_parallel "adr0297" \
+    "adr0297-c5-reconvergence|ADR-0297 C5 re-convergence: aidefence ADR-118 detection refresh (both-ways, per family) + federation graceful loader + security defend text renderer"
+
+  unset ADR0255_SMOKE_SHARED_TEMP
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0297-c5-reconvergence" "$(_elapsed_ms "$_adr0297_start" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
 # Results
