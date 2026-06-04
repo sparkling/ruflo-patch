@@ -64,8 +64,13 @@ Work items:
   live schema; adr-index skill → canonical `agentdb index` (import.mjs reference updated, and the
   script↔skill namespace lag reconciled: the script writes `adr-patterns` + `adr-edges`); testgen
   `coverage-gaps --limit` CLI-flag phantom removed (MCP `limit` is the real surface); fork help
-  examples using `-t`/`-p` short flags → long flags (parser rejects short forms — shared upstream
-  drift, fork docs fixed, no donate-back); jujutsu README version pin refreshed; `useRuVector`
+  examples using `-t`/`-p` short flags — **premise corrected by the implementation DA (2026-06-04):**
+  the parser does NOT reject short forms globally; `buildScopedAliases` only scopes to depth-1
+  subcommands, so level-2 nested commands (`hooks worker dispatch -t/-c/-p`) hit a flat-global-map
+  COLLISION (11 `short:'t'` declarations in hooks.ts) while level-1 commands (`hooks route -t`)
+  work. Shared with upstream byte-for-byte; no donate-back. Re-scoped item: fix the `hooks worker
+  dispatch` command's own `examples` (hooks.ts:2726-2728, 4006) to long flags (rider on the next
+  batch); jujutsu README version pin refreshed; `useRuVector`
   documented as inert (dead flag both sides — param kept for surface parity).
 
 ### Cross-references (no work here)
@@ -110,3 +115,22 @@ validation re-drives the adr composition against published packages. This ADR fl
   feared fabricated-brokenness class has appeared in exactly one citation (C1 F1, retracted).
 * Method addition carried into the bar practice: **dump-timing** (N1) — end-state claims need a
   dump after the drive's last write, or a per-path claim.
+
+## Amendments
+
+### Implementation record (2026-06-04; DA: ZERO BLOCKERS; PUSHED with the ADR-0295 stack)
+
+* **Fork commit `4d3afbe95`** (F1+F2): adr command → 4-digit `ADR-NNNN`; adr-create SKILL → require
+  the `ADR-` prefix (DA both-ways repro: old shape → `agentdb index` EXIT 1; canonical → indexed);
+  jujutsu `ref` arg; adr arg-shapes → live schemas; adr-index namespace lag corrected (`adr-edges`
+  NOT retired — `adr-verify` reads it); testgen phantom `coverage-gaps --limit` removed (`--limit`
+  on coverage-suggest is real, kept); jujutsu README pin → v3.7; `useRuVector` documented inert.
+* **STOP correctly executed then DA-settled:** the F2 short-flags item's premise ("parser rejects
+  short forms") was half-false — depth-1 commands work; level-2 nested (`hooks worker dispatch
+  -t/-c/-p`) collide via the scoped-alias depth-1 limitation (shared upstream). Re-scoped rider on
+  the next batch: fix the worker-dispatch `examples` to long flags.
+* Acceptance: `lib/acceptance-adr0296-checks.sh` grep-contract (worktree `4bcbceb`); both-ways via
+  `git show` (base FAILs, HEAD PASSes). Note (pre-existing, program-level): CI path filters
+  reference `forks/ruflo/...` paths not tracked in ruflo-patch — the convention all sibling
+  workflows share.
+* Status stays `proposed`; flips with the release that turns `adr0296-c4-contract` green.

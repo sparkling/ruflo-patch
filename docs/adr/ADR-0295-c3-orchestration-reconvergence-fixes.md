@@ -136,3 +136,27 @@ release.
 * Program tracking: ADR-0292 (C3 row links here). Siblings: ADR-0293 (C1), ADR-0294 (C2).
 * New mistake class recorded for the program: **M-C1 "un-merged half of a paired upstream fix"** —
   distinct from C1's wrong-shape, C2's necessity-not-re-justified, and C4's doc-drift signatures.
+
+## Amendments
+
+### Implementation record (2026-06-04, queen-led swarm; DA: ZERO BLOCKERS; PUSHED `17ea132aa..4d3afbe95`)
+
+* **Fork commits:** R1 `39666a7ab` (MODEL_MAP = current upstream byte-for-byte: opus→`claude-opus-4-8`
+  + `opus-4.7` alias, sonnet→`claude-sonnet-4-6`, haiku→`claude-haiku-4-5-20251001`;
+  `executeAgentTask` folded through `resolveAnthropicModel`; zero stale `claude-3-5-` defaults
+  fork-wide; OpenRouter map verified at-parity), R2 `bdc12f1c3` (thin `hooks_task-completed` alias
+  driving the real start→step→end SONA path; `patternsLearned` derives from `sonaUpdate===true`;
+  success derives from args — G6-clean; DA-verified real persisted learning 9/9 incl. 4-way
+  concurrency), W1+W2 `9dbd55d1a` (single root cause: rvagent-wasm returns an OBJECT that defeated
+  the `typeof==='string'` echo guard — normalize at the boundary; NOTE + text-as-string + the latent
+  key-gated LLM routing all revive; outer double-wrap recorded, untouched), X1 `e8b494fbe`,
+  (F1/F2 shipped in the same stack — see ADR-0296).
+* **Both-ways:** published patch.415 → 6 FAIL; fixed → 9/9 (init'd env). Guards on the combined
+  C1+C2+C3 overlay: adr0293 12/12, adr0294 14/14, adr0285 9/9, pipeline 289/289.
+* **Recorded conditions (DA):** W1/W2 LOUD-SKIP in the standard acceptance wave (rvagent-wasm is
+  RUFLO_RUVECTOR_TESTS-gated per ADR-0104b — heavy-test-opt-out; realistic standard-run result is
+  7 pass / 2 skip, green); R2's registry-init LOUD-SKIP is a rare-substrate safety net, not a
+  routine exemption (clean `init --full` passes reliably). NIT open: `ClaudeModel` union lacks
+  `'opus-4.7'` (typing-only). Wiring: `4bcbceb`; ledger rows (16e59c261 + M-C1 annotation,
+  aca2280f1, ef73a1616/3975ab512): `4edbd41`.
+* Status stays `proposed`; flips with the release that turns `adr0295-c3-reconvergence` green.
