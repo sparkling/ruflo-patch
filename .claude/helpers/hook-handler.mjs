@@ -19,6 +19,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -229,12 +230,65 @@ const handlers = {
   },
 
   'post-task': () => {
-    if (intelligence && intelligence.feedback) {
-      try {
-        intelligence.feedback(true);
-      } catch { /* non-fatal */ }
+    // ADR-0211 F-02-009 (parity with the init-generated template): derive the
+    // outcome from the PostToolUse(Task) tool_response payload — never
+    // fabricate success.
+    const toolResponse = hookInput.tool_response || hookInput.toolResponse || null;
+    let outcome = null;
+    if (toolResponse && typeof toolResponse === 'object') {
+      if (typeof toolResponse.success === 'boolean') outcome = toolResponse.success;
+      else if (toolResponse.error || toolResponse.is_error) outcome = false;
+      else if (toolResponse.status === 'completed' || toolResponse.status === 'success') outcome = true;
+      else if (toolResponse.status === 'failed' || toolResponse.status === 'error') outcome = false;
     }
-    console.log('[OK] Task completed');
+    if (intelligence && intelligence.feedback) {
+      if (outcome === null) {
+        console.error('[WARN] hook-handler.post-task: tool_response missing outcome; feedback skipped (no fabrication)');
+      } else {
+        try {
+          intelligence.feedback(outcome);
+        } catch { /* non-fatal */ }
+      }
+    }
+    // ADR-0290 Phase 1: drive the episode-capture pipeline from the live
+    // file-based hook — the trigger ADR-0287 F10 found missing. A detached
+    // fire-and-forget `hooks post-task` CLI invocation records the
+    // METADATA-ONLY episode (CLI-derived task_type + action + reward +
+    // success + session_id; the description is consumed for derivation and
+    // never stored) that feeds NightlyLearner -> action-values -> routing.
+    // Never blocks or fails the hook; only fires when the outcome is
+    // derivable (no fabrication). RUFLO_DISABLE_TASK_CAPTURE=1 disables;
+    // RUFLO_TASK_CAPTURE_CMD overrides the CLI binary (test isolation).
+    if (outcome !== null && process.env.RUFLO_DISABLE_TASK_CAPTURE !== '1') {
+      try {
+        const ti = hookInput.tool_input || hookInput.toolInput || {};
+        const captureArgs = [
+          'hooks', 'post-task',
+          '--task-id', String(hookInput.tool_use_id || ('task_' + Date.now())),
+          '--success', outcome ? 'true' : 'false',
+        ];
+        if (ti.subagent_type) captureArgs.push('--agent', String(ti.subagent_type));
+        if (ti.description) captureArgs.push('--task', String(ti.description));
+        if (hookInput.session_id) captureArgs.push('--session', String(hookInput.session_id));
+        let logFd = 'ignore';
+        try {
+          const metricsDir = path.join('.claude-flow', 'metrics');
+          if (!fs.existsSync(metricsDir)) fs.mkdirSync(metricsDir, { recursive: true });
+          logFd = fs.openSync(path.join(metricsDir, 'post-task-capture.log'), 'a');
+        } catch { logFd = 'ignore'; }
+        const captureCmd = process.env.RUFLO_TASK_CAPTURE_CMD || '';
+        const child = captureCmd
+          ? spawn(captureCmd, captureArgs, { detached: true, stdio: ['ignore', logFd, logFd] })
+          : spawn('npx', ['-y', '@sparkleideas/cli@latest'].concat(captureArgs), { detached: true, stdio: ['ignore', logFd, logFd] });
+        child.on('error', () => { /* best-effort capture; never fail the hook */ });
+        child.unref();
+        if (typeof logFd === 'number') { try { fs.closeSync(logFd); } catch { /* child holds its dup */ } }
+        console.log('[ADR-0290] episode capture dispatched (agent=' + (ti.subagent_type || 'unknown') + ')');
+      } catch (e) {
+        console.error(`[FAIL] hook-handler.post-task.capture: ${e?.message || e}`);
+      }
+    }
+    console.log('[OK] Task completed: outcome=' + (outcome === null ? 'unknown' : outcome));
   },
 
   'stats': () => {
