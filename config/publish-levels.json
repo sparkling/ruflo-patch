@@ -21,6 +21,7 @@
         "@sparkleideas/ruvector-attention-unified-wasm",
         "@sparkleideas/ruvector-rvagent-wasm",
         "@sparkleideas/ruvector-ruvllm-wasm",
+        "@sparkleideas/ruvector-rabitq-wasm",
         "@sparkleideas/ruvector-learning-wasm",
         "@sparkleideas/config-chain",
         "@sparkleideas/agentdb",

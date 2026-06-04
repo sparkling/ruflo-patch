@@ -53,6 +53,19 @@ WASM_PACKAGES=(
   # surfaced exactly this crate: stale crates/ruvllm-wasm/pkg/ + canonical
   # npm/packages/ruvllm-wasm/ competed for the publishable name.
   "FORK_DIR_RUVECTOR:crates/ruvllm-wasm:npm/packages/ruvllm-wasm"
+  # ── rabitq-wasm (ADR-0294 R3) ──
+  # Crate at forks/ruvector/crates/ruvector-rabitq-wasm/; canonical publish dir
+  # at forks/ruvector/npm/packages/rabitq-wasm/. Wiring this makes the pipeline
+  # rebuild + publish @sparkleideas/ruvector-rabitq-wasm every cycle (the cli's
+  # rabitq-index.ts wrapper imports the codemod-renamed name). wasm-rebuild emits
+  # the --target nodejs shape (auto-instantiated, no initSync); the wrapper's
+  # loadRabitqModule() accepts all three wasm-bindgen shapes (web-legacy /
+  # web-auto / nodejs) so the rebuilt artefact works. Without this entry the
+  # mirror was never published → the renamed optionalDependency 404'd and a clean
+  # install silently skipped it (visible-but-dead tools — ADR-0294 B1). See also
+  # the codemod UNSCOPED_MAP entry (the nodejs build emits the unscoped
+  # `ruvector-rabitq-wasm` name) and config/publish-levels.json level 0.
+  "FORK_DIR_RUVECTOR:crates/ruvector-rabitq-wasm:npm/packages/rabitq-wasm"
 )
 
 # Future entries (per ADR-0232 §Decision Outcome "add others as the
