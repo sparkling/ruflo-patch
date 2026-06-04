@@ -112,9 +112,17 @@ consumer**. Precisely:
 
 ### Findings — fork-relevant deltas
 
-* **F1 — Fork regression vs upstream:** the fork's `hooks_intelligence_trajectory-*` tools are
-  `enabled:false` and its sona-optimizer is off the live path (ADR-0287 §F10) — upstream's are
-  enabled and demonstrably working (W1).
+* **F1 — RETRACTED (2026-06-04, C1 review — docs/research/c1-learning-intelligence/).** The claimed
+  fork regression does not exist: the fork's `hooks_intelligence_trajectory-*` tools run, do real SONA
+  learning, and persist `.swarm/sona-patterns.json` + RVF exactly like upstream (PARITY). The
+  `enabled:false` citation (hooks-tools.ts ~1510) is **display metadata in the `hooks_list` response**
+  (rows describing which hooks auto-fire — `post-task`/`post-edit`, which demonstrably run, carry the
+  same flag), not a tool gate. ADR-0287 §F10's citation was amplified here without checking the
+  surrounding structure — the exact wrong-shape failure this ADR's Confirmation bar exists to catch,
+  reproduced inside this ADR. Verified first-hand: the rows sit in a `const hooks = [...]` returned by
+  the list handler. The C1 review found the REAL fork regressions elsewhere: ruvllm WASM dead
+  (`initSync` version skew vs vendored `@sparkleideas/ruvector-ruvllm-wasm`, 6 tools), `hooks_transfer`
+  demo-data fabrication, `neural_predict/status` hash-fallback, `neural_compress` removed.
 * **F2 — Fork ahead of upstream:** automatic durable capture→consumer chain exists only in the fork
   (ADR-0290: hook → metadata-only episode → hourly NightlyLearner → action-values → routing blend;
   17/17 smoke vs published packages).
