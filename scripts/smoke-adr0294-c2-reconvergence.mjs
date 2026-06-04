@@ -216,12 +216,21 @@ async function main() {
       fail('R1b: graph-query k-hop non-empty', `expected results.length>=1, got ${JSON.stringify(khop).slice(0, 240)}`);
     }
 
-    // graph-query pagerank — MUST score reachable nodes (no "graph_edges is empty").
-    const ppr = await session.call('agentdb_graph-query', { nodeId: SRC, mode: 'pagerank', topK: 5 });
-    if (ppr?.success === true && Array.isArray(ppr.results) && ppr.results.length >= 1 && !/graph_edges is empty/i.test(String(ppr.message ?? ''))) {
-      pass(`R1c: graph-query pagerank non-empty (${ppr.results.length} scored; backend=${ppr.backend})`);
+    // graph-query pagerank — MUST score nodes reachable from OUR seed.
+    // Node-scoped (N2): assert the PPR result contains at least one of our own
+    // downstream nodes (UserService / Database), NOT merely a global non-empty
+    // result. graph_edges is populated by other paths too (hooks_post-task /
+    // trajectory-step write task:/pattern: edges), so a bare "results non-empty"
+    // could pass off unrelated topology; PPR from AuthController over a severed
+    // graph_edges (the pre-R1 regression) returns [] because AuthController has
+    // no rows there. Checking for our nodes is the precise signal.
+    const ppr = await session.call('agentdb_graph-query', { nodeId: SRC, mode: 'pagerank', topK: 10 });
+    const pprNodes = Array.isArray(ppr?.results) ? ppr.results.map((r) => r.nodeId) : [];
+    const pprHasOurs = pprNodes.includes(DST) || pprNodes.includes('Database');
+    if (ppr?.success === true && pprHasOurs && !/graph_edges is empty/i.test(String(ppr.message ?? ''))) {
+      pass(`R1c: graph-query pagerank scores OUR nodes (${pprNodes.length} scored, incl ${DST}/Database; backend=${ppr.backend})`);
     } else {
-      fail('R1c: graph-query pagerank non-empty', `expected results.length>=1 (no "graph_edges is empty"), got ${JSON.stringify(ppr).slice(0, 240)}`);
+      fail('R1c: graph-query pagerank scores our nodes', `expected ${DST}/Database in results, got nodes=[${pprNodes.join(',')}] msg=${ppr?.message ?? ''} | ${JSON.stringify(ppr).slice(0, 200)}`);
     }
 
     // graph-query semantic — needs the real embedder (decodes row embedding_ref +
@@ -334,25 +343,38 @@ async function main() {
         { key: 'adr0294-batch-c', value: 'batch entry gamma' },
       ],
     });
-    if (b?.success === true && b.error !== 'rate_limited') {
-      pass(`O1a: first batch insert succeeded (count=${b.count}, NOT rate_limited)`);
-      // Content-verify N-in-N-stored. batch insert routes to
-      // BatchOperations.insertEpisodes, which returns the COUNT OF ROWS ACTUALLY
-      // WRITTEN to the episodes table (its `completed` accumulator) as
-      // envelope.result. result===3 is therefore a DB-confirmed insert count,
-      // not merely an echo of the input length. (episodes live in a SQLite tier
-      // memory_list does not surface, so the returned write count is the
-      // authoritative content signal.)
-      const writtenCount = Number(b?.result);
-      if (writtenCount === 3) {
-        pass(`O1b: batch content-verified — insertEpisodes wrote 3 rows (envelope.result=3, DB-confirmed)`);
-      } else if (Number(b.count) === 3) {
-        pass(`O1b: batch content-verified — envelope reports 3 (result=${JSON.stringify(b.result)})`);
+    // O1a — the RATE-LIMITER fix is the core regression and is NOT embedder-
+    // dependent (the limiter is consulted BEFORE insertEpisodes). Assert the
+    // cold first call is NOT rate_limited unconditionally (this is what fails on
+    // the published baseline: {error:"rate_limited",retryAfter:1000}).
+    if (b?.error !== 'rate_limited') {
+      pass(`O1a: first batch NOT cold rate_limited (the token-count fix; error=${b?.error ?? 'none'})`);
+    } else {
+      fail('O1a: first batch NOT rate_limited', `got {error:"rate_limited",retryAfter:${b?.retryAfter}} on the FIRST cold call`);
+    }
+    // O1b — the SUCCESS + content-landed half routes to
+    // BatchOperations.insertEpisodes, which calls embedder.embedBatch and writes
+    // episode_embeddings. That REQUIRES a real embedder. Gate with a LOUD SKIP
+    // (N3) — in an embedder-less env insertEpisodes hard-fails (no silent pass).
+    if (embReal) {
+      if (b?.success === true) {
+        // envelope.result is the COUNT OF ROWS insertEpisodes actually wrote
+        // (its `completed` accumulator) — a DB-confirmed insert count, not an
+        // echo of the input length. (episodes live in a SQLite tier memory_list
+        // does not surface, so the returned write count is the content signal.)
+        const writtenCount = Number(b?.result);
+        if (writtenCount === 3) {
+          pass(`O1b: batch content-verified — insertEpisodes wrote 3 rows (envelope.result=3, DB-confirmed)`);
+        } else if (Number(b.count) === 3) {
+          pass(`O1b: batch content-verified — envelope reports 3 (result=${JSON.stringify(b.result)})`);
+        } else {
+          fail('O1b: batch content-verified', `expected 3 rows written, got result=${JSON.stringify(b.result)} count=${b.count}`);
+        }
       } else {
-        fail('O1b: batch content-verified', `expected 3 rows written, got result=${JSON.stringify(b.result)} count=${b.count}`);
+        fail('O1b: batch insert succeeded', `expected success:true (embedder available), got ${JSON.stringify(b).slice(0, 260)}`);
       }
     } else {
-      fail('O1a: first batch insert', `expected success:true (NOT rate_limited), got ${JSON.stringify(b).slice(0, 260)}`);
+      skip('O1b: batch content-verified', 'no real embedder reachable (insertEpisodes calls embedder.embedBatch → episode_embeddings)');
     }
 
   } catch (err) {

@@ -54,7 +54,10 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          # node-24: the project needs native better-sqlite3 (ABI memory; the
+          # daemon-node-version trap project-mcp-daemon-runs-sqljs-fallback is
+          # the cautionary tale). ADR-0294 N8.
+          node-version: '24'
 
       - name: Start local Verdaccio + publish fork packages
         run: |
