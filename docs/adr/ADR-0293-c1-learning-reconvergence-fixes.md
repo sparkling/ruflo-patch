@@ -127,3 +127,37 @@ when D1–D4 + doc repairs are shipped and the checks are green in a release.
   audit, dispositions) — produced under ADR-0292's protocol with the ADR-0291 validation bar.
 * Program tracking: ADR-0292 (C1 row links here). Corrections recorded against ADR-0291 (F1) and
   ADR-0287 (§F10 citation footnote).
+
+## Amendments
+
+### Implementation record (2026-06-04, queen-led swarm; DA review: ZERO BLOCKERS)
+
+* **Fork commits** (forks/ruflo `main`, stacked on `cc4b8e754`, **pushed to sparkling/main**):
+  D1 `7f2c4dfc4` (wrapper shape-detects the new auto-instantiating wasm build — `init()` for new
+  shape, `initSync({module})` for legacy, else throws; healthCheck/isReady verified, fail-loud),
+  D3 `70bbedec4` (neural-tools Tier-0 import of `memory-router.generateEmbedding` — the same
+  embedder `embeddings_*` uses; predict confidence gated by `max(0, cosine)`),
+  D2 `0cb1d42f1` (fabrication removed entirely; `demo-data` absent from source AND compiled dist),
+  D4 `1456ade90` (description + schema text document the quantize boundary; prune/distill work),
+  docs `2ac876754` (D6-doc, D10, D11).
+* **D9 skipped with rationale:** the CLI `hooks list` command is a live consumer of the `enabled`
+  field (`commands/hooks.ts` :1663 flag, :1683 typing, :1690 filter, :1712 column) — a rename breaks
+  it; the F1 misreading this would guard against is already corrected (ADR-0291 retraction
+  `a6eaf2a`). ADR-sanctioned skip.
+* **Both-ways evidence:** published patch.415 → 3/10 pass (the 7 failures are exactly
+  D1a/D1d/D2a/D2b/D3a/D3b/D4a); fixed overlay → 12/12. Logs: `/tmp/adr0293-impl-logs/`,
+  DA re-reproduction `/tmp/adr0293-da-logs/`.
+* **Acceptance wiring** (worktree commit `52f305c`): `scripts/smoke-adr0293-c1-reconvergence.mjs`,
+  `lib/acceptance-adr0293-checks.sh`, `test-acceptance.sh` (run_check_bg + collect_parallel),
+  `test-acceptance-fast.sh` group `adr0293`, `.github/workflows/v3-ci-c1-reconvergence.yml`.
+  D3 assertions skip LOUDLY when no real embedder is reachable (adr0290 pattern — no silent pass,
+  no flaky hard-fail).
+* **DA nits recorded (not blockers):** N1 — predict confidence semantics are now
+  `softmaxShare × max(0, cosine)` (an exact match among near-duplicates yields moderate confidence
+  by design — distinctiveness × match-strength, no longer pure softmax). N2 — legacy 384-d stored
+  patterns score cosine 0 against 768-d queries (silent-conservative, pre-existing). Naming note:
+  this ADR's `@sparkleideas/ruvector-ruvllm-wasm` is the post-codemod publish name; fork *source*
+  imports `@ruvector/ruvllm-wasm` (rebranded at publish) — the D1 fix survives the codemod
+  (DA-verified in the overlay dist).
+* Status stays `proposed`; flips with the release that ships these commits and turns the
+  acceptance check green.
