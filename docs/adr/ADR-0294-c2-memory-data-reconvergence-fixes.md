@@ -60,7 +60,12 @@ items:
   re-converged ADR structural edges onto `CausalMemoryGraph`/`causal_edges` but narrowed
   `agentdb_causal-edge` past upstream's contract: general entity edges no longer reach `graph_edges`,
   starving `agentdb_graph-query`/`graph-pathfinder`/kg (content-verified: `causal_edges`=2,
-  `graph_edges`=0; DA confirmed no other fork path populates `graph_edges`). **Preferred fix:**
+  `graph_edges`=0 *in the C2 drive*). **Premise narrowed by the C4 DA (2026-06-04):** `graph_edges`
+  is not globally unpopulated — `hooks_post-task` (hooks-tools.js:1523-1551, ADR-0261 Phase 3) and
+  `trajectory-step` (:2706) write reinforcement edges there; the C2-era "no other fork path
+  populates graph_edges" was a dump-timing artifact. The still-true, narrower premise: the
+  **`agentdb_causal-edge` tool's write path** doesn't reach `graph_edges` (graph-query on a
+  causal-edge node: fork count:0, upstream count:2). The fix below is unaffected. **Preferred fix:**
   `causal-edge` always writes the entity edge to `graph_edges` (upstream parity) and *additionally*
   writes `causal_edges` for the ADR-structural case (preserves ADR-0276). Must-not-regress:
   `agentdb_causal-query`/`-recall` and the ADR-0276 acceptance. *Acceptance:* one MCP session
