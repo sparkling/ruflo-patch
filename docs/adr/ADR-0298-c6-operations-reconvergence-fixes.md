@@ -125,4 +125,8 @@ when shipped and green in a release.
   DA had already corrected R2's scope to key+method and adjudicated R1 atomic-vs-split). The fork
   stack sat unpushed until this record's session pushed `2989b17c4..34bab050e`. R3b (general CLI
   cold-boot profile, ~26-31×) stays a recorded follow-up, not scope creep.
-* Status stays `proposed`; flips with the release that turns `adr0298-c6-reconvergence` green.
+* Status flipped to `accepted` / `completed:true` with release **patch.397** (green 2026-06-07).
+  Post-release re-drive evidence (per the 04 checkpoints): the `adr0298-c6-reconvergence` acceptance
+  check is green against the published patch.397 (run 11: PASS — browser_session_record ruvector
+  arg-shapes + stat-tools circuit key/method + rate_limit real-or-honest + in-process
+  browser-session memory). The wired check is the re-drive; no separate drive needed.

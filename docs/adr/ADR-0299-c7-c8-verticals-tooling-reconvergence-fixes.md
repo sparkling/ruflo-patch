@@ -133,6 +133,23 @@ market-data HNSW re-drive. Flips to `accepted`/`completed:true` when shipped and
   red against the retired island; the old `adr0089-svc` acceptance check unpassable against
   published patch.963) — completed in the sibling commit with retirement guards; 4 unit tests'
   `../../../forks` escapes made worktree-safe via `config/upstream-branches.json` resolution.
-* Status stays `proposed`; flips with the release that turns `adr0299-c78-reconvergence` green.
-  Post-release: re-drive `ruvllm_hnsw_create→add→route` from the market-data shape (the ADR-0293 D1
-  prerequisite recorded in `Records`).
+* Status flipped to `accepted` / `completed:true` with release **patch.397** (green 2026-06-07:
+  acceptance 742/752, 0 failed, 10 skip_accepted all documented; `adr0299-c78-reconvergence` green).
+
+### Post-release re-drive (2026-06-07) — ADR-0293 D1 from the market-data shape
+
+Closes C7's one known regression record (market-data's HNSW substrate = ruvllm = ADR-0293 D1).
+Drove `ruvllm_hnsw_create → add → route` against the **published patch.397** at market-data's
+**64-dim** width (vs the 4/8-dim generic D1 checks), over a long-lived `ruflo mcp start` stdio
+session (same mechanism as `smoke-adr0293-c1`). Result **5/5 pass, 0 fail**:
+
+* `create` — `dimensions:64`, real `routerId` (`hnsw-…`); `.claude-flow/ruvllm/hnsw-store.json`
+  persisted to disk.
+* `add` — L2-normalised market feature vector, `patternCount:1`.
+* `route(self)` — query==pattern → real score **1.0**.
+* `route(other)` — a distinct normalised pattern → real score **≈ -0.0018** (genuine cosine, not a
+  fabricated constant), confirming the WASM-init-skew fix produces real similarity at the
+  market-data dimensionality.
+
+One-time drive (driver + log: `/tmp/redrive-adr0293-d1-marketdata-64dim*.{mjs,log}`); the permanent
+D1 gate is the wired `adr0293` smoke (dim 8), green in this release.
