@@ -502,6 +502,20 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0285"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
   fi
 fi
 
+if [[ "$_FAST_RUN_GROUPS" == *"adr0287"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0287-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0287-checks.sh"
+    echo "── ADR-0287 (reporter honesty: neural 768-dim · doctor json-canonical · daemon-from-subdir · no-TTY spinner · route untrained) ──"
+    echo "[fast] adr0287 reusing ACCEPT_TEMP: ${ACCEPT_TEMP}"
+    _fast_run "adr0287-f8a-cli-dim768"   check_adr0287_f8a_cli_neural_dim_768
+    _fast_run "adr0287-f8a-mcp-truthful" check_adr0287_f8a_mcp_neural_status_truthful
+    _fast_run "adr0287-f8b-doctor-json"  check_adr0287_f8b_doctor_config_json_canonical
+    _fast_run "adr0287-f4-daemon-subdir" check_adr0287_f4_doctor_daemon_running_from_subdir
+    _fast_run "adr0287-f8e-spinner-tty"  check_adr0287_f8e_spinner_no_cr_on_nontty
+    _fast_run "adr0287-f3b-route-cold"   check_adr0287_f3b_route_untrained_label
+  fi
+fi
+
 if [[ "$_FAST_RUN_GROUPS" == *"adrmatrix"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
   if [[ -f "$PROJECT_DIR/lib/acceptance-adr-create-checks.sh" ]]; then
     source "$PROJECT_DIR/lib/acceptance-adr-create-checks.sh"

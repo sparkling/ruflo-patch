@@ -1,0 +1,80 @@
+# ADR-0287 — CI stanza for the reporter/storage-honesty fixes (F8a/F8b/F4/F8e/F3b).
+#
+# Per `feedback-always-wire-tests-into-cicd`: these checks are wired into the
+# standard runner (scripts/test-acceptance.sh, adr0287 group) AND here. They
+# drive the INSTALLED CLI/MCP surface against a fresh-init'd project:
+#   F8a-CLI — `neural status` HNSW row reports 768-dim (not 0/384)
+#   F8a-MCP — `neural_status` tool: _realEmbeddings truthful, no fabricated 384
+#   F8b     — `doctor` config-canonical = config.json (json-wins, not YAML-inverted)
+#   F4      — `doctor` from a SUBDIR reports the daemon Running (PID anchored to root)
+#   F8e     — `neural status` to a non-TTY sink emits zero `\r` spinner frames
+#   F3b     — cold `route <task>` box shows an "untrained" label (updateCount===0)
+# They validate the PUBLISHED package, so they go GREEN only AFTER the fork fix
+# (fix/adr0287-reporter-cosmetics, 9767dc601) ships. Single job. Per
+# `feedback-no-tail-tests`: the run writes its log to SMOKE_LOG_DIR.
+
+name: ADR-0287 reporter honesty
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'forks/ruflo/v3/@claude-flow/cli-core/src/output.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/commands/doctor.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/commands/route.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/neural-tools.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/commands/neural.ts'
+      - 'forks/ruflo/v3/@claude-flow/memory/src/agentdb-backend.ts'
+      - 'forks/ruflo/v3/@claude-flow/memory/src/hybrid-backend.ts'
+      - 'forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts'
+      - 'forks/ruflo/v3/@claude-flow/memory/src/types.ts'
+      - 'lib/acceptance-adr0287-checks.sh'
+  pull_request:
+    paths:
+      - 'forks/ruflo/v3/@claude-flow/cli-core/src/output.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/commands/doctor.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/commands/route.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/neural-tools.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts'
+      - 'forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts'
+      - 'forks/ruflo/v3/@claude-flow/memory/src/types.ts'
+      - 'lib/acceptance-adr0287-checks.sh'
+
+env:
+  REGISTRY: http://localhost:4873
+  CLI_PKG: '@sparkleideas/ruflo'
+  SMOKE_LOG_DIR: ${{ github.workspace }}/smoke-logs
+
+jobs:
+  reporter-honesty:
+    name: reporters tell the truth (ADR-0287)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Start local Verdaccio + publish fork packages
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/ruflo-publish.sh 2>&1 | tee "${SMOKE_LOG_DIR}/publish.log"
+
+      - name: Run ADR-0287 reporter-honesty checks via fast runner
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/test-acceptance-fast.sh adr0287 2>&1 | tee "${SMOKE_LOG_DIR}/adr0287.log"
+
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs-adr0287-reporters
+          path: ${{ env.SMOKE_LOG_DIR }}
