@@ -577,6 +577,17 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0297"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
   fi
 fi
 
+if [[ "$_FAST_RUN_GROUPS" == *"adr0298"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0298-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0298-checks.sh"
+    echo "── ADR-0298 (C6 re-convergence: browser record chain · stat tools · in-process memory) ──"
+    export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+    echo "[fast] adr0298 reusing ACCEPT_TEMP: ${ACCEPT_TEMP}"
+    _fast_run "adr0298-c6-reconvergence" check_adr0298_c6_reconvergence
+    unset ADR0255_SMOKE_SHARED_TEMP
+  fi
+fi
+
 if [[ "$_FAST_RUN_GROUPS" == *"adr0176qk"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
   if [[ -f "$PROJECT_DIR/lib/acceptance-adr0176-query-key.sh" ]]; then
     source "$PROJECT_DIR/lib/acceptance-adr0176-query-key.sh"

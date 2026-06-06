@@ -922,6 +922,8 @@ adr0296_lib="${PROJECT_DIR}/lib/acceptance-adr0296-checks.sh"
 [[ -f "$adr0296_lib" ]] && source "$adr0296_lib"
 adr0297_lib="${PROJECT_DIR}/lib/acceptance-adr0297-checks.sh"
 [[ -f "$adr0297_lib" ]] && source "$adr0297_lib"
+adr0298_lib="${PROJECT_DIR}/lib/acceptance-adr0298-checks.sh"
+[[ -f "$adr0298_lib" ]] && source "$adr0298_lib"
 
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
@@ -4193,6 +4195,33 @@ if [[ -f "$adr0297_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
   rm -rf "$PARALLEL_DIR" 2>/dev/null
 fi
 _record_phase "phase-adr0297-c5-reconvergence" "$(_elapsed_ms "$_adr0297_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0298 — C6 Operations re-convergence. Drives the installed cli via an
+# MCP session + a LOCAL file:// page: R1 browser_session_record→end→replay
+# (ruvector arg-skew fix; LOUD-SKIPs when ruvector/agent-browser absent); R2
+# agentdb_circuit_status (key+method) + agentdb_rate_limit_status (real
+# token-bucket fields OR honest absence, never hollow); R3a in-process
+# browser-session memory round-trip (content-verified, single-digit seconds vs
+# the ~26-31× per-call CLI cold-boot). LOCAL targets only; no paid LLM calls.
+# FAILs against the published cli (step-1 arg error; hollow/absent stat tools;
+# 30s+ shell tax).
+# ════════════════════════════════════════════════════════════════════
+_adr0298_start=$(_ns)
+if [[ -f "$adr0298_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
+  log "── ADR-0298: C6 re-convergence (browser record chain · stat tools · in-process memory) ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+  export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+
+  run_check_bg "adr0298-c6-reconvergence" "ADR-0298 C6 re-convergence: browser_session_record ruvector arg-shapes + stat-tools repair (circuit key/method, rate_limit real-or-honest) + in-process browser-session memory" check_adr0298_c6_reconvergence "adr0298"
+
+  collect_parallel "adr0298" \
+    "adr0298-c6-reconvergence|ADR-0298 C6 re-convergence: browser_session_record ruvector arg-shapes + stat-tools repair (circuit key/method, rate_limit real-or-honest) + in-process browser-session memory"
+
+  unset ADR0255_SMOKE_SHARED_TEMP
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0298-c6-reconvergence" "$(_elapsed_ms "$_adr0298_start" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
 # Results
