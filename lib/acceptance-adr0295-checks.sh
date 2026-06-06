@@ -26,11 +26,13 @@ check_adr0295_no_dangling_optional_deps() {
   local registry="${REGISTRY:-http://localhost:4873}"
   local log
   log="$(mktemp /tmp/ruflo-adr0295-XXXXX.log)"
+  _CHECK_PASSED="false"
 
   if node "${PROJECT_DIR}/scripts/sanitize-internal-optional-deps.mjs" \
         check-published "@sparkleideas/ruflo@latest" --registry "$registry" \
         > "$log" 2>&1; then
     rm -f "$log"
+    _CHECK_PASSED="true"
     return 0
   fi
 
