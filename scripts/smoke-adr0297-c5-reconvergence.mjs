@@ -220,7 +220,7 @@ async function main() {
 
     // R1 surface A — MCP aidefence_is_safe (the tool-backed path).
     for (const p of [...FAMILY_PROBES, ...BENIGN_PROBES]) {
-      const env = await session.call('aidefence_is_safe', { text: p.text });
+      const env = await session.call('aidefence_is_safe', { input: p.text });
       if (env && env.__rpcError) {
         fail(`R1-mcp.${p.id}: aidefence_is_safe`, `rpc error: ${env.__rpcError}`);
         continue;
