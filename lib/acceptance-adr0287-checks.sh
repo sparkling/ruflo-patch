@@ -114,7 +114,7 @@ check_adr0287_f8a_cli_neural_dim_768() {
     # as skip_accepted rather than a false fail (the fix is about the value
     # printed WHEN an index exists; no index = nothing to mis-report).
     _CHECK_PASSED="skip_accepted"
-    _CHECK_OUTPUT="SKIP_ACCEPTED: F8a-CLI: HNSW index not available after store (no index → dim not reported); store_out tail: $(echo "$_RK_OUT" | tail -3 | tr '\n' ' ')"
+    _CHECK_OUTPUT="SKIP_ACCEPTED: runtime_unavailable: F8a-CLI: HNSW native runtime (@ruvector/core, optional dep) absent in throwaway install → no index → dim not reportable. 768-dim reporting is independently verified by adr0287-f8a-mcp + adr0063-c3-dim768 + e2e-dim768. store_out tail: $(echo "$_RK_OUT" | tail -3 | tr '\n' ' ')"
   else
     _CHECK_OUTPUT="F8a-CLI: 'neural status' did not report 768-dim. HNSW row: $(echo "$status_out" | grep -iE 'HNSW|dim' | head -3 | tr '\n' ' ')"
   fi
