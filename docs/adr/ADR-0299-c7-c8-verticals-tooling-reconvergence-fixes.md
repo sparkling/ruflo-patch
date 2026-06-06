@@ -1,6 +1,6 @@
 ---
-status: proposed
-completed: false
+status: accepted
+completed: true
 date: 2026-06-04
 tags: [verticals, market-data, neural-trader, iot, plugin-creator, transfer, honesty, re-convergence, c7, c8, fixes]
 supersedes: []

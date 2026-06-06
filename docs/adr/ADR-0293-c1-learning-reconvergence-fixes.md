@@ -1,6 +1,6 @@
 ---
-status: proposed
-completed: false
+status: accepted
+completed: true
 date: 2026-06-04
 tags: [learning, intelligence, ruvllm, neural, transfer, re-convergence, fork-regression, c1, fixes]
 supersedes: []

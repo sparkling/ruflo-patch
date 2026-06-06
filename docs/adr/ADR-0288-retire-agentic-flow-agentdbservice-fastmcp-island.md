@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-06-03
 tags: [agentic-flow, agentdb, mcp, retirement, dead-code, upstream-alignment, honesty]
 supersedes: []

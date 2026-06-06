@@ -1,6 +1,6 @@
 ---
-status: proposed
-completed: false
+status: accepted
+completed: true
 date: 2026-06-04
 tags: [review, plugins, features, upstream-parity, methodology, program, re-convergence]
 supersedes: []

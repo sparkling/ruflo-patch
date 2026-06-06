@@ -1,6 +1,6 @@
 ---
-status: proposed
-completed: false
+status: accepted
+completed: true
 date: 2026-06-04
 tags: [orchestration, agents, wasm, hooks, model-catalogue, re-convergence, fork-regression, c3, fixes]
 supersedes: []

@@ -1,6 +1,6 @@
 ---
-status: proposed
-completed: false
+status: accepted
+completed: true
 date: 2026-06-04
 tags: [quality, process, adr-tooling, jujutsu, testgen, doc-drift, re-convergence, c4, fixes]
 supersedes: []

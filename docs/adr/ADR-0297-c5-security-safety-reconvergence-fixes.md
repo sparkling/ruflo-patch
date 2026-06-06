@@ -1,6 +1,6 @@
 ---
-status: proposed
-completed: false
+status: accepted
+completed: true
 date: 2026-06-04
 tags: [security, safety, aidefence, federation, adr-118, detection, re-convergence, fork-regression, c5, fixes]
 supersedes: []

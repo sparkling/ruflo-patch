@@ -1,6 +1,6 @@
 ---
-status: proposed
-completed: false
+status: accepted
+completed: true
 date: 2026-06-04
 tags: [operations, browser, workers, observability, cost, stat-tools, perf, re-convergence, fork-regression, c6, fixes]
 supersedes: []
