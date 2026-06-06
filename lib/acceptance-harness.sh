@@ -42,13 +42,7 @@ if [[ -z "${RUFLO_MAX_PARALLEL+x}" ]]; then
   else
     _ncpu=8
   fi
-  # Conservative default for a SHARED server (other swarms/agents commonly run
-  # here — confirmed load source). Cap at ~ncpu/4 so latency-sensitive checks
-  # (adr0261 p99 graph benchmark) and subprocess-heavy checks (adr0297 MCP/CLI
-  # spawns) aren't starved when acceptance self-contention stacks on external
-  # swarm load. Was ncpu/2 (=9 on an 18-core box), which flaked under concurrent
-  # swarms. Override with RUFLO_MAX_PARALLEL=N (higher on a quiet box, 0 to disable).
-  RUFLO_MAX_PARALLEL=$(( _ncpu / 4 ))
+  RUFLO_MAX_PARALLEL=$(( _ncpu / 2 ))
   (( RUFLO_MAX_PARALLEL < 4 )) && RUFLO_MAX_PARALLEL=4
   unset _ncpu
   export RUFLO_MAX_PARALLEL
