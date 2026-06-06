@@ -908,8 +908,12 @@ adr0282_lib="${PROJECT_DIR}/lib/acceptance-adr0282-checks.sh"
 [[ -f "$adr0282_lib" ]] && source "$adr0282_lib"
 adr0285_lib="${PROJECT_DIR}/lib/acceptance-adr0285-checks.sh"
 [[ -f "$adr0285_lib" ]] && source "$adr0285_lib"
+adr0287_lib="${PROJECT_DIR}/lib/acceptance-adr0287-checks.sh"
+[[ -f "$adr0287_lib" ]] && source "$adr0287_lib"
 adrcreatematrix_lib="${PROJECT_DIR}/lib/acceptance-adr-create-checks.sh"
 [[ -f "$adrcreatematrix_lib" ]] && source "$adrcreatematrix_lib"
+adr0295_lib="${PROJECT_DIR}/lib/acceptance-adr0295-checks.sh"
+[[ -f "$adr0295_lib" ]] && source "$adr0295_lib"
 
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
@@ -3690,6 +3694,23 @@ fi
 _record_phase "phase-adr0263-replay-verification" "$(_elapsed_ms "$_adr0263_start" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
+# ADR-0295: dangling-optional-dep gate. Asserts the PUBLISHED
+# @sparkleideas/ruflo@latest graph has no unresolvable @sparkleideas/* refs —
+# the npm/arborist empty-version dedup landmine that bricks `npx
+# @sparkleideas/ruflo` once a peer optional resolves. Single registry-graph
+# walk (no install needed); timing-independent (fails on the dangling ref
+# itself, not on whether the trigger optional happens to be published yet).
+# ════════════════════════════════════════════════════════════════════
+_adr0295_start=$(_ns)
+if [[ -f "$adr0295_lib" ]]; then
+  log "── ADR-0295: dangling-optional-dep gate ──"
+  run_check_bg "adr0295-no-dangling-optdeps" "ADR-0295 no unresolvable @sparkleideas/* optional deps" check_adr0295_no_dangling_optional_deps "adr0295"
+  collect_parallel "adr0295" \
+    "adr0295-no-dangling-optdeps|ADR-0295 no unresolvable @sparkleideas/* optional deps"
+fi
+_record_phase "phase-adr0295-dangling-optdeps" "$(_elapsed_ms "$_adr0295_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
 # ADR-0268: autonomous skill-promotion flywheel round-trip — 1 smoke.
 # record (hooks post-task x3 -> episodes w/ task_type) -> promote (session-end ->
 # routeSessionOp 'end' consolidation -> skill) -> assert episodes + skill. Reuses
@@ -4007,6 +4028,43 @@ if [[ -f "$adr0285_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
   rm -rf "$PARALLEL_DIR" 2>/dev/null
 fi
 _record_phase "phase-adr0285-causal-crud-and-purge" "$(_elapsed_ms "$_adr0285_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0287: reporter/storage-honesty fixes (decide-per-item tier F8a/F8b/F4/
+# F8e/F3b). Each check inits a fresh project (node_modules symlinked from the
+# harness install — no reinstall) and exercises the INSTALLED CLI/MCP surface:
+#   F8a-CLI — `neural status` HNSW row reports 768-dim (not 0/384)
+#   F8a-MCP — `neural_status` tool: _realEmbeddings truthful, no fabricated 384
+#   F8b     — `doctor` config-canonical = config.json (json-wins, not YAML-inverted)
+#   F4      — `doctor` from a SUBDIR reports the daemon Running (PID anchored to root)
+#   F8e     — `neural status` to a non-TTY sink emits zero `\r` spinner frames
+#   F3b     — cold `route <task>` box shows an "untrained" label (updateCount===0)
+# These validate the PUBLISHED package, so they go GREEN only AFTER the fork fix
+# (fix/adr0287-reporter-cosmetics, 9767dc601) ships — RED until the release.
+# ════════════════════════════════════════════════════════════════════
+_adr0287_start=$(_ns)
+if [[ -f "$adr0287_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
+  log "── ADR-0287: reporter honesty (neural dim 768 · doctor json-canonical · daemon-from-subdir · no-TTY spinner · route untrained) ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+
+  run_check_bg "adr0287-f8a-cli-dim768"   "ADR-0287 F8a neural status 768-dim (CLI)"        check_adr0287_f8a_cli_neural_dim_768            "adr0287"
+  run_check_bg "adr0287-f8a-mcp-truthful" "ADR-0287 F8a neural_status truthful (MCP)"       check_adr0287_f8a_mcp_neural_status_truthful   "adr0287"
+  run_check_bg "adr0287-f8b-doctor-json"  "ADR-0287 F8b doctor config.json canonical"       check_adr0287_f8b_doctor_config_json_canonical "adr0287"
+  run_check_bg "adr0287-f4-daemon-subdir" "ADR-0287 F4 doctor daemon Running from subdir"   check_adr0287_f4_doctor_daemon_running_from_subdir "adr0287"
+  run_check_bg "adr0287-f8e-spinner-tty"  "ADR-0287 F8e no \\r spinner spam (non-TTY)"      check_adr0287_f8e_spinner_no_cr_on_nontty      "adr0287"
+  run_check_bg "adr0287-f3b-route-cold"   "ADR-0287 F3b route box untrained label"          check_adr0287_f3b_route_untrained_label        "adr0287"
+
+  collect_parallel "adr0287" \
+    "adr0287-f8a-cli-dim768|ADR-0287 F8a neural status 768-dim (CLI)" \
+    "adr0287-f8a-mcp-truthful|ADR-0287 F8a neural_status truthful (MCP)" \
+    "adr0287-f8b-doctor-json|ADR-0287 F8b doctor config.json canonical" \
+    "adr0287-f4-daemon-subdir|ADR-0287 F4 doctor daemon Running from subdir" \
+    "adr0287-f8e-spinner-tty|ADR-0287 F8e no \\r spinner spam (non-TTY)" \
+    "adr0287-f3b-route-cold|ADR-0287 F3b route box untrained label"
+
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0287-reporter-honesty" "$(_elapsed_ms "$_adr0287_start" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
 # adr-create + the 4 ADR storage mechanisms — full op matrix. Every op

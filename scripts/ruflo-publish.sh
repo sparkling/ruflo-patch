@@ -671,6 +671,14 @@ main() {
   write_build_manifest
   run_phase "test-ci" run_tests_ci
 
+  # ADR-0295: strip dangling @sparkleideas/* optional deps (unpublished napi
+  # platform binaries + pure sub-packages) before publish, so the published
+  # manifests never reference a package that 404s. Prevents the npm/arborist
+  # empty-version dedup crash that bricks `npx @sparkleideas/ruflo` installs.
+  # Fails loud on an unresolvable HARD dep (a real publish gap, not a dangling
+  # optional). Runs on the final build tree, immediately before publish.
+  run_phase "sanitize-optional-deps" run_sanitize_optional_deps
+
   # Publish to local Verdaccio + run acceptance tests
   run_phase "publish-verdaccio" run_publish_verdaccio
   run_phase "acceptance" run_acceptance

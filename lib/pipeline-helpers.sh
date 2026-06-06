@@ -101,6 +101,24 @@ run_tests_ci() {
   fi
 }
 
+run_sanitize_optional_deps() {
+  # Strip unresolvable @sparkleideas/* OPTIONAL deps from publishable manifests
+  # before publish; fail loud on an unresolvable @sparkleideas/* HARD dep.
+  #
+  # The codemod rewrites @ruvector/* → @sparkleideas/ruvector-* in every dep
+  # field, including napi platform sub-packages (…-darwin-arm64, …-win32-x64-msvc)
+  # that ADR-0071 ELIMINATED (bundled the .node into the parent) and pure
+  # sub-packages (rvf-solver, rvf-wasm, diskann) we never publish. Those names
+  # 404. A lone 404 optional is harmless (npm skips it), but once a peer optional
+  # resolves (e.g. ADR-0294 R3's rabitq-wasm stub) npm places it, runs arborist
+  # pruneDedupable, and trips over the empty-version placeholder nodes →
+  # `Invalid Version` → the whole `npx @sparkleideas/ruflo` install aborts →
+  # MCP fails with -32000. See ADR-0295. Conservative: strips ONLY on a
+  # definitive registry 404 (network/5xx → keep).
+  node "${SCRIPT_DIR}/sanitize-internal-optional-deps.mjs" fix "${TEMP_DIR}" \
+    --registry "http://localhost:4873"
+}
+
 run_publish_verdaccio() {
   local -a args=(--build-dir "${TEMP_DIR}")
   [[ -n "${CHANGED_PACKAGES_JSON:-}" && "${CHANGED_PACKAGES_JSON}" != "all" ]] && \
