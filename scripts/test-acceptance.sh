@@ -1198,14 +1198,14 @@ run_check_bg "ctrl-synthesis"   "Context synthesis"      check_context_synthesis
 run_check_bg "ctrl-sl-health"   "Self-learning health"   check_self_learning_health "controller"
 run_check_bg "ctrl-sl-search"   "Self-learning search"   check_self_learning_search "controller"
 run_check_bg "ctrl-adr0061"     "ADR-0061 controllers"   check_adr0061_controller_types "controller"
-run_check_bg "ctrl-autopilot-learn" "Autopilot learning active" check_autopilot_learning_active "controller"
-
-# ADR-0193 Wave 2: 3 new probes layered on top of ctrl-autopilot-learn (Wave 1).
-# All three are honest probes — the queryOptimizer one is EXPECTED to fail
-# at first run (ADR-0193 §D "registered but not wired" gap closure).
-run_check_bg "ctrl-autopilot-trajectories" "Autopilot trajectories recorded (ADR-0193 B)" check_autopilot_trajectories "controller"
-run_check_bg "ctrl-autopilot-stop-hook"    "Stop hook re-engagement context (ADR-0193 C)" check_autopilot_stop_hook    "controller"
-run_check_bg "ctrl-query-optimizer-cache"  "queryOptimizer cache hits (ADR-0193 D)"        check_query_optimizer_cache  "controller"
+# ADR-0288 retirement (Gate-3 cascade): ctrl-autopilot-{learn,trajectories,
+# stop-hook} + ctrl-query-optimizer-cache RETIRED. They probed the in-process
+# autopilot-learning path (tryLoadLearning → getAgentDBService → AgentDBService
+# episode sink), which ADR-0288 deleted — the live edge now honestly reports
+# "unavailable" and learning flows via the post-task hook path (ADR-0290).
+# Capability coverage is preserved: the new path by adr0290-learning-loop, the
+# retirement itself by adr0089. Re-anchors the ADR-0192/0193/0195 episode-sink
+# probes off AgentDBService per ADR-0288 Gate-3.
 
 # ADR-0062: Storage & Configuration Unification
 run_check_bg "adr0062-causal"      "Causal graph level 3"         check_adr0062_causal_graph_level3     "adr0062"
@@ -1270,7 +1270,11 @@ run_check_bg "adr0069-swarm-dir"   "No hardcoded swarm dir (ADR-0069 H4)"   chec
 run_check_bg "adr0069-thresh-07"   "Search threshold not 0.5 (ADR-0069 H7)" check_adr0069_search_threshold_not_05    "adr0069"
 run_check_bg "adr0069-mig-batch"   "Migration batch aligned (ADR-0069 H10)" check_adr0069_migration_batch_aligned    "adr0069"
 run_check_bg "adr0069-dedup-098"   "Dedup threshold aligned (ADR-0069 H11)" check_adr0069_dedup_threshold_aligned    "adr0069"
-run_check_bg "adr0069-f1-deleg"  "F1 getController delegation (ADR-0069)" check_f1_agentdbservice_delegates         "adr0069"
+# adr0069-f1-deleg RETIRED per ADR-0288: it asserted the agentic-flow
+# agentdb-service.js delegates via getController(). ADR-0288 deleted that
+# island (guarded now by adr0089-svc); the delegation pattern lives in
+# forks/agentdb, covered by agentdb's own tests. No agentic-flow surface to
+# assert against.
 # ADR-0082: sarsa config-chain not in published CLI build — deferred
 # run_check_bg "adr0069-sarsa-key" "SARSA key path (ADR-0069 A8)"           check_adr0069_sarsa_key_path             "adr0069"
 run_check_bg "adr0069-cache-10k" "Cache size consistent (ADR-0069 A9)"    check_adr0069_cache_size_consistent      "adr0069"
@@ -2703,10 +2707,6 @@ collect_parallel "all" \
   "ctrl-batch|Batch operations" "ctrl-synthesis|Context synthesis" \
   "ctrl-sl-health|Self-learning health" "ctrl-sl-search|Self-learning search" \
   "ctrl-adr0061|ADR-0061 controllers" \
-  "ctrl-autopilot-learn|Autopilot learning active" \
-  "ctrl-autopilot-trajectories|Autopilot trajectories recorded (ADR-0193 B)" \
-  "ctrl-autopilot-stop-hook|Stop hook re-engagement context (ADR-0193 C)" \
-  "ctrl-query-optimizer-cache|queryOptimizer cache hits (ADR-0193 D)" \
   "adr0062-causal|Causal graph level 3" "adr0062-busy|SQLite busy_timeout" \
   "adr0062-rl-cfg|RateLimiter/CB config" "adr0062-hnsw|deriveHNSWParams wired" \
   "adr0063-c1-import|Embedding import agentdb" "adr0063-c2-accessor|getEmbeddingService()" \
@@ -2747,7 +2747,6 @@ collect_parallel "all" \
   "adr0069-thresh-07|Search threshold not 0.5 (ADR-0069 H7)" \
   "adr0069-mig-batch|Migration batch aligned (ADR-0069 H10)" \
   "adr0069-dedup-098|Dedup threshold aligned (ADR-0069 H11)" \
-  "adr0069-f1-deleg|F1 getController delegation (ADR-0069)" \
   "adr0069-cache-10k|Cache size consistent (ADR-0069 A9)" \
   "adr0069-init-json|Init config is JSON (ADR-0069)" \
   "adr0069-init-sql|Init has sqlite keys (ADR-0069)" \
@@ -3354,16 +3353,13 @@ if [[ -f "$p5_lib" ]]; then
     run_check_bg "adr0194-empty"          "ADR-0194 patterns empty corpus returns []"  check_adr0194_patterns_empty      "adr0194"
   fi
 
-  # Group 10: ADR-0195 — AutopilotLearning Phase 4 (cross-controller event bus).
-  # Closure-criterion checks: assert `autopilot subscribe` delivers a
-  # structured episode:recorded event after a write; assert ADR-0197 Finding
-  # 1 (broken learningSystem.predictAction probe) is gone from published src.
-  adr0195_lib="${PROJECT_DIR}/lib/acceptance-adr0195-checks.sh"
-  if [[ -f "$adr0195_lib" ]]; then
-    source "$adr0195_lib"
-    run_check_bg "adr0195-subscribe"      "ADR-0195 event-bus episode:recorded"        check_adr0195_subscribe_episode_recorded  "adr0195"
-    run_check_bg "adr0195-predictAction"  "ADR-0195 broken predictAction probe gone"   check_adr0195_predictAction_unreachable   "adr0195"
-  fi
+  # Group 10: ADR-0195 — RETIRED per ADR-0288 (Gate-3 cascade). Both checks
+  # inspected internals of the agentic-flow agentdb-service.js (event-bus
+  # subscriber wiring; absence of ADR-0197 Finding-1's broken predictAction
+  # probe) — the island ADR-0288 deleted. The retirement makes the Finding-1
+  # concern moot (the broken probe is gone with the whole file) and is guarded
+  # by adr0089-svc. The inspected surface no longer exists by design — there is
+  # nothing to re-point to.
 
   # Group 11: ADR-0196 — AutopilotLearning Phase 5 (federated interface).
   # Closure-criterion checks: assert `autopilot federation status --json`
@@ -3422,8 +3418,6 @@ if [[ -f "$p5_lib" ]]; then
     "adr0272-typecheck|ADR-0272 agentdb shipped src/ typecheck gate" \
     "adr0194-populated|ADR-0194 patterns populated (engine+>=1)" \
     "adr0194-empty|ADR-0194 patterns empty corpus returns []" \
-    "adr0195-subscribe|ADR-0195 event-bus episode:recorded" \
-    "adr0195-predictAction|ADR-0195 broken predictAction probe gone" \
     "adr0196-fed-status|ADR-0196 federation status interface" \
     "adr0196-episode-origin|ADR-0196 episode carries originInstallId" \
     "adr0216-corpus-shape|ADR-0216 skills corpus shape" \

@@ -368,17 +368,17 @@ check_adr0069_f3_booster_tools_registered() {
 #
 # Chain: ONNX → Enhanced → Basic. The check validates that:
 #   1. @sparkleideas/agentdb-onnx is resolvable on the registry (the
-#      ONNX package ships), and
-#   2. The shipped @sparkleideas/agentic-flow dist's agentdb-service.js
-#      references ONNXEmbeddingService (the import is present in the
-#      compiled upgrade chain), and
-#   3. The ONNX reference appears BEFORE the EnhancedEmbeddingService
-#      reference in the compiled source — pinning chain order.
+#      ONNX tier package ships), and
+#   2. that package SHIPS ONNXEmbeddingService (the tier-1 embedding
+#      service class) in its published artifact.
 #
-# ADR-0082 compliance: the source must log loudly on tier failure.
-# The unit test (agentdb-service-f1-improvements.test.mjs) asserts that
-# every catch block in upgradeEmbeddingService() contains console.warn
-# or console.error — this acceptance check is the shipped-dist equivalent.
+# ADR-0288 retarget: the original §3 also asserted the ONNX import was
+# ordered before EnhancedEmbeddingService INSIDE agentdb-service.js's
+# upgradeEmbeddingService() chain. ADR-0288 retired the agentic-flow
+# AgentDBService island (and upgradeEmbeddingService with it — there is no
+# live upgrade-chain anywhere post-retirement), so that ordering assertion
+# was retired with its mechanism. The surviving, verifiable piece of F3 §3
+# is that the standalone agentdb-onnx package ships the ONNX service.
 # ════════════════════════════════════════════════════════════════════
 
 check_adr0069_f3_onnx_tier_active() {
@@ -386,128 +386,59 @@ check_adr0069_f3_onnx_tier_active() {
   _CHECK_OUTPUT=""
 
   local onnx_pkg="@sparkleideas/agentdb-onnx"
-  local af_pkg="@sparkleideas/agentic-flow"
 
-  # Step 1: ONNX package must be resolvable
+  # Step 1: the ONNX tier package must be resolvable on the registry.
   local onnx_version
   onnx_version=$(NPM_CONFIG_REGISTRY="$REGISTRY" npm view "$onnx_pkg" version 2>/dev/null) || true
   if [[ -z "$onnx_version" ]]; then
-    _CHECK_OUTPUT="ADR-0069 F3 §3: $onnx_pkg not resolvable on $REGISTRY — ONNX tier cannot activate"
+    _CHECK_OUTPUT="ADR-0069 F3 §3: $onnx_pkg not resolvable on $REGISTRY — ONNX tier cannot ship"
     return
   fi
 
-  # Step 2: locate the shipped agentdb-service.js in the installed
-  # agentic-flow package (prefer installed copy under TEMP_DIR to match
-  # the pattern used by F3-7 above). Fall back to tarball fetch if not
-  # installed.
-  local svc_js=""
-  local inspect_src=""
-
-  if [[ -n "$TEMP_DIR" && -d "$TEMP_DIR/node_modules/$af_pkg" ]]; then
-    svc_js=$(find "$TEMP_DIR/node_modules/$af_pkg" -name "agentdb-service.js" -type f 2>/dev/null | head -1)
-    inspect_src="installed:$TEMP_DIR/node_modules/$af_pkg"
-  fi
-
-  local tmp_dir=""
-  if [[ -z "$svc_js" ]]; then
-    local af_tarball
-    af_tarball=$(NPM_CONFIG_REGISTRY="$REGISTRY" npm view "$af_pkg" dist.tarball 2>/dev/null) || true
-    if [[ -z "$af_tarball" ]]; then
-      _CHECK_OUTPUT="ADR-0069 F3 §3: $af_pkg not installed and tarball URL unavailable — cannot inspect shipped dist"
+  # Step 2 (ADR-0288 retarget): the ONNX tier formerly lived in the
+  # agentic-flow agentdb-service.js upgradeEmbeddingService() fallback chain,
+  # which ADR-0288 retired along with the whole AgentDBService island (and the
+  # ONNX-before-Enhanced ordering with it — no live upgradeEmbeddingService()
+  # exists post-retirement). The tier CAPABILITY survives as ONNXEmbeddingService
+  # in the standalone @sparkleideas/agentdb-onnx package. Assert that package
+  # SHIPS the service (prefer the installed copy; fall back to the tarball).
+  local onnx_dir="" inspect_src="" tmp_dir=""
+  if [[ -n "$TEMP_DIR" && -d "$TEMP_DIR/node_modules/$onnx_pkg" ]]; then
+    onnx_dir="$TEMP_DIR/node_modules/$onnx_pkg"
+    inspect_src="installed:$onnx_dir"
+  else
+    local onnx_tarball
+    onnx_tarball=$(NPM_CONFIG_REGISTRY="$REGISTRY" npm view "$onnx_pkg" dist.tarball 2>/dev/null) || true
+    if [[ -z "$onnx_tarball" ]]; then
+      _CHECK_OUTPUT="ADR-0069 F3 §3: $onnx_pkg@$onnx_version has no tarball URL — cannot inspect shipped package"
       return
     fi
     tmp_dir=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/onnx-tier-XXXXX")
-    curl -sf "$af_tarball" -o "$tmp_dir/af.tgz" 2>/dev/null || true
-    if [[ ! -s "$tmp_dir/af.tgz" ]]; then
+    curl -sf "$onnx_tarball" -o "$tmp_dir/onnx.tgz" 2>/dev/null || true
+    if [[ ! -s "$tmp_dir/onnx.tgz" ]]; then
       rm -rf "$tmp_dir"
-      _CHECK_OUTPUT="ADR-0069 F3 §3: failed to download $af_tarball"
+      _CHECK_OUTPUT="ADR-0069 F3 §3: failed to download $onnx_tarball"
       return
     fi
-    (cd "$tmp_dir" && tar xzf af.tgz 2>/dev/null) || true
-    svc_js=$(find "$tmp_dir" -name "agentdb-service.js" -type f 2>/dev/null | head -1)
-    inspect_src="tarball:$af_tarball"
+    (cd "$tmp_dir" && tar xzf onnx.tgz 2>/dev/null) || true
+    onnx_dir="$tmp_dir"
+    inspect_src="tarball:$onnx_tarball"
   fi
 
-  if [[ -z "$svc_js" || ! -s "$svc_js" ]]; then
+  # ONNXEmbeddingService must ship in the package — compiled dist .js OR source
+  # .ts (agentdb-onnx ships source). Match the class declaration in either form.
+  local svc_file
+  svc_file=$(grep -rl 'class ONNXEmbeddingService' "$onnx_dir" 2>/dev/null | head -1)
+  if [[ -z "$svc_file" ]]; then
     [[ -n "$tmp_dir" ]] && rm -rf "$tmp_dir"
-    _CHECK_OUTPUT="ADR-0069 F3 §3: agentdb-service.js not found in $af_pkg dist ($inspect_src)"
+    _CHECK_OUTPUT="ADR-0069 F3 §3: ONNXEmbeddingService class not found in shipped $onnx_pkg@$onnx_version — ONNX tier not shipped ($inspect_src)"
     return
   fi
 
-  # Step 3: verify ONNX import present and ordered before Enhanced
-  local onnx_count
-  onnx_count=$(grep -c 'ONNXEmbeddingService' "$svc_js" 2>/dev/null); onnx_count=${onnx_count:-0}
-  if [[ "$onnx_count" -lt 1 ]]; then
-    [[ -n "$tmp_dir" ]] && rm -rf "$tmp_dir"
-    _CHECK_OUTPUT="ADR-0069 F3 §3: agentdb-service.js in $af_pkg has NO ONNXEmbeddingService reference — ONNX tier not wired in shipped build ($inspect_src)"
-    return
-  fi
-
-  # Source-order check: ONNX must appear before Enhanced INSIDE
-  # upgradeEmbeddingService(). A global first-occurrence grep is wrong
-  # — EnhancedEmbeddingService is also named in init()'s JSDoc / comment
-  # (line ~232 in today's dist) which precedes the ONNX JSDoc inside
-  # upgradeEmbeddingService (line ~392). That is harmless: tier ordering
-  # is a property of the upgrade chain, not of incidental string mentions
-  # elsewhere in the file. Scope the comparison to the function body,
-  # matching the unit test at tests/unit/adr0069-f3-onnx-import-resolvable.test.mjs.
-  local fn_start_line
-  fn_start_line=$(grep -nE 'async upgradeEmbeddingService\(|upgradeEmbeddingService\(\)[[:space:]]*\{' "$svc_js" 2>/dev/null | head -1 | cut -d: -f1)
-  fn_start_line=${fn_start_line:-0}
-  if [[ "$fn_start_line" -lt 1 ]]; then
-    [[ -n "$tmp_dir" ]] && rm -rf "$tmp_dir"
-    _CHECK_OUTPUT="ADR-0069 F3 §3: upgradeEmbeddingService function declaration not found in $svc_js — upgrade chain missing ($inspect_src)"
-    return
-  fi
-
-  # Extract a window starting at the function declaration (tail -n +N
-  # keeps numbering against the original file). Search only within the
-  # window for the relative-import literals — the actual runtime order.
-  local onnx_line enhanced_line
-  onnx_line=$(tail -n +"$fn_start_line" "$svc_js" 2>/dev/null \
-    | grep -nE "'\.\./\.\./\.\./packages/agentdb-onnx/src/services/ONNXEmbeddingService\.js'" \
-    | head -1 | cut -d: -f1)
-  onnx_line=${onnx_line:-0}
-  enhanced_line=$(tail -n +"$fn_start_line" "$svc_js" 2>/dev/null \
-    | grep -nE "'\.\./\.\./\.\./packages/agentdb/src/controllers/EnhancedEmbeddingService\.js'" \
-    | head -1 | cut -d: -f1)
-  enhanced_line=${enhanced_line:-0}
-
-  if [[ "$onnx_line" -lt 1 ]]; then
-    [[ -n "$tmp_dir" ]] && rm -rf "$tmp_dir"
-    _CHECK_OUTPUT="ADR-0069 F3 §3: ONNX relative-import literal missing inside upgradeEmbeddingService() in $svc_js — tier-1 import stripped ($inspect_src)"
-    return
-  fi
-
-  if [[ "$enhanced_line" -lt 1 ]]; then
-    [[ -n "$tmp_dir" ]] && rm -rf "$tmp_dir"
-    _CHECK_OUTPUT="ADR-0069 F3 §3: Enhanced relative-import literal missing inside upgradeEmbeddingService() in $svc_js — fallback chain broken ($inspect_src)"
-    return
-  fi
-
-  if [[ "$onnx_line" -ge "$enhanced_line" ]]; then
-    [[ -n "$tmp_dir" ]] && rm -rf "$tmp_dir"
-    _CHECK_OUTPUT="ADR-0069 F3 §3: chain ORDER wrong inside upgradeEmbeddingService() — ONNX import at fn+${onnx_line}, Enhanced import at fn+${enhanced_line} (ONNX must come first). $inspect_src"
-    return
-  fi
-
-  # Convert window-relative offsets to absolute file line numbers for the
-  # success message, for easier diagnostics when the check is green.
-  local onnx_abs=$((fn_start_line + onnx_line - 1))
-  local enhanced_abs=$((fn_start_line + enhanced_line - 1))
-
-  # ADR-0082: verify the shipped dist still logs loudly on ONNX failure
-  # (catch block should mention 'ONNX' together with a console call).
-  if ! grep -q "ONNX" "$svc_js" 2>/dev/null; then
-    [[ -n "$tmp_dir" ]] && rm -rf "$tmp_dir"
-    _CHECK_OUTPUT="ADR-0069 F3 §3: shipped dist lacks ONNX log strings — tier-failure logging may have been stripped ($inspect_src)"
-    return
-  fi
-
+  local rel="${svc_file#"$onnx_dir"/}"
   [[ -n "$tmp_dir" ]] && rm -rf "$tmp_dir"
-
   _CHECK_PASSED="true"
-  _CHECK_OUTPUT="ADR-0069 F3 §3: ONNX tier wired — $onnx_pkg@$onnx_version resolvable; agentdb-service.js references ONNXEmbeddingService ($onnx_count occurrences); inside upgradeEmbeddingService() (fn-start line $fn_start_line): ONNX import@line-$onnx_abs precedes Enhanced import@line-$enhanced_abs ($inspect_src)"
+  _CHECK_OUTPUT="ADR-0069 F3 §3 (ADR-0288 retarget): ONNX tier ships — $onnx_pkg@$onnx_version resolvable and ONNXEmbeddingService present ($rel; $inspect_src). The agentic-flow upgradeEmbeddingService() ordering assertion was retired with the AgentDBService island (ADR-0288)."
 }
 
 # ════════════════════════════════════════════════════════════════════
