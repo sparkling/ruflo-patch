@@ -183,7 +183,8 @@ if [[ -f "${PROJECT_DIR}/package.json" ]]; then
   RECOVERABLE_PATTERNS="cannot publish over the previously published version|EPUBLISHCONFLICT|already exists" \
     run_phase_norevert "publish-wrapper" \
     env NPM_CONFIG_REGISTRY="http://localhost:${PORT}" \
-      npm publish "${PROJECT_DIR}" --access public --ignore-scripts --tag latest
+      npm publish "${PROJECT_DIR}" --access public --ignore-scripts --tag latest \
+        --registry "http://localhost:${PORT}"
 fi
 _record_phase "publish-wrapper" "$(_elapsed_ms "$_p" "$(_ns)")"
 
