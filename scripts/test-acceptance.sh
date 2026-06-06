@@ -924,6 +924,8 @@ adr0297_lib="${PROJECT_DIR}/lib/acceptance-adr0297-checks.sh"
 [[ -f "$adr0297_lib" ]] && source "$adr0297_lib"
 adr0298_lib="${PROJECT_DIR}/lib/acceptance-adr0298-checks.sh"
 [[ -f "$adr0298_lib" ]] && source "$adr0298_lib"
+adr0299_lib="${PROJECT_DIR}/lib/acceptance-adr0299-checks.sh"
+[[ -f "$adr0299_lib" ]] && source "$adr0299_lib"
 
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
@@ -1452,7 +1454,7 @@ fi
 # ADR-0089: Controller Intercept Pattern Permanent
 if [[ -f "$adr0089_lib" ]]; then
   run_check_bg "adr0089-shipped"    "Intercept pool shipped (ADR-0089)"        check_adr0089_intercept_shipped         "adr0089"
-  run_check_bg "adr0089-svc"        "AgentDBService wraps (ADR-0089)"          check_adr0089_agentdb_service_wraps     "adr0089"
+  run_check_bg "adr0089-svc"        "AgentDBService retired in artifact (ADR-0288)" check_adr0288_agentdb_service_retired "adr0089"
   run_check_bg "adr0089-reg"        "ControllerRegistry wraps (ADR-0089)"      check_adr0089_controller_registry_wraps "adr0089"
   run_check_bg "adr0089-live"       "Pool deterministic (ADR-0089)"            check_adr0089_pool_live                 "adr0089"
 fi
@@ -2854,7 +2856,7 @@ collect_parallel "all" \
   "adr0088-init-yes|Init with-claude wires daemon (ADR-0088)" \
   "adr0088-daemon-ok|Daemon still works local (ADR-0088)" \
   "adr0089-shipped|Intercept pool shipped (ADR-0089)" \
-  "adr0089-svc|AgentDBService wraps (ADR-0089)" \
+  "adr0089-svc|AgentDBService retired in artifact (ADR-0288)" \
   "adr0089-reg|ControllerRegistry wraps (ADR-0089)" \
   "adr0089-live|Pool deterministic (ADR-0089)" \
   "adr0081-neural|Neural optional dep (ADR-0081)" \
@@ -4222,6 +4224,33 @@ if [[ -f "$adr0298_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
   rm -rf "$PARALLEL_DIR" 2>/dev/null
 fi
 _record_phase "phase-adr0298-c6-reconvergence" "$(_elapsed_ms "$_adr0298_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0299 — C7+C8 Verticals & Tooling re-convergence. F1 marketplace.json
+# description honesty (no overclaim pattern; the marketplace-integrity lint
+# now walks the file too); F2 market-data command surface prescribes
+# memory_store --namespace (never hierarchical-store+namespace); F3 the 3
+# neural-trader kernel smokes (CG parity · Ed25519 · PageRank) run green from
+# the fork tree (LOUD-SKIP crypto smokes when @noble/ed25519 unresolvable);
+# F4 transfer_plugin-official envelope discloses demo-fallback provenance
+# (source + fromDemo + plugins; plugin-search unchanged). FAILs against the
+# published cli (F4 bare-array envelope). No paid LLM calls.
+# ════════════════════════════════════════════════════════════════════
+_adr0299_start=$(_ns)
+if [[ -f "$adr0299_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
+  log "── ADR-0299: C7+C8 re-convergence (marketplace honesty · market contract · kernel smokes · transfer disclosure) ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+  export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+
+  run_check_bg "adr0299-c78-reconvergence" "ADR-0299 C7+C8 re-convergence: marketplace.json honesty + market-data command contract + neural-trader kernel smokes + transfer demo-fallback disclosure" check_adr0299_c78_reconvergence "adr0299"
+
+  collect_parallel "adr0299" \
+    "adr0299-c78-reconvergence|ADR-0299 C7+C8 re-convergence: marketplace.json honesty + market-data command contract + neural-trader kernel smokes + transfer demo-fallback disclosure"
+
+  unset ADR0255_SMOKE_SHARED_TEMP
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0299-c78-reconvergence" "$(_elapsed_ms "$_adr0299_start" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
 # Results

@@ -57,46 +57,42 @@ check_adr0089_intercept_shipped() {
 }
 
 # ════════════════════════════════════════════════════════════════════
-# ADR-0089-2: agentdb-service wraps getOrCreate calls in published dist
+# ADR-0089-2 (retargeted per ADR-0288): AgentDBService retired from the
+# published artifact.
 #
-# The fork source test (tests/unit/adr0089-intercept-enforcement.test.mjs)
-# verifies this at source level. This runtime check verifies the same
-# property survived compilation and codemod — the published JS should
-# still reference getOrCreate around the 6 known wrapped controllers.
+# Pre-ADR-0288 this check asserted the published agentdb-service.js kept its
+# 6 getOrCreate wraps. ADR-0288 Option C-prime (fork agentic-flow 8c5ec5d7,
+# 2026-06-04) deleted the island — agentdb-service.js and controller-bridge.js
+# must be ABSENT from the published @sparkleideas/agentic-flow (the ADR's
+# published-package spot check, locked at the acceptance layer). The fork
+# source guard lives in tests/unit/adr0089-intercept-enforcement.test.mjs.
 # ════════════════════════════════════════════════════════════════════
 
-check_adr0089_agentdb_service_wraps() {
+check_adr0288_agentdb_service_retired() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
   local agentic_pkg="$TEMP_DIR/node_modules/@sparkleideas/agentic-flow"
   if [[ ! -d "$agentic_pkg" ]]; then
-    _CHECK_OUTPUT="ADR-0089-2: @sparkleideas/agentic-flow not installed"
+    _CHECK_OUTPUT="ADR-0288: @sparkleideas/agentic-flow not installed"
     return
   fi
 
-  local svc_js
+  local svc_js bridge_js
   svc_js=$(find "$agentic_pkg" -name 'agentdb-service.js' 2>/dev/null | head -1)
+  bridge_js=$(find "$agentic_pkg" -name 'controller-bridge.js' 2>/dev/null | head -1)
 
-  if [[ -z "$svc_js" ]]; then
-    _CHECK_OUTPUT="ADR-0089-2: agentdb-service.js not found in published @sparkleideas/agentic-flow"
+  if [[ -n "$svc_js" ]]; then
+    _CHECK_OUTPUT="ADR-0288: agentdb-service.js still ships in published agentic-flow ($svc_js) — the island must stay retired"
     return
   fi
-
-  # Count getOrCreate call sites in the published JS. Source has 6 wraps;
-  # compilation may inline or reshape slightly but the identifier should
-  # survive.
-  local wrap_count
-  wrap_count=$(grep -c 'getOrCreate' "$svc_js" 2>/dev/null)
-  wrap_count=${wrap_count:-0}
-
-  if [[ "$wrap_count" -lt 6 ]]; then
-    _CHECK_OUTPUT="ADR-0089-2: agentdb-service.js has only $wrap_count getOrCreate references (expected >= 6)"
+  if [[ -n "$bridge_js" ]]; then
+    _CHECK_OUTPUT="ADR-0288: controller-bridge.js still ships in published agentic-flow ($bridge_js) — Phase-5 removal must stay realised"
     return
   fi
 
   _CHECK_PASSED="true"
-  _CHECK_OUTPUT="ADR-0089-2: agentdb-service.js has $wrap_count getOrCreate references (>= 6 expected)"
+  _CHECK_OUTPUT="ADR-0288: published agentic-flow ships neither agentdb-service.js nor controller-bridge.js (island retired)"
 }
 
 # ════════════════════════════════════════════════════════════════════

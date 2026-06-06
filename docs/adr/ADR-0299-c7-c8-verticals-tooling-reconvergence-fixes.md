@@ -101,3 +101,38 @@ market-data HNSW re-drive. Flips to `accepted`/`completed:true` when shipped and
   Per-category mistake signatures: C1 wrong-shape · C2 necessity-not-re-justified · C3
   un-merged-paired-fix · C4 doc-drift · C5 stale-fork-artifact-lag · C6 unverified-replacement ·
   C7/C8 split-surface-drift + prover-misread (caught by the DA).
+
+### Implementation record (2026-06-06; both-ways verified; PUSHED `929c5b5f2..1fcfcb866`)
+
+* **Fork commits:** F1 `929c5b5f2` (marketplace.json iot-cognitum + market-data descriptions synced
+  verbatim to the per-plugin `plugin.json` honest rewrites), F2 `2c87c0ef1`
+  (`commands/market.md:11` → `memory_store --namespace market-data` with the tier-vs-namespace
+  routing note; the agents/ Tools list mentions hierarchical tools WITHOUT a namespace pairing —
+  outside the command-surface contract, untouched), F3 `4991bac0e` (portfolio-cg grep literal
+  `mcp__claude-flow__` → `mcp__ruflo__`), F4 `1fcfcb866` (`transfer_plugin-official` envelope
+  carries `source`/`fromDemo`/`plugins`; `PluginDiscoveryResult.fromDemo` added; the demo cache
+  entry is flagged so cache hits cannot launder provenance; `plugin-search` untouched).
+* **Both-ways:** the extended lint went RED on the live marketplace.json pre-rewrite (the real
+  offender = the planted-overclaim proof; 24 pass / 1 fail) → 25/25 GREEN post-rewrite. Kernel
+  smokes: portfolio-cg 20/20 (was permanently red on the literal); backtest-signing 21/21 +
+  feature-attribution 37/37 (were red on `@noble/ed25519` unresolvable — fork-root `npm install` is
+  broken by unrelated self-referencing renamed packages (`@claude-flow/cli-core` ETARGET), so the
+  zero-dep package is placed manually and the acceptance smoke LOUD-SKIPs the two crypto smokes
+  when unresolvable). F4: the acceptance smoke vs the published Verdaccio cli FAILS with the
+  bare-array signature (6 pass / 1 fail standalone — the designed red leg); the fixed dist handler
+  drive returns `{source: "claude-flow-official (demo)", fromDemo: true, plugins: 6}` and a
+  cache-hit second call preserves both; the live drive also proved the fail-closed signature path
+  falls back to demo WITH disclosure even when the gateway fetch succeeds.
+* **Wiring:** `scripts/smoke-adr0299-c78-reconvergence.mjs` + `lib/acceptance-adr0299-checks.sh`
+  into `test-acceptance.sh` (source list + `run_check_bg` + `collect_parallel` group `adr0299`),
+  `test-acceptance-fast.sh adr0299`, and CI `.github/workflows/v3-ci-c78-reconvergence.yml`
+  (node-24). Lint Assertion 4 extended to walk marketplace.json
+  (`tests/pipeline/plugin-marketplace-integrity.test.mjs`, runs in the standard cascade —
+  preflight+pipeline+unit green, 0 fail). Ledger rows (F1–F4): with this record's commit.
+* **Riders surfaced by this batch:** ADR-0288's patch-repo test sweep was found undone (unit suite
+  red against the retired island; the old `adr0089-svc` acceptance check unpassable against
+  published patch.963) — completed in the sibling commit with retirement guards; 4 unit tests'
+  `../../../forks` escapes made worktree-safe via `config/upstream-branches.json` resolution.
+* Status stays `proposed`; flips with the release that turns `adr0299-c78-reconvergence` green.
+  Post-release: re-drive `ruvllm_hnsw_create→add→route` from the market-data shape (the ADR-0293 D1
+  prerequisite recorded in `Records`).

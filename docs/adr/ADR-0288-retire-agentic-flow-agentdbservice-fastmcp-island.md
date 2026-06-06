@@ -189,3 +189,31 @@ Before any real removal (all in a throwaway git worktree first — nothing touch
   MCP surface); upstream "AgentDB becomes a library, not a service."
 * **Governance:** `feedback-no-consumer-is-not-stub`, `feedback-patches-in-fork`, `feedback-update-integration-ledger`,
   `feedback-always-wire-tests-into-cicd`, `feedback-inspect-installed-not-dev-nodemodules`.
+
+### Implementation note (post-hoc, 2026-06-06)
+
+* **Gates resolved → Option C-prime executed fork-side** as agentic-flow `8c5ec5d7` (2026-06-04):
+  island deleted (`agentdb-service.ts` 91KB, `controller-bridge.ts` — realising its own "Phase 5
+  will remove this bridge entirely" note — plus direct-call-bridge/hook-service/swarm-service and
+  the 10 AgentDBService tool modules); `stdio-full.ts` SLIMMED 894→488 keeping the 11 island-free
+  fork registrations (github/ruvector/sona-rvf/infrastructure/autopilot/cost-optimizer/streaming/
+  sona/quantization/explainability/booster); the 3 dynamic consumers de-coupled honestly
+  (autopilot-learning → honest unavailable, capture flows via hooks post-task per ADR-0268/0290;
+  autopilot-cli drops `autopilot subscribe`; streaming-service drops the retired stream surfaces).
+  The published `@sparkleideas/agentic-flow@…patch.963.1` ships neither `agentdb-service.js` nor
+  `controller-bridge.js` (verified by tarball listing, 2026-06-06) — the retirement is live.
+* **Patch-repo test sweep completed 2026-06-06** — the scope-table row found undone when the unit
+  suite went red against the post-retirement fork: unit retargets to retirement guards
+  (`adr0089-intercept-enforcement` T2/T4; `adr0076-phase4-wiring` bridge/stdio describes;
+  `adr0076-phase2-5` bridge describe; `adr0069-f3-onnx-import-resolvable` consumer assertions;
+  `agentdb-service-f1-improvements` reality pin; `adr0069-f3-booster` dist mirror → LOUD-SKIP when
+  the dev dist is absent) and the acceptance retarget (`check_adr0089_agentdb_service_wraps` →
+  `check_adr0288_agentdb_service_retired`: published agentic-flow must ship neither island file —
+  green against current published).
+* **Timeline note (recorded, not chased):** the agentic-flow `patch.963` version bump landed
+  2026-06-04 04:58, ~2h after the retirement, while the patch-repo unit suite was red against the
+  deleted island (the failing tests predate the retirement by 7 weeks) and the old `adr0089-svc`
+  acceptance check could no longer pass against the published artifact. Whatever ran that day did
+  not gate on the full cascade.
+* **Open:** Gate-3 re-anchoring (ADR-0192-family "episode store" language) remains tracked, not
+  done here. Status flips with the next green release.

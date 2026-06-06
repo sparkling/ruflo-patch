@@ -1,0 +1,87 @@
+# ADR-0299 — CI stanza for the C7+C8 Verticals & Tooling re-convergence smoke.
+#
+# Per `feedback-always-wire-tests-into-cicd`: the C7+C8 re-convergence smoke is
+# wired into the standard runner (scripts/test-acceptance.sh,
+# adr0299-c78-reconvergence check) AND here. No paid LLM calls; the only
+# network touch is the registry gateway probe inside discoverRegistry, which
+# falls back to the demo catalog offline. The smoke asserts:
+#   F1 marketplace.json plugin descriptions carry no overclaim pattern (the
+#      marketplace-integrity lint's Assertion 4 is extended to walk the file).
+#   F2 market-data command surface prescribes `memory_store --namespace
+#      market-data`, never `agentdb_hierarchical-store` + namespace (the live
+#      schema rejects it — split-surface drift, sibling of C4's F1).
+#   F3 the 3 neural-trader kernel smokes (portfolio-cg CG parity ·
+#      backtest-signing Ed25519 · feature-attribution PageRank) run green from
+#      the fork tree; LOUD-SKIP the crypto smokes when @noble/ed25519 is not
+#      resolvable from the fork root.
+#   F4 transfer_plugin-official's envelope discloses demo-fallback provenance
+#      (source + fromDemo + plugins) instead of a bare real-shaped array;
+#      transfer_plugin-search (plugin-creator's real dependency) unchanged.
+# FAILs against the published cli (F4 bare-array envelope). Per
+# `feedback-no-tail-tests`: the smoke writes its log to SMOKE_LOG_DIR.
+
+name: ADR-0299 C7+C8 re-convergence
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/transfer-tools.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/plugins/store/discovery.ts'
+      - 'forks/ruflo/.claude-plugin/marketplace.json'
+      - 'forks/ruflo/plugins/ruflo-market-data/**'
+      - 'forks/ruflo/scripts/smoke-neural-trader-*.mjs'
+      - 'scripts/smoke-adr0299-c78-reconvergence.mjs'
+      - 'lib/acceptance-adr0299-checks.sh'
+      - 'tests/pipeline/plugin-marketplace-integrity.test.mjs'
+  pull_request:
+    paths:
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/transfer-tools.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/plugins/store/discovery.ts'
+      - 'forks/ruflo/.claude-plugin/marketplace.json'
+      - 'forks/ruflo/plugins/ruflo-market-data/**'
+      - 'forks/ruflo/scripts/smoke-neural-trader-*.mjs'
+      - 'scripts/smoke-adr0299-c78-reconvergence.mjs'
+      - 'lib/acceptance-adr0299-checks.sh'
+      - 'tests/pipeline/plugin-marketplace-integrity.test.mjs'
+
+env:
+  REGISTRY: http://localhost:4873
+  CLI_PKG: '@sparkleideas/ruflo'
+  SMOKE_LOG_DIR: ${{ github.workspace }}/smoke-logs
+
+jobs:
+  c78-reconvergence:
+    name: C7+C8 re-convergence (ADR-0299)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          # node-24: the installed cli + MCP session F4 drives needs native
+          # better-sqlite3; the daemon-node-version trap
+          # (project-mcp-daemon-runs-sqljs-fallback) is the cautionary tale.
+          node-version: '24'
+
+      - name: Start local Verdaccio + publish fork packages
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/ruflo-publish.sh 2>&1 | tee "${SMOKE_LOG_DIR}/publish.log"
+
+      - name: Run ADR-0299 C7+C8 re-convergence smoke via fast runner
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/test-acceptance-fast.sh adr0299 2>&1 | tee "${SMOKE_LOG_DIR}/adr0299.log"
+
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs-c78-reconvergence
+          path: ${{ env.SMOKE_LOG_DIR }}

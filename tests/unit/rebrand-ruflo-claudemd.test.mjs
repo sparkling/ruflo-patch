@@ -17,7 +17,12 @@ import { dirname, join } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const BUILT_JS = '/tmp/ruflo-build/v3/@claude-flow/cli/dist/src/init/claudemd-generator.js';
-const FORK_TS = join(__dirname, '../../../forks/ruflo/v3/@claude-flow/cli/src/init/claudemd-generator.ts');
+// Fork dir from config/upstream-branches.json (single source of truth) —
+// a relative ../../../ escape resolves wrongly under .claude/worktrees/.
+const _branches = JSON.parse(
+  readFileSync(join(__dirname, '../../config/upstream-branches.json'), 'utf8'),
+);
+const FORK_TS = join(_branches.ruflo.dir, 'v3/@claude-flow/cli/src/init/claudemd-generator.ts');
 
 describe('ADR-0006 follow-up: CLAUDE.md template — ruflo rebrand', () => {
   let content;

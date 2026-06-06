@@ -240,6 +240,37 @@ describe('ADR-0248 §3 — ruflo-core hooks use the resilient shim', { skip }, (
 // === Assertion 4: description honesty ===
 
 describe('ADR-0248 §4 — plugin descriptions are honest (no overclaiming)', { skip }, () => {
+  // ADR-0299 F1 (D-CROSS-1): the same patterns are forbidden in the
+  // top-level .claude-plugin/marketplace.json plugin entries. The C7+C8
+  // audit found the iot-cognitum overclaim surviving in marketplace.json
+  // because this assertion walked only per-plugin manifests — marketplace
+  // descriptions are read at the same install-decision time and must stay
+  // synced to the per-plugin honest rewrites.
+  for (const pattern of OVERCLAIM_DESCRIPTION_PATTERNS) {
+    it(`marketplace.json: no plugin entry description contains "${pattern}"`, () => {
+      let parsed;
+      try {
+        parsed = JSON.parse(readFileSync(MARKETPLACE_JSON, 'utf8'));
+      } catch (e) {
+        assert.fail(`Failed to parse ${MARKETPLACE_JSON}: ${e.message}`);
+      }
+      const offenders = [];
+      for (const entry of parsed.plugins ?? []) {
+        if (typeof entry.description === 'string' && entry.description.includes(pattern)) {
+          offenders.push(entry.name ?? '(unnamed)');
+        }
+      }
+      assert.equal(
+        offenders.length,
+        0,
+        `marketplace.json plugin entr(ies) containing over-claiming pattern ` +
+          `"${pattern}": ${offenders.join(', ')}\n\nADR-0299 F1 + ADR-0248/0251: ` +
+          `sync the marketplace.json description to the plugin's own ` +
+          `.claude-plugin/plugin.json honest rewrite.`,
+      );
+    });
+  }
+
   for (const pattern of OVERCLAIM_DESCRIPTION_PATTERNS) {
     it(`no plugin.json description contains "${pattern}"`, () => {
       const offenders = [];

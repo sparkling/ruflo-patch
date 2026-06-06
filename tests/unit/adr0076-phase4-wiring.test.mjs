@@ -134,91 +134,49 @@ describe('Phase 4: controller-registry.ts uses getOrCreate', () => {
 });
 
 // ===========================================================================
-// agentdb-service.ts uses getOrCreate
+// agentdb-service.ts + controller-bridge retired (ADR-0288)
 // ===========================================================================
+//
+// Phase 4 wired stdio-full → controller-bridge → ControllerRegistry and
+// wrapped AgentDBService's controllers in getOrCreate. ADR-0288 Option
+// C-prime (fork agentic-flow 8c5ec5d7, 2026-06-04) retired the island:
+// agentdb-service.ts and controller-bridge.ts are deleted (the bridge's own
+// "Phase 5 will remove this bridge entirely" note, realised) and stdio-full
+// survives slimmed — island-free. These guards lock that end state; the
+// surviving cli memory side keeps its own wiring assertions above.
 
-describe('Phase 4: agentdb-service.ts uses getOrCreate', () => {
-  const file = `${AGENTIC_SRC}/agentdb-service.ts`;
-
-  it('imports getOrCreate from @claude-flow/memory', () => {
-    if (!existsSync(file)) return;
-    const src = readFileSync(file, 'utf-8');
+describe('Phase 4→5: agentdb-service.ts retired (ADR-0288)', () => {
+  it('agentdb-service.ts stays deleted', () => {
     assert.ok(
-      src.includes('getOrCreate') && src.includes('@claude-flow/memory'),
-      'must import getOrCreate from @claude-flow/memory',
+      !existsSync(`${AGENTIC_SRC}/agentdb-service.ts`),
+      'agentdb-service.ts must stay deleted per ADR-0288 Option C-prime — if ' +
+        're-introduced, restore the getOrCreate wrap assertions this guard ' +
+        'replaced (git log this file).',
     );
-  });
-
-  it('wraps reflexion controller with getOrCreate', () => {
-    if (!existsSync(file)) return;
-    const src = readFileSync(file, 'utf-8');
-    assert.ok(
-      src.includes("getOrCreate('reflexion'") || src.includes('getOrCreate("reflexion"'),
-      'reflexionMemory must be wrapped with getOrCreate',
-    );
-  });
-
-  it('wraps skills controller with getOrCreate', () => {
-    if (!existsSync(file)) return;
-    const src = readFileSync(file, 'utf-8');
-    assert.ok(
-      src.includes("getOrCreate('skills'") || src.includes('getOrCreate("skills"'),
-      'skillLibrary must be wrapped with getOrCreate',
-    );
-  });
-
-  it('wraps reasoningBank controller with getOrCreate', () => {
-    if (!existsSync(file)) return;
-    const src = readFileSync(file, 'utf-8');
-    assert.ok(
-      src.includes("getOrCreate('reasoningBank'") || src.includes('getOrCreate("reasoningBank"'),
-      'reasoningBank must be wrapped with getOrCreate',
-    );
-  });
-
-  it('uses matching pool names with controller-registry', () => {
-    if (!existsSync(file)) return;
-    const src = readFileSync(file, 'utf-8');
-    // The pool names in agentdb-service must match controller-registry
-    const expectedNames = ['reflexion', 'skills', 'reasoningBank', 'causalGraph', 'causalRecall', 'learningSystem'];
-    for (const name of expectedNames) {
-      assert.ok(
-        src.includes(`getOrCreate('${name}'`) || src.includes(`getOrCreate("${name}"`),
-        `must use pool name '${name}' matching controller-registry`,
-      );
-    }
   });
 });
 
-// ===========================================================================
-// controller-bridge.ts is connected
-// ===========================================================================
-
-describe('Phase 4: controller-bridge connected at startup', () => {
+describe('Phase 4→5: controller-bridge retired, stdio-full island-free (ADR-0288)', () => {
   const bridgeFile = `${AGENTIC_SRC}/controller-bridge.ts`;
   const stdioFile = `${STDIO_SRC}/stdio-full.ts`;
 
-  it('controller-bridge.ts exists and exports setRegistry', () => {
-    if (!existsSync(bridgeFile)) return;
-    const src = readFileSync(bridgeFile, 'utf-8');
-    assert.ok(src.includes('setRegistry'), 'must export setRegistry');
-  });
-
-  it('stdio-full.ts calls setRegistry during startup', () => {
-    if (!existsSync(stdioFile)) return;
-    const src = readFileSync(stdioFile, 'utf-8');
+  it('controller-bridge.ts stays deleted', () => {
     assert.ok(
-      src.includes('setRegistry'),
-      'stdio-full.ts must call setRegistry to connect the bridge',
+      !existsSync(bridgeFile),
+      'controller-bridge.ts must stay deleted per ADR-0288 (Phase 5 realised).',
     );
   });
 
-  it('stdio-full.ts imports from controller-bridge', () => {
-    if (!existsSync(stdioFile)) return;
+  it('stdio-full.ts survives slimmed and references neither the bridge nor AgentDBService', () => {
+    assert.ok(existsSync(stdioFile), 'stdio-full.ts must exist (ADR-0288 slims it, does not delete it)');
     const src = readFileSync(stdioFile, 'utf-8');
     assert.ok(
-      src.includes('controller-bridge'),
-      'stdio-full.ts must import from controller-bridge',
+      !src.includes('controller-bridge'),
+      'stdio-full.ts must not reference controller-bridge (retired per ADR-0288)',
+    );
+    assert.ok(
+      !src.includes('agentdb-service') && !src.includes('AgentDBService'),
+      'stdio-full.ts must not reference AgentDBService (retired per ADR-0288)',
     );
   });
 });
