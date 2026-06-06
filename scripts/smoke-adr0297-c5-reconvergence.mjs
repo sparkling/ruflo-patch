@@ -307,6 +307,10 @@ async function main() {
   {
     const fedDir = mkdtempSync(join(tmpdir(), 'adr0297-fed-'));
     const fedCache = mkdtempSync(join(tmpdir(), 'adr0297-fed-cache-'));
+    // macOS: opt the fresh dirs out of Spotlight so mds_stores doesn't scan the
+    // just-installed ruflo-federation binary mid-exec — a cause of transient
+    // status-126 ("cannot execute") under heavy /tmp churn + concurrent load.
+    try { writeFileSync(join(fedDir, '.metadata_never_index'), ''); writeFileSync(join(fedCache, '.metadata_never_index'), ''); } catch { /* best-effort; no-op on Linux */ }
     try {
       writeFileSync(join(fedDir, '.npmrc'), `registry=${REGISTRY}\n`);
       const env = {
@@ -315,12 +319,22 @@ async function main() {
         npm_config_registry: REGISTRY,
         npm_config_cache: fedCache, // isolated cache → optional peer-dep not present
       };
-      const r = spawnSync('npx', [
-        '-y', '-p', '@sparkleideas/plugin-agent-federation@latest',
-        'ruflo-federation', 'init',
-      ], { cwd: fedDir, encoding: 'utf8', timeout: 180000, env });
-      const out = `${r.stdout || ''}\n${r.stderr || ''}`;
-      const modNotFound = /ERR_MODULE_NOT_FOUND|Cannot find package '@sparkleideas\/agentic-flow'|Cannot find package 'agentic-flow'/.test(out);
+      // Retry the TRANSIENT exec failure (status 126 "cannot execute" under
+      // macOS Spotlight/churn + concurrent swarm load) — but NEVER retry/mask
+      // the agentic-flow ERR_MODULE_NOT_FOUND this assertion actually guards,
+      // nor a clean exit. A persistent failure after 3 tries still fails.
+      const _isModNotFound = (s) => /ERR_MODULE_NOT_FOUND|Cannot find package '@sparkleideas\/agentic-flow'|Cannot find package 'agentic-flow'/.test(s);
+      let r, out = '';
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        r = spawnSync('npx', [
+          '-y', '-p', '@sparkleideas/plugin-agent-federation@latest',
+          'ruflo-federation', 'init',
+        ], { cwd: fedDir, encoding: 'utf8', timeout: 180000, env });
+        out = `${r.stdout || ''}\n${r.stderr || ''}`;
+        if (r.status === 0 || _isModNotFound(out)) break;
+        if (attempt < 3) spawnSync('sleep', ['2']);
+      }
+      const modNotFound = _isModNotFound(out);
       if (r.status === 0 && !modNotFound) {
         pass(`R2a: federation init exits 0 WITHOUT agentic-flow (no ERR_MODULE_NOT_FOUND — graceful local-only)`);
       } else if (modNotFound) {
