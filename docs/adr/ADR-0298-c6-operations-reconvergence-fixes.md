@@ -94,3 +94,35 @@ when shipped and green in a release.
   `/tmp/c6-evidence/da/`). Program: ADR-0292 C6 row. Siblings: ADR-0293..0297.
 * C6 mistake-class signature: **un-merged-paired-fix (again) + unverified-replacement** — the
   ADR-0042/0043 stat tools were wired to a controller contract never probed live.
+
+### Implementation record (2026-06-06; both-ways via direct MCP drives; PUSHED `2989b17c4..34bab050e`)
+
+* **Fork commits:** R1 `2989b17c4` (atomic 4-call re-shape in `browser-session-tools.ts`: `rvf
+  create` drops `--kind`, adds the REQUIRED `--dimension 768` (fork vector axis);
+  `trajectory-begin/step/end` re-targeted to ruvector@0.2.25's real arg shapes `-c/--context`, `-a`,
+  `-r`, `--success`, `--quality` — closes the un-merged Issue-#2015 half (upstream `905672021`) AND
+  fixes the trajectory skew upstream still carries → direction-flips the fork above upstream's
+  still-broken step-2), R2 `fb8006147` (TWO-part circuit fix per the DA-corrected scope: registry
+  key `circuitBreakerController`→`circuitBreaker` AND `getStats()`→`getStatus()`;
+  `rate_limit_status` returns real token-bucket fields or an honest capability-absent envelope — no
+  hollow `{success:true}`), R3a `cb6b04a68` (in-process memory path replaces the per-call
+  `npx @sparkleideas/cli@latest memory …` shell-out at :183/270/307), X1 `f2c975332` (PRICING
+  Haiku-rate freshness note). Stack riders pushed in the same range: `f8ff12341` (ADR-0297
+  loader-comment label fix), `34bab050e` (ADR-0294-X catch-gate rider).
+* **Both-ways (direct MCP drives of published patch.415 vs the fixed bin, 2026-06-06):** published →
+  record dies at step-1 (`--kind` arg error), `circuit_status` "not available" via the wrong key
+  while `resource_usage` works, `rate_limit_status` hollow `{success:true}`, 30s+ shell tax per
+  memory call; fixed → all PASS, honest-miss in single-digit seconds.
+* **Wiring (patch repo `bc235d7`):** `scripts/smoke-adr0298-c6-reconvergence.mjs` — LOCAL `file://`
+  targets only, no paid LLM calls; ruvector/agent-browser-absent assertions LOUD-SKIP, never
+  silent-pass; a `resource_usage` registry sentinel distinguishes the published wrong-key/hollow bug
+  from an uninitialized-registry SKIP, with a DA-path direct-registry fallback. Wired into
+  `test-acceptance.sh` (source list + `run_check_bg` + `collect_parallel` group `adr0298`),
+  `test-acceptance-fast.sh adr0298`, and CI `.github/workflows/v3-ci-c6-reconvergence.yml`
+  (node-24). Ledger rows (R1/R2/R3a/X1): with this record's commit.
+* **Recorded conditions:** no implementation-phase DA convened — the prior session terminated at the
+  wiring commit, and this record is written post-hoc from commit + drive evidence (the review-phase
+  DA had already corrected R2's scope to key+method and adjudicated R1 atomic-vs-split). The fork
+  stack sat unpushed until this record's session pushed `2989b17c4..34bab050e`. R3b (general CLI
+  cold-boot profile, ~26-31×) stays a recorded follow-up, not scope creep.
+* Status stays `proposed`; flips with the release that turns `adr0298-c6-reconvergence` green.
