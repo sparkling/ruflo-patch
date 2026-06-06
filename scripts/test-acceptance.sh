@@ -3712,9 +3712,16 @@ _record_phase "phase-adr0263-replay-verification" "$(_elapsed_ms "$_adr0263_star
 _adr0295_start=$(_ns)
 if [[ -f "$adr0295_lib" ]]; then
   log "── ADR-0295: dangling-optional-dep gate ──"
+  # Mint a fresh PARALLEL_DIR — every parallel block must (the prior block
+  # rm -rf's its own). The e62a01b block omitted this, so run_check_bg's
+  # subshell wrote the result into the prior block's removed dir → "No such
+  # file or directory" → silent subprocess crash (no verdict in run-3, FAIL
+  # once counted). Matches the adr0268/adr0290/etc. block pattern below.
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
   run_check_bg "adr0295-no-dangling-optdeps" "ADR-0295 no unresolvable @sparkleideas/* optional deps" check_adr0295_no_dangling_optional_deps "adr0295"
   collect_parallel "adr0295" \
     "adr0295-no-dangling-optdeps|ADR-0295 no unresolvable @sparkleideas/* optional deps"
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
 fi
 _record_phase "phase-adr0295-dangling-optdeps" "$(_elapsed_ms "$_adr0295_start" "$(_ns)")"
 
