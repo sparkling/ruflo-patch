@@ -71,11 +71,17 @@ _disable_spotlight_indexing() {
   # source-time call × 100+ unit test files that source this lib =
   # ~37 min of overhead, which deadlocked test-ci in r5 (commit cdd831b reverted).
   # Spotlight marker stays; FSEvents/TM exclusion needs a different angle.
+  # ${HOME}/.npm/_npx: the default npx cache. Smokes + product MCP tools shell
+  # out to `npx -y <pkg> <bin>` (e.g. browser_session_record → `npx ruvector
+  # rvf create`, adr0297 federation init). Spotlight scanning the freshly-
+  # installed binary mid-exec is a cause of transient status-126 ("cannot
+  # execute") under heavy churn + concurrent swarm load — opt the cache out.
   for _d in /tmp/ruflo-build \
             /tmp/ruflo-accept-* \
             /tmp/ruflo-accept-par-* \
             /tmp/ruflo-fast-* \
             /tmp/ruflo-e2e-* \
+            "${HOME}/.npm/_npx" \
             "${PARALLEL_DIR:-}" \
             "${ACCEPT_TEMP:-}" \
             "${E2E_DIR:-}"; do
