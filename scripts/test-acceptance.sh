@@ -912,8 +912,22 @@ adr0287_lib="${PROJECT_DIR}/lib/acceptance-adr0287-checks.sh"
 [[ -f "$adr0287_lib" ]] && source "$adr0287_lib"
 adrcreatematrix_lib="${PROJECT_DIR}/lib/acceptance-adr-create-checks.sh"
 [[ -f "$adrcreatematrix_lib" ]] && source "$adrcreatematrix_lib"
+adr0290_lib="${PROJECT_DIR}/lib/acceptance-adr0290-checks.sh"
+[[ -f "$adr0290_lib" ]] && source "$adr0290_lib"
+adr0293_lib="${PROJECT_DIR}/lib/acceptance-adr0293-checks.sh"
+[[ -f "$adr0293_lib" ]] && source "$adr0293_lib"
+adr0294_lib="${PROJECT_DIR}/lib/acceptance-adr0294-checks.sh"
+[[ -f "$adr0294_lib" ]] && source "$adr0294_lib"
 adr0295_lib="${PROJECT_DIR}/lib/acceptance-adr0295-checks.sh"
 [[ -f "$adr0295_lib" ]] && source "$adr0295_lib"
+adr0296_lib="${PROJECT_DIR}/lib/acceptance-adr0296-checks.sh"
+[[ -f "$adr0296_lib" ]] && source "$adr0296_lib"
+adr0297_lib="${PROJECT_DIR}/lib/acceptance-adr0297-checks.sh"
+[[ -f "$adr0297_lib" ]] && source "$adr0297_lib"
+adr0298_lib="${PROJECT_DIR}/lib/acceptance-adr0298-checks.sh"
+[[ -f "$adr0298_lib" ]] && source "$adr0298_lib"
+adr0299_lib="${PROJECT_DIR}/lib/acceptance-adr0299-checks.sh"
+[[ -f "$adr0299_lib" ]] && source "$adr0299_lib"
 
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
@@ -1442,7 +1456,7 @@ fi
 # ADR-0089: Controller Intercept Pattern Permanent
 if [[ -f "$adr0089_lib" ]]; then
   run_check_bg "adr0089-shipped"    "Intercept pool shipped (ADR-0089)"        check_adr0089_intercept_shipped         "adr0089"
-  run_check_bg "adr0089-svc"        "AgentDBService wraps (ADR-0089)"          check_adr0089_agentdb_service_wraps     "adr0089"
+  run_check_bg "adr0089-svc"        "AgentDBService retired in artifact (ADR-0288)" check_adr0288_agentdb_service_retired "adr0089"
   run_check_bg "adr0089-reg"        "ControllerRegistry wraps (ADR-0089)"      check_adr0089_controller_registry_wraps "adr0089"
   run_check_bg "adr0089-live"       "Pool deterministic (ADR-0089)"            check_adr0089_pool_live                 "adr0089"
 fi
@@ -2844,7 +2858,7 @@ collect_parallel "all" \
   "adr0088-init-yes|Init with-claude wires daemon (ADR-0088)" \
   "adr0088-daemon-ok|Daemon still works local (ADR-0088)" \
   "adr0089-shipped|Intercept pool shipped (ADR-0089)" \
-  "adr0089-svc|AgentDBService wraps (ADR-0089)" \
+  "adr0089-svc|AgentDBService retired in artifact (ADR-0288)" \
   "adr0089-reg|ControllerRegistry wraps (ADR-0089)" \
   "adr0089-live|Pool deterministic (ADR-0089)" \
   "adr0081-neural|Neural optional dep (ADR-0081)" \
@@ -4089,6 +4103,210 @@ if [[ -f "$adrcreatematrix_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; th
   rm -rf "$PARALLEL_DIR" 2>/dev/null
 fi
 _record_phase "phase-adr-create-storage-matrix" "$(_elapsed_ms "$_adrcreatematrix_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0290: automatic learning capture — hook → episode → learner → action-values.
+# Drives a real PostToolUse(Task) payload through the FILE-BASED hook (the
+# init-generated hook-handler.mjs, never a manual MCP call) and asserts the
+# whole Phase-1 loop: metadata-only episode (task_type derived from the
+# description, action = subagent_type, reward 0.6 skeptic default; NO raw
+# free text / PII canaries / episode_embeddings), no-fabrication on an
+# underivable outcome, then `daemon trigger -w learn` populates
+# .swarm/action-values.json with the captured (task_type, action) row.
+# FAILs pre-impl (cli rejects --task/--session; generated hook lacks capture).
+# ════════════════════════════════════════════════════════════════════
+_adr0290_start=$(_ns)
+if [[ -f "$adr0290_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
+  log "── ADR-0290: learning capture loop (hook → episode → learner → action-values) ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+  export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+
+  run_check_bg "adr0290-learning-loop" "ADR-0290 learning capture: hook → episode → learner → action-values" check_adr0290_learning_loop "adr0290"
+
+  collect_parallel "adr0290" \
+    "adr0290-learning-loop|ADR-0290 learning capture: hook → episode → learner → action-values"
+
+  unset ADR0255_SMOKE_SHARED_TEMP
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0290-learning-loop" "$(_elapsed_ms "$_adr0290_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0293: C1 Learning & Intelligence re-convergence — the four fork
+# regressions. ONE long-lived MCP stdio session asserts: D1 ruvllm WASM init
+# skew fixed (create→add→route returns a real score; status reports wasm
+# loaded), D2 hooks_transfer no longer fabricates demo-data (nonexistent
+# source ⇒ success:false/transferred:0; real source ⇒ success:true), D3
+# neural_* wired to the real mpnet embedder + the confidence@similarity:0
+# scoring bug fixed, D4 neural_compress documents its quantize capability
+# boundary. FAILs against the published packages (regressions present).
+# ════════════════════════════════════════════════════════════════════
+_adr0293_start=$(_ns)
+if [[ -f "$adr0293_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
+  log "── ADR-0293: C1 re-convergence (ruvllm wasm · hooks_transfer · neural embedder/confidence · neural_compress) ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+  export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+
+  run_check_bg "adr0293-c1-reconvergence" "ADR-0293 C1 re-convergence: ruvllm wasm + hooks_transfer + neural embedder/confidence + neural_compress" check_adr0293_c1_reconvergence "adr0293"
+
+  collect_parallel "adr0293" \
+    "adr0293-c1-reconvergence|ADR-0293 C1 re-convergence: ruvllm wasm + hooks_transfer + neural embedder/confidence + neural_compress"
+
+  unset ADR0255_SMOKE_SHARED_TEMP
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0293-c1-reconvergence" "$(_elapsed_ms "$_adr0293_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0294 — C2 Memory & Data re-convergence (graph_edges write · RaBitQ
+# wiring · semantic-route honesty · batch cold rate-limit). One long-lived
+# MCP stdio session asserts R1/R3/O1/O2 against the installed CLI — the same
+# bin chain Claude Code uses. FAILs against the published packages (regressions
+# present: graph-query empty, rabitq tools absent, semantic-route bare/unhelpful,
+# batch cold-rate-limited).
+# ════════════════════════════════════════════════════════════════════
+_adr0294_start=$(_ns)
+if [[ -f "$adr0294_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
+  log "── ADR-0294: C2 re-convergence (graph_edges · rabitq · semantic-route · batch) ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+  export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+
+  run_check_bg "adr0294-c2-reconvergence" "ADR-0294 C2 re-convergence: graph_edges write + rabitq wiring + semantic-route honesty + batch cold rate-limit" check_adr0294_c2_reconvergence "adr0294"
+
+  collect_parallel "adr0294" \
+    "adr0294-c2-reconvergence|ADR-0294 C2 re-convergence: graph_edges write + rabitq wiring + semantic-route honesty + batch cold rate-limit"
+
+  unset ADR0255_SMOKE_SHARED_TEMP
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0294-c2-reconvergence" "$(_elapsed_ms "$_adr0294_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0295 — C3 Orchestration & Agents re-convergence (agent_execute MODEL_MAP
+# port · task-completed alias · wasm prompt NOTE + envelope shape). One
+# long-lived MCP stdio session asserts R1/R2/W1/W2 against the installed CLI —
+# the same bin chain Claude Code uses. NO paid LLM calls (resolver-level +
+# no-key paths). FAILs against the published packages (agent_execute resolves
+# claude-3-5-*; hooks_task-completed absent; wasm prompt bare-echo object).
+# ════════════════════════════════════════════════════════════════════
+_adr0295_start=$(_ns)
+if [[ -f "$adr0295_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
+  log "── ADR-0295: C3 re-convergence (MODEL_MAP · task-completed alias · wasm NOTE/envelope) ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+  export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+
+  run_check_bg "adr0295-c3-reconvergence" "ADR-0295 C3 re-convergence: agent_execute MODEL_MAP 4.x port + hooks_task-completed alias + wasm prompt NOTE + envelope shape" check_adr0295_c3_reconvergence "adr0295"
+
+  collect_parallel "adr0295" \
+    "adr0295-c3-reconvergence|ADR-0295 C3 re-convergence: agent_execute MODEL_MAP 4.x port + hooks_task-completed alias + wasm prompt NOTE + envelope shape"
+
+  unset ADR0255_SMOKE_SHARED_TEMP
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0295-c3-reconvergence" "$(_elapsed_ms "$_adr0295_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0296 — C4 Quality & Process re-convergence (doc/contract only). A
+# grep-contract check against the fork plugin source tree: F1 adr filename
+# contract (both surfaces canonical ADR-NNNN-<slug>.md; no no-prefix string)
+# + F2 spot-greps (adr-index namespace, testgen coverage-gaps --limit phantom,
+# jujutsu ref arg). No MCP smoke, no install — pure source grep. FAILs against
+# the unfixed plugin tree (no-prefix + 3-digit present).
+# ════════════════════════════════════════════════════════════════════
+_adr0296_start=$(_ns)
+if [[ -f "$adr0296_lib" ]]; then
+  log "── ADR-0296: C4 re-convergence (adr filename contract + doc-drift grep-contract) ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+
+  run_check_bg "adr0296-c4-reconvergence" "ADR-0296 C4 re-convergence: adr filename contract (ADR-NNNN-<slug>.md) + F2 doc-drift grep-contract" check_adr0296_c4_reconvergence "adr0296"
+
+  collect_parallel "adr0296" \
+    "adr0296-c4-reconvergence|ADR-0296 C4 re-convergence: adr filename contract (ADR-NNNN-<slug>.md) + F2 doc-drift grep-contract"
+
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0296-c4-reconvergence" "$(_elapsed_ms "$_adr0296_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0297 — C5 Security & Safety re-convergence (the program's first
+# security-consequence fix). Drives the installed cli: R1 aidefence ADR-118
+# detection both-ways across TWO surfaces (MCP aidefence_is_safe + CLI
+# `security defend --output json`), one probe per ported pattern family; W1
+# `security defend` default-text render exits 0 on a detected threat; R2 a
+# fresh-npx federation `init` (isolated cache, no agentic-flow) exits 0
+# (graceful local-only) with ed25519 key perms intact. Synthetic strings only;
+# no paid LLM calls. FAILs against the published artifacts (the two must-alert
+# strings pass as safe; federation init crashes; defend text crashes).
+# ════════════════════════════════════════════════════════════════════
+_adr0297_start=$(_ns)
+if [[ -f "$adr0297_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
+  log "── ADR-0297: C5 re-convergence (aidefence ADR-118 · federation unbreak · defend text render) ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+  export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+
+  run_check_bg "adr0297-c5-reconvergence" "ADR-0297 C5 re-convergence: aidefence ADR-118 detection refresh (both-ways, per family) + federation graceful loader + security defend text renderer" check_adr0297_c5_reconvergence "adr0297"
+
+  collect_parallel "adr0297" \
+    "adr0297-c5-reconvergence|ADR-0297 C5 re-convergence: aidefence ADR-118 detection refresh (both-ways, per family) + federation graceful loader + security defend text renderer"
+
+  unset ADR0255_SMOKE_SHARED_TEMP
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0297-c5-reconvergence" "$(_elapsed_ms "$_adr0297_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0298 — C6 Operations re-convergence. Drives the installed cli via an
+# MCP session + a LOCAL file:// page: R1 browser_session_record→end→replay
+# (ruvector arg-skew fix; LOUD-SKIPs when ruvector/agent-browser absent); R2
+# agentdb_circuit_status (key+method) + agentdb_rate_limit_status (real
+# token-bucket fields OR honest absence, never hollow); R3a in-process
+# browser-session memory round-trip (content-verified, single-digit seconds vs
+# the ~26-31× per-call CLI cold-boot). LOCAL targets only; no paid LLM calls.
+# FAILs against the published cli (step-1 arg error; hollow/absent stat tools;
+# 30s+ shell tax).
+# ════════════════════════════════════════════════════════════════════
+_adr0298_start=$(_ns)
+if [[ -f "$adr0298_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
+  log "── ADR-0298: C6 re-convergence (browser record chain · stat tools · in-process memory) ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+  export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+
+  run_check_bg "adr0298-c6-reconvergence" "ADR-0298 C6 re-convergence: browser_session_record ruvector arg-shapes + stat-tools repair (circuit key/method, rate_limit real-or-honest) + in-process browser-session memory" check_adr0298_c6_reconvergence "adr0298"
+
+  collect_parallel "adr0298" \
+    "adr0298-c6-reconvergence|ADR-0298 C6 re-convergence: browser_session_record ruvector arg-shapes + stat-tools repair (circuit key/method, rate_limit real-or-honest) + in-process browser-session memory"
+
+  unset ADR0255_SMOKE_SHARED_TEMP
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0298-c6-reconvergence" "$(_elapsed_ms "$_adr0298_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0299 — C7+C8 Verticals & Tooling re-convergence. F1 marketplace.json
+# description honesty (no overclaim pattern; the marketplace-integrity lint
+# now walks the file too); F2 market-data command surface prescribes
+# memory_store --namespace (never hierarchical-store+namespace); F3 the 3
+# neural-trader kernel smokes (CG parity · Ed25519 · PageRank) run green from
+# the fork tree (LOUD-SKIP crypto smokes when @noble/ed25519 unresolvable);
+# F4 transfer_plugin-official envelope discloses demo-fallback provenance
+# (source + fromDemo + plugins; plugin-search unchanged). FAILs against the
+# published cli (F4 bare-array envelope). No paid LLM calls.
+# ════════════════════════════════════════════════════════════════════
+_adr0299_start=$(_ns)
+if [[ -f "$adr0299_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
+  log "── ADR-0299: C7+C8 re-convergence (marketplace honesty · market contract · kernel smokes · transfer disclosure) ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+  export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+
+  run_check_bg "adr0299-c78-reconvergence" "ADR-0299 C7+C8 re-convergence: marketplace.json honesty + market-data command contract + neural-trader kernel smokes + transfer demo-fallback disclosure" check_adr0299_c78_reconvergence "adr0299"
+
+  collect_parallel "adr0299" \
+    "adr0299-c78-reconvergence|ADR-0299 C7+C8 re-convergence: marketplace.json honesty + market-data command contract + neural-trader kernel smokes + transfer demo-fallback disclosure"
+
+  unset ADR0255_SMOKE_SHARED_TEMP
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0299-c78-reconvergence" "$(_elapsed_ms "$_adr0299_start" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
 # Results

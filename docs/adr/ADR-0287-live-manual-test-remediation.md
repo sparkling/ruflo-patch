@@ -293,7 +293,10 @@ hook path** (file-based or MCP-connection):
 
 The MCP `hooks_intelligence_trajectory-start/-step/-end` tools (`hooks-tools.ts:2837/2877/2961`) are **not on a
 hook** either — they are tools the model would have to call deliberately, are marked `enabled:false`
-(`:1510-1512`), and even when driven do **not** write `episodes`, `sona_trajectories`, or `lastAdaptation`:
+(`:1510-1512`; **citation note 2026-06-04, ADR-0293/C1 review: these flags are `hooks_list` DISPLAY metadata
+describing which hooks auto-fire, NOT execution gates — the tools run when called, exactly as the live proof
+below shows; do not cite this flag as a disabled-tool regression, cf. retracted ADR-0291 F1**), and even when
+driven do **not** write `episodes`, `sona_trajectories`, or `lastAdaptation`:
 `trajectory-end` persists into the user-memory RVF `trajectories` namespace and updates only
 `.swarm/sona-patterns.json` (the `SonaOptimizer` JSON, `sona-optimizer.ts:902`). **Live empirical proof (this
 session, MCP connected, node 24):** before — `episodes=0`, `sona_trajectories=0`, `lastAdaptation=2026-04-03`.

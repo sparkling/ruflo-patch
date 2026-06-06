@@ -8,13 +8,14 @@
 //       await import('agentdb-onnx')  // codemod scopes to '@sparkleideas/agentdb-onnx' at publish
 //   The relocated agentdb-onnx now lives at forks/agentdb/packages/agentdb-onnx/.
 //
-// This unit test verifies the post-migration shape:
+// This unit test verified the post-migration shape (import literal, dep
+// declaration, export surface, chain order, loud tier logging). ADR-0288
+// Option C-prime (fork agentic-flow 8c5ec5d7, 2026-06-04) retired the
+// consumer — agentdb-service.ts and upgradeEmbeddingService are deleted — so
+// the consumer-side assertions flip to a retirement guard. What survives:
 //
-//   1. The ONNX npm-name import literal is in the fork TS source.
 //   2. agentdb-onnx is declared as a dep of agentic-flow (consumer dep).
 //   3. The agentdb-onnx source has ONNXEmbeddingService class export.
-//   4. Chain order: ONNX import precedes Enhanced import in the upgrade fn.
-//   5. Tier-failure logging is loud (ADR-0082 no-silent-fallback).
 
 import { describe, it } from 'node:test';
 import { strict as assert } from 'node:assert';
@@ -27,19 +28,13 @@ const ONNX_SRC =
 const AGENTIC_PKG_JSON =
   '/Users/henrik/source/forks/agentic-flow/agentic-flow/package.json';
 
-// Post-ADR-0161 expected import literal (codemod renames bare 'agentdb-onnx'
-// to '@sparkleideas/agentdb-onnx' at publish, so we accept either form).
-const ONNX_IMPORT_RE = /['"](?:@sparkleideas\/)?agentdb-onnx['"]/;
-const ENHANCED_IMPORT_RE = /EnhancedEmbeddingService/;
-
-describe('ADR-0069 F3 §3 (A3): ONNX import is wired (post-ADR-0161 npm-name shape)', () => {
-  it('fork TS source contains the agentdb-onnx import literal', () => {
-    assert.ok(existsSync(FORK_SRC), `fork source missing: ${FORK_SRC}`);
-    const ts = readFileSync(FORK_SRC, 'utf8');
-    assert.match(
-      ts,
-      ONNX_IMPORT_RE,
-      `fork TS source must contain dynamic import of (@sparkleideas/)?agentdb-onnx — post-ADR-0161 step 8 the workspace-relative path was replaced with the npm name.`,
+describe('ADR-0069 F3 §3 (A3): ONNX package surface (consumer retired per ADR-0288)', () => {
+  it('agentdb-service.ts stays deleted (ADR-0288 Option C-prime)', () => {
+    assert.ok(
+      !existsSync(FORK_SRC),
+      `${FORK_SRC} must stay deleted — the AgentDBService consumer was retired by ` +
+        `ADR-0288 (fork 8c5ec5d7). If re-introduced, restore the import-literal / ` +
+        `chain-order / loud-logging assertions this guard replaced (git log this file).`,
     );
   });
 
@@ -65,28 +60,4 @@ describe('ADR-0069 F3 §3 (A3): ONNX import is wired (post-ADR-0161 npm-name sha
     );
   });
 
-  it('chain order in fork TS: ONNX import precedes Enhanced reference inside upgradeEmbeddingService()', () => {
-    const ts = readFileSync(FORK_SRC, 'utf8');
-    const fnStart = ts.search(/private\s+async\s+upgradeEmbeddingService\s*\(/);
-    assert.ok(fnStart >= 0, 'upgradeEmbeddingService not found');
-    // 12000-char window covers the ONNX + Enhanced + Basic chain
-    const fnWindow = ts.slice(fnStart, Math.min(fnStart + 12000, ts.length));
-    const onnxIdx = fnWindow.search(ONNX_IMPORT_RE);
-    const enhancedIdx = fnWindow.search(ENHANCED_IMPORT_RE);
-    assert.ok(onnxIdx >= 0, 'ONNX import not found in upgradeEmbeddingService window');
-    assert.ok(enhancedIdx >= 0, 'EnhancedEmbeddingService not found in upgradeEmbeddingService window');
-    assert.ok(
-      onnxIdx < enhancedIdx,
-      `chain ORDER wrong: ONNX import at offset ${onnxIdx}, Enhanced at offset ${enhancedIdx}. ADR-0069 F3 §3 requires ONNX → Enhanced → Basic.`,
-    );
-  });
-
-  it('compiled dist still logs loudly on tier failure (ADR-0082)', () => {
-    const ts = readFileSync(FORK_SRC, 'utf8');
-    const hasLoudLog = /console\.(warn|error)[^;]*ONNX/.test(ts);
-    assert.ok(
-      hasLoudLog,
-      `fork TS has no console.warn/error referencing ONNX — ADR-0082 silent-fallback violation.`,
-    );
-  });
 });

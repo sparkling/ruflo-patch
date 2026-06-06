@@ -37,24 +37,6 @@ function read(path) {
   return readFileSync(path, 'utf-8');
 }
 
-// ============================================================================
-// Known intercept-wrapped controllers in AgentDBService (ADR-0076 Phase 4)
-// ============================================================================
-//
-// These 6 controllers are the ones ADR-0076 Phase 4 explicitly wrapped to
-// prevent cache divergence with ControllerRegistry. Adding more is welcome
-// and expected — when that happens, append here so the regression guard
-// stays tight.
-
-const EXPECTED_AGENTDB_SERVICE_WRAPS = [
-  'reflexion',
-  'skills',
-  'reasoningBank',
-  'causalGraph',
-  'causalRecall',
-  'learningSystem',
-];
-
 // Minimum number of getOrCreate call sites expected in ControllerRegistry.
 // Today's count is 46 (verified 2026-04-15). Allowing some slack for
 // intentional reorganization, but a sudden drop below this threshold means
@@ -90,50 +72,19 @@ describe('ADR-0089 T1: controller-intercept module exists and exports getOrCreat
   });
 });
 
-describe('ADR-0089 T2: AgentDBService wraps controller instantiations', () => {
-  const source = read(AGENTDB_SERVICE_PATH);
-
-  it('agentdb-service.ts exists in upstream fork', () => {
-    assert.ok(source, `${AGENTDB_SERVICE_PATH} must exist`);
-  });
-
-  it('imports getOrCreate from @claude-flow/memory', () => {
-    // The import style is dynamic (`await import('@claude-flow/memory')`)
-    // because it runs inside an async initialize() and @claude-flow/memory
-    // may not be available in all environments.
+describe('ADR-0089 T2 (retargeted): AgentDBService retired — cli memory side is the sole entrypoint (ADR-0288)', () => {
+  // ADR-0288 Option C-prime (fork agentic-flow 8c5ec5d7, 2026-06-04) deleted
+  // the AgentDBService island; the second intercept entrypoint no longer
+  // exists. T1/T3 keep guarding the surviving cli memory side; this guard
+  // locks the retirement so a silent re-introduction (which would re-split
+  // the singleton pool) is caught.
+  it('agentdb-service.ts stays deleted (ADR-0288)', () => {
     assert.ok(
-      source.includes("await import(/* webpackIgnore: true */ '@claude-flow/memory')") ||
-        source.includes("from '@claude-flow/memory'"),
-      'AgentDBService must import @claude-flow/memory to get getOrCreate',
-    );
-    assert.ok(
-      source.includes('intercept.getOrCreate'),
-      'AgentDBService must read getOrCreate from the intercept module',
-    );
-  });
-
-  // For each known-wrapped controller, assert that the file contains the
-  // exact `getOrCreate('<name>', () => ...)` pattern. This is the tightest
-  // regression guard — it catches renames, removals, and refactors that
-  // defeat the wrap.
-  for (const name of EXPECTED_AGENTDB_SERVICE_WRAPS) {
-    it(`wraps controller '${name}' in getOrCreate`, () => {
-      const pattern = new RegExp(`getOrCreate\\(['"\`]${name}['"\`]`);
-      assert.ok(
-        pattern.test(source),
-        `AgentDBService must call getOrCreate('${name}', ...) — found none. ` +
-          `Either a refactor removed the wrap (regression) or this controller ` +
-          `was renamed (update EXPECTED_AGENTDB_SERVICE_WRAPS in this test).`,
-      );
-    });
-  }
-
-  it('has at least 6 getOrCreate call sites (current baseline)', () => {
-    const matches = source.match(/getOrCreate\(/g) || [];
-    assert.ok(
-      matches.length >= EXPECTED_AGENTDB_SERVICE_WRAPS.length,
-      `Expected >= ${EXPECTED_AGENTDB_SERVICE_WRAPS.length} getOrCreate calls in agentdb-service.ts, ` +
-        `found ${matches.length}. The intercept pattern is being dismantled.`,
+      !existsSync(AGENTDB_SERVICE_PATH),
+      `${AGENTDB_SERVICE_PATH} must stay deleted per ADR-0288. If AgentDBService is ` +
+        `deliberately re-introduced, restore the T2 wrap assertions this guard ` +
+        `replaced (git log this file) — an unwrapped second entrypoint re-splits ` +
+        `the controller pool.`,
     );
   });
 });
@@ -162,26 +113,20 @@ describe('ADR-0089 T3: ControllerRegistry wraps factory switch via getOrCreate',
   });
 });
 
-describe('ADR-0089 T4: both entrypoints import from the SAME intercept module', () => {
-  const svc = read(AGENTDB_SERVICE_PATH);
+describe('ADR-0089 T4 (retargeted): the sole entrypoint imports from the intercept module', () => {
   const reg = read(CONTROLLER_REGISTRY_PATH);
 
-  it('AgentDBService and ControllerRegistry import from the same source', () => {
-    assert.ok(svc, 'agentdb-service.ts must exist');
+  it('ControllerRegistry imports from the sibling intercept module', () => {
     assert.ok(reg, 'controller-registry.ts must exist');
 
-    // ControllerRegistry imports from './controller-intercept.js' (sibling file
-    // in the same package). AgentDBService imports from '@claude-flow/memory'
-    // which re-exports the same symbol. Both paths resolve to the same
-    // module at runtime — if one diverges (e.g., a local copy of getOrCreate
-    // gets introduced), the pool splits and the pattern breaks silently.
+    // Pre-ADR-0288 this test asserted BOTH entrypoints (ControllerRegistry +
+    // AgentDBService) resolved to the same intercept module. With the island
+    // retired (8c5ec5d7), ControllerRegistry is the sole entrypoint — if a
+    // local copy of getOrCreate gets introduced, the pool splits and the
+    // pattern breaks silently.
     assert.ok(
       reg.includes("from './controller-intercept"),
       'ControllerRegistry must import from ./controller-intercept (sibling)',
-    );
-    assert.ok(
-      svc.includes("'@claude-flow/memory'") || svc.includes('"@claude-flow/memory"'),
-      'AgentDBService must import from @claude-flow/memory (which re-exports controller-intercept)',
     );
   });
 });

@@ -235,50 +235,23 @@ describe('Phase 3: storage exports in index.ts', () => {
 });
 
 // ===========================================================================
-// Phase 4: Controller Bridge
+// Phase 4 → Phase 5: Controller Bridge retired (ADR-0288)
 // ===========================================================================
+//
+// Phase 4 introduced controller-bridge.ts as the legacy AgentDBService path;
+// its own header declared "Phase 5 will remove this bridge entirely".
+// ADR-0288 Option C-prime (fork agentic-flow 8c5ec5d7, 2026-06-04) executed
+// exactly that. The existence/export assertions flip to an absence guard.
 
-describe('Phase 4: controller-bridge.ts exists', () => {
+describe('Phase 4→5: controller-bridge.ts retired (ADR-0288)', () => {
   const bridgePath = join(AGENTIC_SRC, 'controller-bridge.ts');
 
-  it('controller-bridge.ts exists', () => {
-    assert.ok(existsSync(bridgePath), 'controller-bridge.ts must exist');
-  });
-
-  it('exports setRegistry function', () => {
-    if (!existsSync(bridgePath)) return;
-    const src = readFileSync(bridgePath, 'utf-8');
+  it('controller-bridge.ts stays deleted', () => {
     assert.ok(
-      src.includes('setRegistry'),
-      'must export setRegistry',
-    );
-  });
-
-  it('exports getController function', () => {
-    if (!existsSync(bridgePath)) return;
-    const src = readFileSync(bridgePath, 'utf-8');
-    assert.ok(
-      src.includes('getController'),
-      'must export getController',
-    );
-  });
-
-  it('delegates to ControllerRegistry', () => {
-    if (!existsSync(bridgePath)) return;
-    const src = readFileSync(bridgePath, 'utf-8');
-    assert.ok(
-      src.includes('ControllerRegistry') || src.includes('registry.get'),
-      'must delegate to ControllerRegistry',
-    );
-  });
-
-  it('is under 200 lines', () => {
-    if (!existsSync(bridgePath)) return;
-    const src = readFileSync(bridgePath, 'utf-8');
-    const lineCount = src.split('\n').length;
-    assert.ok(
-      lineCount <= 200,
-      `controller-bridge.ts must be under 200 lines (got ${lineCount})`,
+      !existsSync(bridgePath),
+      `controller-bridge.ts must stay deleted per ADR-0288 (its own "Phase 5 will ` +
+        `remove this bridge entirely" note). If re-introduced, restore the export ` +
+        `assertions this guard replaced (git log this file).`,
     );
   });
 });

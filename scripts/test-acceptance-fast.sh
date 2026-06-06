@@ -527,6 +527,92 @@ if [[ "$_FAST_RUN_GROUPS" == *"adrmatrix"* || "$_FAST_RUN_GROUPS" == "all" ]]; t
   fi
 fi
 
+if [[ "$_FAST_RUN_GROUPS" == *"adr0290"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0290-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0290-checks.sh"
+    echo "── ADR-0290 (learning capture: hook → episode → learner → action-values) ──"
+    export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+    echo "[fast] adr0290 reusing ACCEPT_TEMP: ${ACCEPT_TEMP}"
+    _fast_run "adr0290-learning-loop" check_adr0290_learning_loop
+    unset ADR0255_SMOKE_SHARED_TEMP
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0293"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0293-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0293-checks.sh"
+    echo "── ADR-0293 (C1 re-convergence: ruvllm wasm · hooks_transfer · neural embedder/confidence · neural_compress) ──"
+    export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+    echo "[fast] adr0293 reusing ACCEPT_TEMP: ${ACCEPT_TEMP}"
+    _fast_run "adr0293-c1-reconvergence" check_adr0293_c1_reconvergence
+    unset ADR0255_SMOKE_SHARED_TEMP
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0294"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0294-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0294-checks.sh"
+    echo "── ADR-0294 (C2 re-convergence: graph_edges · rabitq · semantic-route · batch) ──"
+    export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+    echo "[fast] adr0294 reusing ACCEPT_TEMP: ${ACCEPT_TEMP}"
+    _fast_run "adr0294-c2-reconvergence" check_adr0294_c2_reconvergence
+    unset ADR0255_SMOKE_SHARED_TEMP
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0295"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0295-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0295-checks.sh"
+    echo "── ADR-0295 (C3 re-convergence: MODEL_MAP · task-completed alias · wasm NOTE/envelope) ──"
+    export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+    echo "[fast] adr0295 reusing ACCEPT_TEMP: ${ACCEPT_TEMP}"
+    _fast_run "adr0295-c3-reconvergence" check_adr0295_c3_reconvergence
+    unset ADR0255_SMOKE_SHARED_TEMP
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0296"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0296-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0296-checks.sh"
+    echo "── ADR-0296 (C4 re-convergence: adr filename contract + doc-drift grep-contract) ──"
+    # Grep-contract against the fork plugin tree — no ACCEPT_TEMP / install needed.
+    _fast_run "adr0296-c4-reconvergence" check_adr0296_c4_reconvergence
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0297"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0297-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0297-checks.sh"
+    echo "── ADR-0297 (C5 re-convergence: aidefence ADR-118 · federation unbreak · defend text render) ──"
+    export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+    echo "[fast] adr0297 reusing ACCEPT_TEMP: ${ACCEPT_TEMP}"
+    _fast_run "adr0297-c5-reconvergence" check_adr0297_c5_reconvergence
+    unset ADR0255_SMOKE_SHARED_TEMP
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0298"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0298-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0298-checks.sh"
+    echo "── ADR-0298 (C6 re-convergence: browser record chain · stat tools · in-process memory) ──"
+    export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+    echo "[fast] adr0298 reusing ACCEPT_TEMP: ${ACCEPT_TEMP}"
+    _fast_run "adr0298-c6-reconvergence" check_adr0298_c6_reconvergence
+    unset ADR0255_SMOKE_SHARED_TEMP
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0299"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0299-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0299-checks.sh"
+    echo "── ADR-0299 (C7+C8 re-convergence: marketplace honesty · market contract · kernel smokes · transfer disclosure) ──"
+    export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+    echo "[fast] adr0299 reusing ACCEPT_TEMP: ${ACCEPT_TEMP}"
+    _fast_run "adr0299-c78-reconvergence" check_adr0299_c78_reconvergence
+    unset ADR0255_SMOKE_SHARED_TEMP
+  fi
+fi
+
 if [[ "$_FAST_RUN_GROUPS" == *"adr0176qk"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
   if [[ -f "$PROJECT_DIR/lib/acceptance-adr0176-query-key.sh" ]]; then
     source "$PROJECT_DIR/lib/acceptance-adr0176-query-key.sh"

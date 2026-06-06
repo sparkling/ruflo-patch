@@ -75,6 +75,13 @@ export const UNSCOPED_MAP = {
   // ruvector- prefix; preflight-discover reads UNSCOPED_MAP as the in-scope
   // signal, so register the mapping here.
   'ruvllm-wasm': '@sparkleideas/ruvector-ruvllm-wasm',
+  // ADR-0294 R3: wasm-pack output for
+  // `forks/ruvector/crates/ruvector-rabitq-wasm/` → npm/packages/rabitq-wasm/.
+  // The --target nodejs build (scripts/wasm-rebuild.sh) emits the unscoped
+  // name `ruvector-rabitq-wasm` (the crate name), so map it to the published
+  // mirror name the cli's rabitq-index.ts imports (@sparkleideas/ruvector-rabitq-wasm).
+  // LEVELS lists it under level 0 alongside the other ruvector-*-wasm leaves.
+  'ruvector-rabitq-wasm': '@sparkleideas/ruvector-rabitq-wasm',
 };
 
 // -- File filters -------------------------------------------------------------

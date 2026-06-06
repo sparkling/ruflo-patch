@@ -1,0 +1,79 @@
+# ADR-0298 — CI stanza for the C6 Operations re-convergence smoke.
+#
+# Per `feedback-always-wire-tests-into-cicd`: the C6 re-convergence smoke is
+# wired into the standard runner (scripts/test-acceptance.sh,
+# adr0298-c6-reconvergence check) AND here. LOCAL file:// targets ONLY — no
+# external sites, no paid LLM calls. The smoke drives the installed cli:
+#   R1 browser_session_record → end → replay against a LOCAL file:// page —
+#      the 4 ruvector calls re-shaped to ruvector@0.2.25 (`rvf create <path>
+#      --dimension 768` + trajectory-begin/step/end via `-c/--context`, `-a/-r`,
+#      `--success/--quality`). The published cli fails at step-1 (`--kind`
+#      invalid / `-d` missing). LOUD-SKIPs when ruvector/agent-browser is absent.
+#   R2 agentdb_circuit_status (registry key circuitBreakerController→circuitBreaker
+#      AND getStats→getStatus → non-empty real breaker state) +
+#      agentdb_rate_limit_status (real token-bucket fields OR an honest
+#      capability-absent envelope — never a hollow {success:true}).
+#   R3a browser-session memory ops are in-process (memory_store(browser-templates)
+#      → browser_template_apply round-trip content-verified in single-digit
+#      seconds), not the ~26-31× per-call CLI cold-boot shell-out.
+# FAILs against the published cli (step-1 arg error; hollow/absent stat tools;
+# 30s+ shell tax). Per `feedback-no-tail-tests`: the smoke writes its log to
+# SMOKE_LOG_DIR.
+
+name: ADR-0298 C6 re-convergence
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/browser-session-tools.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts'
+      - 'scripts/smoke-adr0298-c6-reconvergence.mjs'
+      - 'lib/acceptance-adr0298-checks.sh'
+  pull_request:
+    paths:
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/browser-session-tools.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts'
+      - 'scripts/smoke-adr0298-c6-reconvergence.mjs'
+      - 'lib/acceptance-adr0298-checks.sh'
+
+env:
+  REGISTRY: http://localhost:4873
+  CLI_PKG: '@sparkleideas/ruflo'
+  SMOKE_LOG_DIR: ${{ github.workspace }}/smoke-logs
+
+jobs:
+  c6-reconvergence:
+    name: C6 re-convergence (ADR-0298)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          # node-24: the project needs native better-sqlite3 for the installed
+          # cli + MCP session that R1/R2/R3a drive; the daemon-node-version trap
+          # (project-mcp-daemon-runs-sqljs-fallback) is the cautionary tale.
+          node-version: '24'
+
+      - name: Start local Verdaccio + publish fork packages
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/ruflo-publish.sh 2>&1 | tee "${SMOKE_LOG_DIR}/publish.log"
+
+      - name: Run ADR-0298 C6 re-convergence smoke via fast runner
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/test-acceptance-fast.sh adr0298 2>&1 | tee "${SMOKE_LOG_DIR}/adr0298.log"
+
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs-c6-reconvergence
+          path: ${{ env.SMOKE_LOG_DIR }}

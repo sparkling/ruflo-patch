@@ -1,0 +1,79 @@
+# ADR-0293 — CI stanza for the C1 Learning & Intelligence re-convergence smoke.
+#
+# Per `feedback-always-wire-tests-into-cicd`: the C1 re-convergence smoke is
+# wired into the standard runner (scripts/test-acceptance.sh,
+# adr0293-c1-reconvergence check) AND here. The smoke drives ONE long-lived MCP
+# stdio JSON-RPC session against an installed CLI (`ruflo mcp start`) and
+# asserts the four fork-regression fixes:
+#   D1 ruvllm WASM init skew — create→add→route returns a real score; status
+#      reports wasm loaded (vendored ruvllm-wasm 2.0.2-patch.93 auto-instantiate
+#      + init() shape; wrapper no longer calls the absent initSync).
+#   D2 hooks_transfer no longer fabricates demo-data — nonexistent source ⇒
+#      success:false/transferred:0/no marker; real source ⇒ success:true.
+#   D3 neural_* wired to the real mpnet embedder + confidence@similarity:0 fix.
+#   D4 neural_compress documents its quantize capability boundary (ADR-0086).
+# FAILs against the published packages (regressions present). Per
+# `feedback-no-tail-tests`: the smoke writes its log to SMOKE_LOG_DIR.
+
+name: ADR-0293 C1 re-convergence
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'forks/ruflo/v3/@claude-flow/cli/src/ruvector/ruvllm-wasm.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/ruvllm-tools.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/neural-tools.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/embeddings-tools.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts'
+      - 'scripts/smoke-adr0293-c1-reconvergence.mjs'
+      - 'lib/acceptance-adr0293-checks.sh'
+  pull_request:
+    paths:
+      - 'forks/ruflo/v3/@claude-flow/cli/src/ruvector/ruvllm-wasm.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/neural-tools.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts'
+      - 'scripts/smoke-adr0293-c1-reconvergence.mjs'
+      - 'lib/acceptance-adr0293-checks.sh'
+
+env:
+  REGISTRY: http://localhost:4873
+  CLI_PKG: '@sparkleideas/ruflo'
+  SMOKE_LOG_DIR: ${{ github.workspace }}/smoke-logs
+
+jobs:
+  c1-reconvergence:
+    name: C1 re-convergence (ADR-0293)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          # node-24: the project needs native better-sqlite3 (ABI memory; the
+          # daemon-node-version trap project-mcp-daemon-runs-sqljs-fallback is
+          # the cautionary tale). ADR-0294 N8.
+          node-version: '24'
+
+      - name: Start local Verdaccio + publish fork packages
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/ruflo-publish.sh 2>&1 | tee "${SMOKE_LOG_DIR}/publish.log"
+
+      - name: Run ADR-0293 C1 re-convergence smoke via fast runner
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/test-acceptance-fast.sh adr0293 2>&1 | tee "${SMOKE_LOG_DIR}/adr0293.log"
+
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs-c1-reconvergence
+          path: ${{ env.SMOKE_LOG_DIR }}

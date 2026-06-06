@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-06-03
 tags: [learning, hooks, capture, sona, autopilot, upstream-alignment, routing]
 supersedes: []
@@ -149,3 +149,73 @@ This ADR **supersedes only ADR-0287 §F10's *disposition*** (the "its own captur
 * **Explicitly NOT a dependency:** **ADR-0289** (PII) — it governs only the optional free-text capture (Phase 2);
   Phase-1 learning is PII-free and proceeds without it.
 * **Evidence:** swarm `docs/research/f10/01-04` (upstream ADRs / upstream impl / fork impl / project ADRs).
+
+## Implementation (2026-06-04 — Phase 1 SHIPPED)
+
+**Where it landed:** cli fork `6123c14cd` (hooks.ts / hooks-tools.ts / archivist-init.ts / helpers-generator.ts),
+agentdb fork `ae38e2e` (ReflexionMemory / capabilities / reflexion-store), ruflo-patch (live
+`.claude/helpers/hook-handler.mjs`, `scripts/smoke-adr0290-learning-loop.mjs`,
+`lib/acceptance-adr0290-checks.sh`, `test-acceptance*.sh` adr0290 check, `.github/workflows/v3-ci-learning-capture.yml`).
+
+**Live-payload ground truth (captured 2026-06-04, Claude Code 2.1.162):** PostToolUse fires for the subagent
+tool with `tool_name: "Agent"` (the generated `Task` matcher still matches), `tool_input.{description,
+subagent_type}` present, `tool_response.status: "completed"`, plus `session_id`/`tool_use_id`. Success is
+derived from `tool_response` (`success`/`error|is_error`/`status`); an underivable outcome **skips the capture**
+(no fabrication) — same posture as the F-02-009 feedback fix.
+
+**Four corrections to this ADR's plan, discovered against live code during implementation:**
+
+1. **`--quality` was already forwarded** by `postTaskCommand` — the real gap was `--task` (and `--session`)
+   missing entirely. Both added.
+2. **Raw-task forwarding would have been wrong, not just unnecessary.** `deriveTaskType` tier 2 lets
+   `agentType` hijack the derivation: forwarding `task` + `agent` to the handler yields
+   `task_type == slug(agent)`, which (a) diverges from the `hooks_pre-task` read side (description-only →
+   skill retrieval silently misses) and (b) collapses `task_type` onto the `action` dimension, degenerating
+   `E[reward | action, task_type]` uplift to ≡0. Fix: **the CLI is the metadata-only boundary** — it derives
+   `task_type` from the description ONLY and forwards the derived label (tier 1); raw text never reaches the
+   handler. Side benefit: the `routing-outcomes.json` raw-text sink (gated on `params.task`) stays dormant on
+   the hook path by construction.
+3. **`episodes.task` cannot be omitted-empty** (archivist `taskWellFormed` requires non-empty) and NightlyLearner's
+   causal pair-discovery / propensity math groups by exact task string — so the metadata-only episode's task
+   label is the **derived task_type slug** (type-level causal grouping), not the per-call taskId (degenerate
+   unique strings) and not `''`.
+4. **`storeEpisode` embedded unconditionally** — violating constraint (4) (ADR-0287 F10: no per-task mpnet on
+   the capture path), and the embed input would be a meaningless type label anyway. New explicit
+   `skipEmbedding` (Episode → archivist payload `skip_embedding` → writer), set by `hooks_post-task` when the
+   call carries no semantic free text: the durable SQLite row (all SQL-side learning consumers' input) is
+   written; embedder + vector/graph/learning-backend index writes are skipped.
+
+**One driver correction:** "No RVF-flock exposure" holds for the *episode* write (SQLite carve-out) but NOT for
+the full `hooks_post-task` handler — its `routeFeedbackOp` guaranteed-persistence block RVF-stores
+`feedback-<taskId>` (flock taken per capture). Safe post-ADR-0284 (single-flock collapse); content is
+structured-metadata-only either way. Recorded for honesty, no behavior change.
+
+**Mechanism shipped:** the live/generated `hook-handler.mjs post-task` spawns a **detached fire-and-forget**
+`npx -y @sparkleideas/cli@latest hooks post-task --task-id <tool_use_id> --success <derived> --agent
+<subagent_type> --task "<description>" --session <session_id>` (child output →
+`.claude-flow/metrics/post-task-capture.log`). Escape hatches: `RUFLO_DISABLE_TASK_CAPTURE=1` (default ON per
+`feedback-no-dormant-off-by-default-flags`), `RUFLO_TASK_CAPTURE_CMD=<bin>` (test isolation / npx-cache-race
+avoidance — the smoke pins the installed bin). Per-task cost: one subprocess spawn on the hook (≈ms); the
+capture itself runs off-path (cold registry init, no embedding model load thanks to `skipEmbedding`).
+
+**Consumer chain verified:** worker-daemon `learn` row (enabled, hourly, offset 12m) → `routeLearningOp('run')`
+→ NightlyLearner (`computeActionValues` minSamples=1) → `persistActionValues` → `.swarm/action-values.json` →
+`intelligence.ts` + `model-router.ts` blends (ADR-0280, self-inert until data — now fed). Caveat: the worker
+daemon anchors at the cwd of the session that started it (one daemon per project dir); `daemon trigger -w learn`
+drives the same worker code path deterministically.
+
+**Confirmation (item 7) honored:** `smoke-adr0290-learning-loop.mjs` drives a real PostToolUse(Task) payload
+through the **file-based hook** (never a manual MCP call) and asserts the metadata-only episode row
+(task_type/action/reward/session, PII canaries absent, free-text columns NULL, zero `episode_embeddings`), the
+no-fabrication path, and the learner run populating `action-values.json`. Wired into `test-acceptance.sh`
+(adr0290 group), `test-acceptance-fast.sh adr0290`, and `v3-ci-learning-capture.yml`. **Gate verified both
+ways (2026-06-04):** vs pre-fix cli patch.408 — exit 1, 5 FAILs (no generated-hook capture, no dispatch, no
+episode, no action-values); vs published post-fix cli patch.415 / agentdb patch.427 — **17/17 PASS**, ending in
+`action-values.json` row `(taskType=authentication, action=<smoke agent>, samples=1, meanReward=0.6)` — the
+frozen learning loop demonstrably unfrozen against installed packages.
+
+**ADR-0268 flywheel surfaces regression-checked:** its smoke's `-a <tag>` agentType-tier derivation, skill
+consolidation (SQL-only grouping, no `episode_embeddings` dependency), and promotion assertions are unaffected.
+
+**Phase 2 remains open** (separate go-ahead): post-edit/post-command capture (upstream ADR-075 store-ownership
+first), SONA `lastAdaptation` via `recordTrajectory`, redacted free-text capture gated on ADR-0289.

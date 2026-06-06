@@ -1,0 +1,78 @@
+# ADR-0290 — CI stanza for the automatic-learning-capture smoke.
+#
+# Per `feedback-always-wire-tests-into-cicd`: the learning-loop smoke is wired
+# into the standard runner (scripts/test-acceptance.sh, adr0290-learning-loop
+# check) AND here. The smoke drives a real PostToolUse(Task) payload through
+# the FILE-BASED hook (the init-generated hook-handler.mjs — never a manual
+# MCP call, the ADR-0290 Confirmation requirement) against an installed CLI:
+# hook → detached `hooks post-task` capture → metadata-only `episodes` row
+# (task_type derived from the description, action = subagent_type, reward 0.6
+# skeptic default; no raw free text / PII canaries / episode_embeddings) →
+# `daemon trigger -w learn` → NightlyLearner → .swarm/action-values.json.
+# Per `feedback-no-tail-tests`: the smoke writes its log to SMOKE_LOG_DIR.
+
+name: ADR-0290 automatic learning capture
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'forks/agentdb/src/controllers/ReflexionMemory.ts'
+      - 'forks/agentdb/src/controllers/NightlyLearner.ts'
+      - 'forks/agentdb/src/archivist/capabilities.ts'
+      - 'forks/agentdb/src/archivist/handlers/agentdb/reflexion-store.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/commands/hooks.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/learning/derive-task-type.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/learning/action-values.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/memory/archivist-init.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/init/helpers-generator.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/services/worker-daemon.ts'
+      - 'scripts/smoke-adr0290-learning-loop.mjs'
+      - 'lib/acceptance-adr0290-checks.sh'
+  pull_request:
+    paths:
+      - 'forks/agentdb/src/controllers/ReflexionMemory.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/commands/hooks.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/init/helpers-generator.ts'
+      - 'scripts/smoke-adr0290-learning-loop.mjs'
+      - 'lib/acceptance-adr0290-checks.sh'
+
+env:
+  REGISTRY: http://localhost:4873
+  CLI_PKG: '@sparkleideas/ruflo'
+  SMOKE_LOG_DIR: ${{ github.workspace }}/smoke-logs
+
+jobs:
+  learning-capture-loop:
+    name: learning capture loop (ADR-0290)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Start local Verdaccio + publish fork packages
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/ruflo-publish.sh 2>&1 | tee "${SMOKE_LOG_DIR}/publish.log"
+
+      - name: Run ADR-0290 learning-loop smoke via fast runner
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/test-acceptance-fast.sh adr0290 2>&1 | tee "${SMOKE_LOG_DIR}/adr0290.log"
+
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs-learning-capture
+          path: ${{ env.SMOKE_LOG_DIR }}

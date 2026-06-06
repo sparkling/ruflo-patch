@@ -253,11 +253,11 @@ describe('F1: ONNX > Enhanced > basic fallback chain (shape)', () => {
 });
 
 // ============================================================================
-// Group 2b: Reality pin — verify the fork source actually implements the
-// ONNX → Enhanced → Basic chain shape that Group 2 describes. Source-level
-// inspection is used because the fork is TypeScript and importing it from a
-// node --test .mjs harness would require a TS loader we don't run here.
-// (ADR-0069 F3 §3 closure — 2026-04-21)
+// Group 2b: Reality pin — originally verified the fork source implemented the
+// ONNX → Enhanced → Basic chain shape that Group 2 describes. ADR-0288
+// retired AgentDBService (fork 8c5ec5d7, 2026-06-04), so the pin is now an
+// absence guard locking the retirement.
+// (ADR-0069 F3 §3 closure — 2026-04-21; retargeted 2026-06-06)
 // ============================================================================
 
 import { readFileSync, existsSync } from 'node:fs';
@@ -265,129 +265,29 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
 const __thisDir = dirname(fileURLToPath(import.meta.url));
+// Fork dirs from config/upstream-branches.json (single source of truth) —
+// a relative ../../../ escape resolves wrongly under .claude/worktrees/.
+const _branches = JSON.parse(
+  readFileSync(resolve(__thisDir, '../../config/upstream-branches.json'), 'utf8'),
+);
 const AGENTDB_SERVICE_TS = resolve(
-  __thisDir,
-  '../../../forks/agentic-flow/agentic-flow/src/services/agentdb-service.ts'
+  _branches['agentic-flow'].dir,
+  'agentic-flow/src/services/agentdb-service.ts'
 );
 
-// Slice out the body of upgradeEmbeddingService so we can assert order of
-// tiers without false positives from unrelated references elsewhere in the
-// file (controllers also mention EnhancedEmbeddingService in passing).
-function extractUpgradeFnBody(src) {
-  const start = src.search(/private\s+async\s+upgradeEmbeddingService\s*\(/);
-  if (start < 0) return null;
-  // Find the opening brace after the signature
-  const braceIdx = src.indexOf('{', start);
-  if (braceIdx < 0) return null;
-  // Walk balanced braces to find the end of the function body
-  let depth = 0;
-  for (let i = braceIdx; i < src.length; i++) {
-    const c = src[i];
-    if (c === '{') depth++;
-    else if (c === '}') {
-      depth--;
-      if (depth === 0) return src.slice(braceIdx, i + 1);
-    }
-  }
-  return null;
-}
+// ADR-0288 Option C-prime (fork agentic-flow 8c5ec5d7, 2026-06-04) retired
+// AgentDBService — upgradeEmbeddingService and its tier chain went with it.
+// The shape tests above (Group 2) keep documenting the pattern; the reality
+// pin flips to a retirement guard so a re-introduction is caught loudly.
+describe('F1 reality: AgentDBService retired (ADR-0288) — reality pin is now an absence guard', () => {
 
-describe('F1 reality: upgradeEmbeddingService shipped shape (ONNX -> Enhanced -> Basic)', () => {
-
-  it('fork source file exists and is readable', () => {
+  it('agentdb-service.ts stays deleted (ADR-0288 Option C-prime)', () => {
     assert.ok(
-      existsSync(AGENTDB_SERVICE_TS),
-      `expected fork source at ${AGENTDB_SERVICE_TS} — adjust path if the fork layout changed`
+      !existsSync(AGENTDB_SERVICE_TS),
+      `${AGENTDB_SERVICE_TS} must stay deleted — the AgentDBService island was retired by ` +
+        `ADR-0288 (fork commit 8c5ec5d7). If it has been re-introduced, restore the ` +
+        `upgradeEmbeddingService reality pins this guard replaced (git log this file).`
     );
-  });
-
-  it('defines a private upgradeEmbeddingService() method', () => {
-    const src = readFileSync(AGENTDB_SERVICE_TS, 'utf8');
-    assert.match(
-      src,
-      /private\s+async\s+upgradeEmbeddingService\s*\(/,
-      'upgradeEmbeddingService must be a private async method in the fork'
-    );
-  });
-
-  it('imports ONNXEmbeddingService as tier 1', () => {
-    const src = readFileSync(AGENTDB_SERVICE_TS, 'utf8');
-    const body = extractUpgradeFnBody(src);
-    assert.ok(body, 'could not extract upgradeEmbeddingService function body');
-    assert.match(
-      body,
-      /ONNXEmbeddingService/,
-      'upgradeEmbeddingService must reference ONNXEmbeddingService (tier 1)'
-    );
-    // Post-ADR-0161 step 8: agentdb-onnx is consumed via npm name (codemod
-    // rewrites bare 'agentdb-onnx' → '@sparkleideas/agentdb-onnx' at publish).
-    // Pre-migration this was a workspace-relative '../../../packages/agentdb-onnx/...'
-    // path; the named-import pattern is the migration's intended new shape.
-    assert.match(
-      body,
-      /import\s*\(\s*[^)]*['"](?:@sparkleideas\/)?agentdb-onnx['"]/,
-      'upgradeEmbeddingService must dynamic-import ONNXEmbeddingService from the agentdb-onnx package (npm name; codemod scopes at publish)'
-    );
-  });
-
-  it('still references EnhancedEmbeddingService as tier 2', () => {
-    const src = readFileSync(AGENTDB_SERVICE_TS, 'utf8');
-    const body = extractUpgradeFnBody(src);
-    assert.ok(body);
-    assert.match(
-      body,
-      /EnhancedEmbeddingService/,
-      'upgradeEmbeddingService must reference EnhancedEmbeddingService (tier 2)'
-    );
-  });
-
-  it('ONNX tier appears before Enhanced tier in source order (chain ordering)', () => {
-    const src = readFileSync(AGENTDB_SERVICE_TS, 'utf8');
-    const body = extractUpgradeFnBody(src);
-    assert.ok(body);
-    const onnxIdx = body.indexOf('ONNXEmbeddingService');
-    const enhancedIdx = body.indexOf('EnhancedEmbeddingService');
-    assert.ok(onnxIdx >= 0, 'ONNXEmbeddingService must appear in the function body');
-    assert.ok(enhancedIdx >= 0, 'EnhancedEmbeddingService must appear in the function body');
-    assert.ok(
-      onnxIdx < enhancedIdx,
-      `ONNX tier must appear before Enhanced tier in source (found ONNX@${onnxIdx}, Enhanced@${enhancedIdx})`
-    );
-  });
-
-  it('loudly logs tier failures (ADR-0082: no silent fallback)', () => {
-    const src = readFileSync(AGENTDB_SERVICE_TS, 'utf8');
-    const body = extractUpgradeFnBody(src);
-    assert.ok(body);
-    // Extract each catch block with balanced-brace walking (nested braces
-    // such as template literals and object expressions are common inside).
-    const catches = [];
-    let i = 0;
-    while (i < body.length) {
-      const catchMatch = body.slice(i).match(/catch\s*\([^)]*\)\s*\{/);
-      if (!catchMatch) break;
-      const startRel = catchMatch.index;
-      const openBrace = i + startRel + catchMatch[0].length - 1;
-      let depth = 1;
-      let j = openBrace + 1;
-      for (; j < body.length && depth > 0; j++) {
-        if (body[j] === '{') depth++;
-        else if (body[j] === '}') depth--;
-      }
-      catches.push(body.slice(i + startRel, j));
-      i = j;
-    }
-    assert.ok(
-      catches.length >= 2,
-      `expected at least 2 try/catch blocks (ONNX + Enhanced tiers), found ${catches.length}`
-    );
-    for (const c of catches) {
-      assert.match(
-        c,
-        /console\.(warn|error|log)/,
-        `every tier-failure catch block must log loudly (ADR-0082), but found:\n${c.slice(0, 400)}`
-      );
-    }
   });
 });
 
@@ -401,8 +301,8 @@ describe('F1 reality: upgradeEmbeddingService shipped shape (ONNX -> Enhanced ->
 describe('F1: ONNX package export surface', () => {
 
   const ONNX_SRC = resolve(
-    __thisDir,
-    '../../../forks/agentdb/packages/agentdb-onnx/src/services/ONNXEmbeddingService.ts'
+    _branches.agentdb.dir,
+    'packages/agentdb-onnx/src/services/ONNXEmbeddingService.ts'
   );
 
   it('agentdb-onnx package source file exists at the imported path', () => {

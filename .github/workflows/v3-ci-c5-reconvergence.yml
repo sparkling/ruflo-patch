@@ -1,0 +1,88 @@
+# ADR-0297 — CI stanza for the C5 Security & Safety re-convergence smoke
+# (the program's first security-consequence fix).
+#
+# Per `feedback-always-wire-tests-into-cicd`: the C5 re-convergence smoke is
+# wired into the standard runner (scripts/test-acceptance.sh,
+# adr0297-c5-reconvergence check) AND here. Synthetic test strings ONLY — no
+# paid LLM calls, no real PII/credentials. The smoke drives the installed cli
+# three ways:
+#   R1 aidefence ADR-118 detection refresh — both directions, ONE probe per
+#      ported pattern family, across TWO surfaces (MCP aidefence_is_safe + CLI
+#      `security defend --output json`): the DA's must-alert positives (indirect
+#      override; god-mode) flag safe:false, and the benign negatives (incl.
+#      "ignore the deprecation warning") still pass safe:true. Content source =
+#      the upstream 3.0.3 ARTIFACT.
+#   R2 federation package unbreak — a fresh `npx -y -p
+#      @sparkleideas/plugin-agent-federation@latest ruflo-federation init`
+#      exits 0 WITHOUT agentic-flow installed (isolated cache → optional
+#      peer-dep absent), graceful local-only; ed25519 key perms 0600/0700.
+#   W1 security defend default-TEXT renderer — a real-threat
+#      `security defend -i "<injection>"` (DEFAULT text) exits 0 and renders the
+#      threats (no unbound-OutputFormatter "reading 'color'" crash).
+# FAILs against the published artifacts (the two must-alert strings pass as
+# safe; federation init crashes; defend text crashes). Per
+# `feedback-no-tail-tests`: the smoke writes its log to SMOKE_LOG_DIR.
+
+name: ADR-0297 C5 re-convergence
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'forks/ruflo/v3/@claude-flow/aidefence/src/domain/services/threat-detection-service.ts'
+      - 'forks/ruflo/v3/@claude-flow/plugin-agent-federation/src/plugin.ts'
+      - 'forks/ruflo/v3/@claude-flow/plugin-agent-federation/src/transport/agentic-flow-loader.ts'
+      - 'forks/ruflo/v3/@claude-flow/plugin-agent-federation/package.json'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/commands/security.ts'
+      - 'scripts/smoke-adr0297-c5-reconvergence.mjs'
+      - 'lib/acceptance-adr0297-checks.sh'
+  pull_request:
+    paths:
+      - 'forks/ruflo/v3/@claude-flow/aidefence/src/domain/services/threat-detection-service.ts'
+      - 'forks/ruflo/v3/@claude-flow/plugin-agent-federation/src/plugin.ts'
+      - 'forks/ruflo/v3/@claude-flow/plugin-agent-federation/src/transport/agentic-flow-loader.ts'
+      - 'forks/ruflo/v3/@claude-flow/plugin-agent-federation/package.json'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/commands/security.ts'
+      - 'scripts/smoke-adr0297-c5-reconvergence.mjs'
+      - 'lib/acceptance-adr0297-checks.sh'
+
+env:
+  REGISTRY: http://localhost:4873
+  CLI_PKG: '@sparkleideas/ruflo'
+  SMOKE_LOG_DIR: ${{ github.workspace }}/smoke-logs
+
+jobs:
+  c5-reconvergence:
+    name: C5 re-convergence (ADR-0297)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          # node-24: the project needs native better-sqlite3 for the installed
+          # cli + MCP session that R1 drives; the daemon-node-version trap
+          # (project-mcp-daemon-runs-sqljs-fallback) is the cautionary tale.
+          node-version: '24'
+
+      - name: Start local Verdaccio + publish fork packages
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/ruflo-publish.sh 2>&1 | tee "${SMOKE_LOG_DIR}/publish.log"
+
+      - name: Run ADR-0297 C5 re-convergence smoke via fast runner
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/test-acceptance-fast.sh adr0297 2>&1 | tee "${SMOKE_LOG_DIR}/adr0297.log"
+
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs-c5-reconvergence
+          path: ${{ env.SMOKE_LOG_DIR }}

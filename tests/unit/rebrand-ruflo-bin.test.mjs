@@ -27,7 +27,12 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const FORK_PKG = join(__dirname, '../../../forks/ruflo/v3/@claude-flow/cli/package.json');
+// Fork dir from config/upstream-branches.json (single source of truth) —
+// a relative ../../../ escape resolves wrongly under .claude/worktrees/.
+const _branches = JSON.parse(
+  readFileSync(join(__dirname, '../../config/upstream-branches.json'), 'utf8'),
+);
+const FORK_PKG = join(_branches.ruflo.dir, 'v3/@claude-flow/cli/package.json');
 
 describe('ADR-0212: CLI bin map — `ruflo` removed (wrapper owns it)', () => {
   const pkg = JSON.parse(readFileSync(FORK_PKG, 'utf8'));
