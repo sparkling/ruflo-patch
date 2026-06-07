@@ -114,8 +114,13 @@ resolve).
       packages, all hard deps), and is idempotent (re-run → 0 strips).
 - [x] No unresolvable **hard** dep exists in the current graph → the fail-loud
       branch does not block the deploy.
-- [ ] Post-deploy: republished `@latest` graph passes the gate, and a clean
-      `npx @sparkleideas/ruflo@latest mcp start` boots.
+- [x] Post-deploy: republished `@latest` graph passes the gate, and a clean
+      `npx @sparkleideas/ruflo@latest mcp start` boots. **Verified 2026-06-07
+      against patch.429:** `check-published @sparkleideas/ruflo@latest` → PASS
+      (no unresolvable `@sparkleideas/*` refs); the exact incident invocation
+      `npx -y @sparkleideas/ruflo@latest mcp start` in a clean `/tmp` dir
+      installed with zero arborist/`Invalid Version` errors and answered the
+      `initialize` handshake (`serverInfo.name: ruflo`).
 
 ### Consequences
 
