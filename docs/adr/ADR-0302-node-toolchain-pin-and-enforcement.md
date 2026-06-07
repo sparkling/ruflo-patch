@@ -102,9 +102,10 @@ mechanism.**
   negative test (node-26 keg first on PATH) dies in <2s with the runbook.
 * Good, because pin drift anywhere (workflows, future scatter) is now a
   preflight failure, not an archaeology project.
-* Bad, because `launchctl config user path` needs sudo + re-login; until
-  then GUI-spawned processes keep their inherited PATH (mitigated: brew node
-  is unlinked, so nothing wrong is left to find).
+* Bad, because `launchctl config user path` needs sudo + a **reboot**
+  (applied 2026-06-07, pending reboot); until then GUI-spawned processes
+  keep their inherited PATH (mitigated: brew node is unlinked, so nothing
+  wrong is left to find).
 * Bad, because a genuinely intended node-major bump must touch
   `.tool-versions`, the mise global, and rebuild natives — deliberate
   friction, documented here.
