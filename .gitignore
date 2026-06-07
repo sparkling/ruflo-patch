@@ -19,6 +19,9 @@ CLAUDE.local.md
 .claude-flow/cjs-intelligence-signals.json
 .claude-flow/agents.json
 .claude-flow/routing-outcomes.json
+.claude-flow/agentdb/
+.claude-flow/autopilot_learn.json
+.claude-flow/ruvllm/
 .claude-flow/agents/
 .claude-flow/data/
 .claude-flow/claims/
