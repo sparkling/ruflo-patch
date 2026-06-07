@@ -28,6 +28,15 @@ const saveResults = process.argv.includes('--save-results') ||
 const projectRoot = resolve(import.meta.dirname, '..');
 const testsDir = resolve(projectRoot, 'tests');
 
+// Unit tests that exercise acceptance check functions (adr0090-*, t3-2, p9-*)
+// run them with ACCEPT_TEMP unset, so the checks fall back to
+// `/tmp/_check_workdirs/…` for their mktemp sandboxes. The acceptance runner
+// provides that parent dir (test-acceptance.sh `mkdir -p
+// "${ACCEPT_TEMP}/_check_workdirs"`); provide the same precondition here —
+// macOS wipes /tmp on reboot, which otherwise fails every such test until an
+// acceptance run happens to recreate it (2026-06-07 post-reboot incident).
+mkdirSync('/tmp/_check_workdirs', { recursive: true });
+
 // Determine which directories to scan from positional args
 const positionalArgs = process.argv.slice(2).filter(a => !a.startsWith('--'));
 

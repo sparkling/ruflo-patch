@@ -8,6 +8,8 @@
 //
 // References:
 //   - ADR-0113 §Implementation plan step 31
+//   - ADR-0301 (marketplace identity split: fork name is "sparkleideas";
+//     the "ruflo" marketplace name belongs to upstream ruvnet/ruflo)
 //   - reference-fork-workflow (sparkling = our distribution remote)
 //
 // This test reads the fork directly because the marketplace is served
@@ -53,12 +55,17 @@ describe('ADR-0113 Phase C — marketplace.json identity', { skip }, () => {
     );
   });
 
-  it('marketplace name is "ruflo" (Claude Code marketplace identifier, not repo identity)', () => {
+  it('marketplace name is "sparkleideas" (ADR-0301 — distinct from upstream\'s "ruflo")', () => {
+    // Claude Code marketplace names are machine-global and a same-name
+    // `marketplace add` REPLACES the prior registration. Upstream
+    // (ruvnet/ruflo) declares name "ruflo", so the fork sharing that name
+    // let an upstream install hijack the fork's marketplace (2026-06-04).
+    // ADR-0301 gives the fork its own identity.
     const m = JSON.parse(readFileSync(MANIFEST, 'utf8'));
     assert.equal(
       m.name,
-      'ruflo',
-      'manifest `name` is the slash-command marketplace identifier — keep as "ruflo"',
+      'sparkleideas',
+      'manifest `name` must be "sparkleideas" (ADR-0301) — NEVER "ruflo", which belongs to upstream',
     );
   });
 
