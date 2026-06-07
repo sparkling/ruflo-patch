@@ -1655,6 +1655,7 @@ run_check_bg "p7-fo-neural"      "File: neural dir (P7)"             check_adr00
 run_check_bg "p7-fo-hooks"       "File: hooks dir (P7)"              check_adr0094_p7_hooks_dir              "adr0094-p7"
 run_check_bg "p7-fo-config"      "File: config.json (P7)"            check_adr0094_p7_config_json            "adr0094-p7"
 run_check_bg "p7-fo-settings"    "File: settings.json (P7)"          check_adr0094_p7_settings_json          "adr0094-p7"
+run_check_bg "adr0301-mkt-id"    "0301 marketplace identity"         check_adr0301_marketplace_identity      "adr0094-p7"
 run_check_bg "p7-cli-version"    "CLI --version (P7)"                check_adr0094_p7_cli_version            "adr0094-p7"
 run_check_bg "p7-cli-doctor"     "CLI doctor (P7)"                   check_adr0094_p7_cli_doctor             "adr0094-p7"
 run_check_bg "p7-cli-init"       "CLI init --help (P7)"              check_adr0094_p7_cli_init_help          "adr0094-p7"
@@ -3010,6 +3011,7 @@ collect_parallel "all" \
   "p7-fo-swarm-st|File: swarm state.json (P7)" "p7-fo-statusline|File: statusline.cjs (P7)" \
   "p7-fo-neural|File: neural dir (P7)" "p7-fo-hooks|File: hooks dir (P7)" \
   "p7-fo-config|File: config.json (P7)" "p7-fo-settings|File: settings.json (P7)" \
+  "adr0301-mkt-id|0301 marketplace identity" \
   "p7-cli-version|CLI --version (P7)" "p7-cli-doctor|CLI doctor (P7)" \
   "p7-cli-init|CLI init --help (P7)" "p7-cli-agent|CLI agent --help (P7)" \
   "p7-cli-swarm|CLI swarm --help (P7)" "p7-cli-memory|CLI memory --help (P7)" \

@@ -462,3 +462,76 @@ check_adr0094_p7_settings_json() {
   _CHECK_PASSED="true"
   _CHECK_OUTPUT="${settings_summary}; .mcp.json (${mcp_size}B) mcpServers: [${mcp_servers}]"
 }
+
+# ── ADR-0301: fork marketplace identity in init-generated settings ──────────
+# Init must emit Claude Code's native team-marketplace block so a generated
+# project installs the fork's plugins on folder trust:
+#   - extraKnownMarketplaces.sparkleideas → github:sparkling/ruflo
+#   - enabledPlugins all keyed @sparkleideas (NEVER @ruflo — that marketplace
+#     name belongs to upstream; sharing it caused the 2026-06-04 hijack),
+#     default-ON except ruflo-security-audit
+#   - permissions.allow has a valid server-wide MCP glob (mcp__<server>__*)
+#     and NO invalid mcp__<server>__:* form (silently skipped by Claude Code)
+check_adr0301_marketplace_identity() {
+  _CHECK_PASSED="false"; _CHECK_OUTPUT=""
+  local target="${E2E_DIR}/.claude/settings.json"
+  if [[ ! -f "$target" ]]; then
+    _CHECK_OUTPUT="ADR-0301: ${target} missing — init did not emit settings.json"
+    return
+  fi
+  local out
+  out=$(node -e '
+    const fs = require("fs");
+    let s;
+    try { s = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); }
+    catch (e) { console.log("ERR_PARSE:" + e.message); process.exit(0); }
+    const mkts = s.extraKnownMarketplaces;
+    const entry = mkts && mkts.sparkleideas;
+    if (!entry) {
+      console.log("ERR_NO_MARKETPLACE:" + Object.keys(mkts || {}).join(","));
+      process.exit(0);
+    }
+    if (!entry.source || entry.source.source !== "github" || entry.source.repo !== "sparkling/ruflo") {
+      console.log("ERR_BAD_SOURCE:" + JSON.stringify(entry.source));
+      process.exit(0);
+    }
+    const ep = s.enabledPlugins || {};
+    const keys = Object.keys(ep);
+    if (keys.length < 30) {
+      console.log("ERR_TOO_FEW_PLUGINS:" + keys.length);
+      process.exit(0);
+    }
+    const wrongMkt = keys.filter((k) => !k.endsWith("@sparkleideas"));
+    if (wrongMkt.length > 0) {
+      console.log("ERR_WRONG_MARKETPLACE_KEYS:" + wrongMkt.slice(0, 5).join(","));
+      process.exit(0);
+    }
+    if (ep["ruflo-core@sparkleideas"] !== true) {
+      console.log("ERR_CORE_NOT_ENABLED:" + ep["ruflo-core@sparkleideas"]);
+      process.exit(0);
+    }
+    if (ep["ruflo-security-audit@sparkleideas"] !== false) {
+      console.log("ERR_SECURITY_AUDIT_NOT_OPT_IN:" + ep["ruflo-security-audit@sparkleideas"]);
+      process.exit(0);
+    }
+    const allow = (s.permissions && s.permissions.allow) || [];
+    const invalidMcp = allow.filter((r) => /^mcp__.*:\*$/.test(r));
+    if (invalidMcp.length > 0) {
+      console.log("ERR_INVALID_MCP_RULE:" + invalidMcp.join(","));
+      process.exit(0);
+    }
+    const validMcp = allow.filter((r) => /^mcp__[A-Za-z0-9_-]+__\*$/.test(r));
+    if (validMcp.length === 0) {
+      console.log("ERR_NO_MCP_ALLOW:" + allow.join(" | "));
+      process.exit(0);
+    }
+    console.log("OK:plugins=" + keys.length + ";mcpAllow=" + validMcp.join(","));
+  ' "$target" 2>&1)
+  if ! echo "$out" | grep -q '^OK:'; then
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="ADR-0301/marketplace-identity: $(echo "$out" | head -3 | tr '\n' ' ')"
+    return
+  fi
+  _CHECK_PASSED="true"
+  _CHECK_OUTPUT="ADR-0301: sparkleideas marketplace wired; $(echo "$out" | sed -nE 's/^OK:(.*)/\1/p' | head -1)"
+}
