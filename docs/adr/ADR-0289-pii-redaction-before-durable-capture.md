@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-06-03
 tags: [pii, security, privacy, memory, learning, governance, redaction]
 supersedes: []
@@ -145,3 +145,29 @@ must simply not write free-text until Phase 2's gates are met.
   `aidefence_scan`), `transfer_detect-pii`, the `pii-detector` agent.
 * **Capture target:** `ReflexionMemory.storeEpisode` (`forks/agentdb .../ReflexionMemory.ts:191`); free-text
   columns `task`/`input`/`output`/`code`/`critique`; structured columns `task_type`/`action`/`reward`/`success`.
+
+## Amendments
+
+### Phase status (2026-06-07) — flipped `proposed` → `accepted`
+
+* **Phase 1 (metadata-only, zero-PII): ACCEPTED and DELIVERED.** The F10 unblock
+  ships as ADR-0290's metadata-only capture (CLI derives `task_type`, stores the
+  derived type-slug as `task`, free-text columns NULL, `skipEmbedding` — no raw
+  free-text reaches the `episodes` row or any embedding source). The Phase-1
+  acceptance this ADR specifies ("drive a Task whose description embeds a fake
+  secret + email; assert no raw secret/PII string in the row or its embedding
+  source") is now the **`adr0290-learning-loop` A3 PII-gate**: its canaries were
+  changed to a fake secret (`sk-FAKE-…`) + fake email (`…@example.test`), and A3
+  asserts they are absent from the row, free-text columns NULL, no
+  `episode_embeddings` row, and a whole-DB sweep is clean (17/17 green). Wired in
+  `test-acceptance*.sh` + `v3-ci-learning-capture.yml` (the ADR-0290 gate).
+* **Phase 2 (tiered redacted free-text): DEFERRED-BY-DESIGN — authorises no code.**
+  Still gated on the two human calls this ADR records: (1) is redacted free-text
+  capture wanted at all? (2) what is the secrets/PII detector of record? The
+  redaction implementation exists (`forks/agentdb/src/security/redaction.ts`) but
+  is deliberately **not** wired into the capture path until Phase 2 is greenlit.
+  A speculative Phase-2 acceptance gate (`smoke-adr0289-redaction.mjs`) was built
+  ahead of that decision in an unmerged worktree (`smooth-snuggling-biscuit`) and
+  is intentionally **not** on main — it lands only when/if Phase 2 is authorised.
+* Net: the ADR's *policy* is accepted; Phase 1 is live and locked; Phase 2 awaits
+  an explicit go-ahead. `completed` is intentionally not set (Phase 2 open).
