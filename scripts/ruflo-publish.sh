@@ -671,7 +671,7 @@ main() {
   write_build_manifest
   run_phase "test-ci" run_tests_ci
 
-  # ADR-0295: strip dangling @sparkleideas/* optional deps (unpublished napi
+  # ADR-0300: strip dangling @sparkleideas/* optional deps (unpublished napi
   # platform binaries + pure sub-packages) before publish, so the published
   # manifests never reference a package that 404s. Prevents the npm/arborist
   # empty-version dedup crash that bricks `npx @sparkleideas/ruflo` installs.

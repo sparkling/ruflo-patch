@@ -96,7 +96,7 @@ A pre-publish pass (`scripts/sanitize-internal-optional-deps.mjs`, phase
 
 A timing-independent regression gate
 (`sanitize-internal-optional-deps.mjs check-published @sparkleideas/ruflo@latest`)
-runs in acceptance (`lib/acceptance-adr0295-checks.sh`, wired into
+runs in acceptance (`lib/acceptance-adr0300-checks.sh`, wired into
 `test-acceptance.sh`) and fails on any unresolvable `@sparkleideas/*` ref in the
 published graph — catching the dangling ref itself, not whether a trigger
 optional is published yet. This is the "is it actually published" half that

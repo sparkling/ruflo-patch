@@ -920,6 +920,8 @@ adr0294_lib="${PROJECT_DIR}/lib/acceptance-adr0294-checks.sh"
 [[ -f "$adr0294_lib" ]] && source "$adr0294_lib"
 adr0295_lib="${PROJECT_DIR}/lib/acceptance-adr0295-checks.sh"
 [[ -f "$adr0295_lib" ]] && source "$adr0295_lib"
+adr0300_lib="${PROJECT_DIR}/lib/acceptance-adr0300-checks.sh"
+[[ -f "$adr0300_lib" ]] && source "$adr0300_lib"
 adr0296_lib="${PROJECT_DIR}/lib/acceptance-adr0296-checks.sh"
 [[ -f "$adr0296_lib" ]] && source "$adr0296_lib"
 adr0297_lib="${PROJECT_DIR}/lib/acceptance-adr0297-checks.sh"
@@ -3702,28 +3704,30 @@ fi
 _record_phase "phase-adr0263-replay-verification" "$(_elapsed_ms "$_adr0263_start" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
-# ADR-0295: dangling-optional-dep gate. Asserts the PUBLISHED
+# ADR-0300: dangling-optional-dep gate. Asserts the PUBLISHED
 # @sparkleideas/ruflo@latest graph has no unresolvable @sparkleideas/* refs —
 # the npm/arborist empty-version dedup landmine that bricks `npx
 # @sparkleideas/ruflo` once a peer optional resolves. Single registry-graph
 # walk (no install needed); timing-independent (fails on the dangling ref
 # itself, not on whether the trigger optional happens to be published yet).
+# (Was ADR-0295 until the numbering collision with the C3 program ADR was
+# reconciled — this gate is ADR-0300; the C3 re-convergence keeps 0295.)
 # ════════════════════════════════════════════════════════════════════
-_adr0295_start=$(_ns)
-if [[ -f "$adr0295_lib" ]]; then
-  log "── ADR-0295: dangling-optional-dep gate ──"
+_adr0300_start=$(_ns)
+if [[ -f "$adr0300_lib" ]]; then
+  log "── ADR-0300: dangling-optional-dep gate ──"
   # Mint a fresh PARALLEL_DIR — every parallel block must (the prior block
   # rm -rf's its own). The e62a01b block omitted this, so run_check_bg's
   # subshell wrote the result into the prior block's removed dir → "No such
   # file or directory" → silent subprocess crash (no verdict in run-3, FAIL
   # once counted). Matches the adr0268/adr0290/etc. block pattern below.
   PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
-  run_check_bg "adr0295-no-dangling-optdeps" "ADR-0295 no unresolvable @sparkleideas/* optional deps" check_adr0295_no_dangling_optional_deps "adr0295"
-  collect_parallel "adr0295" \
-    "adr0295-no-dangling-optdeps|ADR-0295 no unresolvable @sparkleideas/* optional deps"
+  run_check_bg "adr0300-no-dangling-optdeps" "ADR-0300 no unresolvable @sparkleideas/* optional deps" check_adr0300_no_dangling_optional_deps "adr0300"
+  collect_parallel "adr0300" \
+    "adr0300-no-dangling-optdeps|ADR-0300 no unresolvable @sparkleideas/* optional deps"
   rm -rf "$PARALLEL_DIR" 2>/dev/null
 fi
-_record_phase "phase-adr0295-dangling-optdeps" "$(_elapsed_ms "$_adr0295_start" "$(_ns)")"
+_record_phase "phase-adr0300-dangling-optdeps" "$(_elapsed_ms "$_adr0300_start" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
 # ADR-0268: autonomous skill-promotion flywheel round-trip — 1 smoke.

@@ -571,6 +571,15 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0295"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
   fi
 fi
 
+if [[ "$_FAST_RUN_GROUPS" == *"adr0300"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0300-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0300-checks.sh"
+    echo "── ADR-0300 (dangling-optional-dep gate: published graph has no unresolvable @sparkleideas/* refs) ──"
+    # Registry-graph walk against the published @latest — no ACCEPT_TEMP / install needed.
+    _fast_run "adr0300-no-dangling-optdeps" check_adr0300_no_dangling_optional_deps
+  fi
+fi
+
 if [[ "$_FAST_RUN_GROUPS" == *"adr0296"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
   if [[ -f "$PROJECT_DIR/lib/acceptance-adr0296-checks.sh" ]]; then
     source "$PROJECT_DIR/lib/acceptance-adr0296-checks.sh"
