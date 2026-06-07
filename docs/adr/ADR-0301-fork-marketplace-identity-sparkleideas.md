@@ -151,10 +151,16 @@ form. Wired into the standard acceptance runner per
   same-day taught memory note in the `~/source` parent-dir memory ("ALWAYS
   use upstream ruvnet/ruflo; ignore the @sparkleideas fork entirely, never
   ask" — Henrik's *work-realm* policy, stored without its scope) and (b) a
-  pre-ADR-0301 generated CLAUDE.md instructing `install …@ruflo` — "switched
-  the project to upstream" by flipping **user-scope** plugin state (8×
-  `enable …@ruflo`, 7× `disable …@sparkleideas`), breaking the machine
-  baseline for every project. Remediation: state repaired; the memory note
+  **fresh upstream-init CLAUDE.md** (Henrik had deleted the old one and had
+  the session run upstream `ruflo init`), whose install instructions
+  (`/plugin install …@ruflo`) are correct for upstream's world but carry
+  **no scope qualifier**, while Claude Code's `plugin install`/`enable`
+  default to **user scope** — "switched the project to upstream" by
+  flipping user-scope plugin state (8× `enable …@ruflo`, 7×
+  `disable …@sparkleideas`), breaking the machine baseline for every
+  project. The structural trap: any project following upstream's own docs
+  verbatim mutates the machine baseline; the memory note additionally made
+  the installed fork baseline look like contamination to remove. Remediation: state repaired; the memory note
   rewritten as a **two-realm policy** (hm work projects = upstream at
   PROJECT scope only; machine baseline = fork; user-scope plugin mutations
   from project sessions are forbidden — ask first); machine-wide policy
