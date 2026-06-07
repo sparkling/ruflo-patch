@@ -143,3 +143,25 @@ form. Wired into the standard acceptance runner per
   colliding name.
 * Related: ADR-0248 (plugin marketplace integrity/honesty, CT-O) — same
   surface, orthogonal concern (catalog truthfulness vs marketplace identity).
+
+## Amendments
+
+* **2026-06-07 (same day) — user-scope clobber incident + guards.** Hours
+  after this ADR shipped, a session in `hm/niko-pf` — acting on (a) a
+  same-day taught memory note in the `~/source` parent-dir memory ("ALWAYS
+  use upstream ruvnet/ruflo; ignore the @sparkleideas fork entirely, never
+  ask" — Henrik's *work-realm* policy, stored without its scope) and (b) a
+  pre-ADR-0301 generated CLAUDE.md instructing `install …@ruflo` — "switched
+  the project to upstream" by flipping **user-scope** plugin state (8×
+  `enable …@ruflo`, 7× `disable …@sparkleideas`), breaking the machine
+  baseline for every project. Remediation: state repaired; the memory note
+  rewritten as a **two-realm policy** (hm work projects = upstream at
+  PROJECT scope only; machine baseline = fork; user-scope plugin mutations
+  from project sessions are forbidden — ask first); machine-wide policy
+  block added to `~/.claude/CLAUDE.md`; permission **ask-rules** added to
+  user settings for `plugin enable/install *@ruflo*` and
+  `plugin disable/uninstall *@sparkleideas*` so any future flip prompts
+  Henrik personally; stale `@ruflo` install lines fixed in ruflo-patch +
+  opda CLAUDE.mds. Lesson: scoped policies stored in memory MUST carry their
+  scope, and realm switches belong at project scope by mechanism, not
+  convention.
