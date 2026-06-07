@@ -234,30 +234,30 @@
     "command": "sh -c 'D=\"${CLAUDE_PROJECT_DIR:-.}\"; [ -f \"$D/.claude/helpers/statusline.cjs\" ] || D=\"${HOME}\"; exec node \"$D/.claude/helpers/statusline.cjs\"'"
   },
   "enabledPlugins": {
-    "ruflo-adr@ruflo": true,
-    "ruflo-agentdb@ruflo": true,
-    "ruflo-autopilot@ruflo": true,
-    "ruflo-browser@ruflo": true,
-    "ruflo-core@ruflo": true,
-    "ruflo-daa@ruflo": true,
-    "ruflo-ddd@ruflo": true,
-    "ruflo-docs@ruflo": true,
-    "ruflo-federation@ruflo": true,
-    "ruflo-goals@ruflo": true,
-    "ruflo-intelligence@ruflo": true,
-    "ruflo-jujutsu@ruflo": true,
-    "ruflo-knowledge-graph@ruflo": true,
-    "ruflo-loop-workers@ruflo": true,
-    "ruflo-observability@ruflo": true,
-    "ruflo-rag-memory@ruflo": true,
-    "ruflo-ruvector@ruflo": true,
-    "ruflo-ruvllm@ruflo": true,
-    "ruflo-rvf@ruflo": true,
-    "ruflo-sparc@ruflo": true,
-    "ruflo-swarm@ruflo": true,
-    "ruflo-testgen@ruflo": true,
-    "ruflo-wasm@ruflo": true,
-    "ruflo-workflows@ruflo": true
+    "ruflo-adr@sparkleideas": true,
+    "ruflo-agentdb@sparkleideas": true,
+    "ruflo-autopilot@sparkleideas": true,
+    "ruflo-browser@sparkleideas": true,
+    "ruflo-core@sparkleideas": true,
+    "ruflo-daa@sparkleideas": true,
+    "ruflo-ddd@sparkleideas": true,
+    "ruflo-docs@sparkleideas": true,
+    "ruflo-federation@sparkleideas": true,
+    "ruflo-goals@sparkleideas": true,
+    "ruflo-intelligence@sparkleideas": true,
+    "ruflo-jujutsu@sparkleideas": true,
+    "ruflo-knowledge-graph@sparkleideas": true,
+    "ruflo-loop-workers@sparkleideas": true,
+    "ruflo-observability@sparkleideas": true,
+    "ruflo-rag-memory@sparkleideas": true,
+    "ruflo-ruvector@sparkleideas": true,
+    "ruflo-ruvllm@sparkleideas": true,
+    "ruflo-rvf@sparkleideas": true,
+    "ruflo-sparc@sparkleideas": true,
+    "ruflo-swarm@sparkleideas": true,
+    "ruflo-testgen@sparkleideas": true,
+    "ruflo-wasm@sparkleideas": true,
+    "ruflo-workflows@sparkleideas": true
   },
   "claudeFlow": {
     "version": "3.0.0",
@@ -382,6 +382,15 @@
       "scanOnEdit": true,
       "cveCheck": true,
       "threatModel": true
+    }
+  },
+  "extraKnownMarketplaces": {
+    "sparkleideas": {
+      "source": {
+        "source": "github",
+        "repo": "sparkling/ruflo"
+      },
+      "autoUpdate": true
     }
   }
 }
