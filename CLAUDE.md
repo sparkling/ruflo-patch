@@ -50,6 +50,20 @@ npm run lint
 - ALWAYS run tests after making code changes
 - ALWAYS verify build succeeds before committing
 
+### Infrastructure: Verdaccio Registry
+
+- ONE Verdaccio instance, hosted on THIS machine, binds `*:4873`. The wildcard
+  bind is load-bearing: it serves this machine via localhost AND the `hm`
+  server over Tailscale. Never narrow it to loopback; never suggest starting
+  or stopping Verdaccio (it is always on).
+- If `localhost:4873` hangs while `http://<LAN-or-Tailscale-ip>:4873/-/ping`
+  answers 200: a second listener is shadowing the loopback. Diagnose with
+  `lsof -nP -iTCP:4873 -sTCP:LISTEN` — two listeners means a VS Code Remote
+  auto-forward grabbed `127.0.0.1:4873` (incident 2026-06-07: release pipeline
+  hung 54 min at 0% CPU). Fix: stop the forward in VS Code's Ports panel; the
+  durable guard is `"remote.portsAttributes": {"4873": {"onAutoForward":
+  "ignore"}}` in the remote workspace's settings.
+
 ### Feature Workflow
 
 1. Create or update tests first
