@@ -20,8 +20,14 @@ import { readFileSync, existsSync } from 'node:fs';
 
 const FORK_SRC =
   '/Users/henrik/source/forks/agentic-flow/agentic-flow/src/mcp/fastmcp/servers/stdio-full.ts';
+// Flat dist is the live emit layout (config/tsconfig.json outDir: ../dist).
+// The old nested dist/agentic-flow/src/ shadow layout was a stale Apr-21
+// orphan tree purged with ADR-0288 — do not point back at it (it no longer
+// exists, so the dist-mirror assertion below would false-skip "not built"
+// when the dist IS built at the flat path). Recovered from worktree
+// smooth-snuggling-biscuit commit 2452275 (ADR-0288 island-retirement batch).
 const FORK_DIST =
-  '/Users/henrik/source/forks/agentic-flow/agentic-flow/dist/agentic-flow/src/mcp/fastmcp/servers/stdio-full.js';
+  '/Users/henrik/source/forks/agentic-flow/agentic-flow/dist/mcp/fastmcp/servers/stdio-full.js';
 const WRAPPER_SRC =
   '/Users/henrik/source/forks/agentic-flow/agentic-flow/src/mcp/fastmcp/tools/booster-tools.ts';
 const ENHANCED_TOOLS_SRC =
