@@ -13,6 +13,56 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
+# ── ADR-0302: node toolchain guard (verify, never select) ───────────────────
+# The pipeline does NOT pick a node version — the environment must already be
+# correct (workstation: mise shims-first PATH; CI: actions/setup-node). It
+# only VERIFIES, and dies in seconds with the fix instead of 19 minutes into
+# unit tests with an ABI stack trace (2026-06-07: brew dropped node 26 into
+# PATH ahead of the mise-pinned 24; better-sqlite3 is ABI-bound to 24).
+# Deliberately no `mise exec` auto-rescue: silently fixing a broken
+# environment hides the breakage (feedback-no-fallbacks).
+_node_toolchain_guard() {
+  local pin major
+  pin="$(awk '$1 == "nodejs" { print $2 }' "${PROJECT_DIR}/.tool-versions")"
+  if [[ -z "$pin" ]]; then
+    echo "FATAL [ADR-0302]: no 'nodejs' pin found in ${PROJECT_DIR}/.tool-versions" >&2
+    exit 1
+  fi
+  if ! command -v node >/dev/null 2>&1; then
+    echo "FATAL [ADR-0302]: no 'node' on PATH (expected major ${pin} via mise shims)" >&2
+    exit 1
+  fi
+  major="$(node -p 'process.versions.node.split(".")[0]')"
+  if [[ "$major" != "$pin" ]]; then
+    echo "FATAL [ADR-0302]: node major ${major} ($(command -v node)) != pinned ${pin} (.tool-versions)." >&2
+    echo "  Fix the environment, don't wrap the pipeline:" >&2
+    echo "    - workstation: mise shims must precede /opt/homebrew/bin on PATH" >&2
+    echo "      (and brew's node should stay unlinked: 'brew unlink node')" >&2
+    echo "    - CI: actions/setup-node node-version must match .tool-versions" >&2
+    exit 1
+  fi
+  # ABI canary: load the repo's native module under the running node. Catches
+  # the reverse drift too (correct node, node_modules built under another
+  # major) — a version compare alone cannot. A missing module is NOT drift
+  # (fresh CI checkout installs later, under the already-verified node):
+  # only ERR_DLOPEN (binary present, wrong ABI) is fatal.
+  local canary_err
+  canary_err="$(cd "${PROJECT_DIR}" && node -e "
+    try { require('better-sqlite3'); }
+    catch (e) {
+      if (e.code === 'MODULE_NOT_FOUND') { console.log('CANARY_SKIP'); process.exit(0); }
+      console.log('CANARY_FAIL:' + (e.code || e.message)); process.exit(0);
+    }
+    console.log('CANARY_OK');
+  ")"
+  if [[ "$canary_err" == CANARY_FAIL:* ]]; then
+    echo "FATAL [ADR-0302]: better-sqlite3 failed to load under node ${major} (${canary_err#CANARY_FAIL:}) — node_modules built for a different ABI." >&2
+    echo "  Fix: (cd ${PROJECT_DIR} && npm rebuild better-sqlite3)  [or full 'npm ci' under the pinned node]" >&2
+    exit 1
+  fi
+}
+_node_toolchain_guard
+
 # Aborted runs must tear down their own process group so backgrounded
 # children (sleep/tee that inherit fd 9 via `exec 9>`) don't outlive the
 # parent holding the flock. `kill -- -$$` only signals THIS process's own
