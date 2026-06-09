@@ -38,10 +38,14 @@ capturable findings that are NOT "it's all broken":
    (`scoreModels()`), and a real circuit-breaker state machine
    (`recordFailure()`) — but `executeCompletion()` is a MOCK (returns
    `"[Response from …]"`, no HTTP) and the class has ZERO live consumers (only
-   re-exported in `integration/src/index.ts`). Consequence: **automatic
-   cross-provider failover and automatic cheapest-capable-model selection are NOT
-   on the live path** — the working dispatcher chooses one provider by explicit
-   env precedence, no auto-arbitrage. This is a `feedback-no-consumer-is-not-stub`
+   re-exported in `integration/src/index.ts`). Consequence (CORRECTED — see
+   Addendum 2026-06-08): this *specific class* is dead, but it is NOT the only
+   cross-provider router — **agentic-flow's `ModelRouter` is real, shipped, and
+   does automatic failover**, so the blanket "automatic failover is not on the
+   live path" originally stated here was wrong. What is genuinely missing is
+   (i) Ruflo's `agent_execute` hot path auto-routing through that router (it
+   dispatches one provider by explicit env precedence, no auto-arbitrage), and
+   (ii) a true dynamic cheapest-cost selector. This is a `feedback-no-consumer-is-not-stub`
    triage case (WIRE / KEEP-AS-CAPABILITY / DELETE), NOT a reflexive delete: the
    code is real and well-built, just unwired.
 2. **USERGUIDE routing doc-drift (two bugs, drift not dishonesty):**
@@ -145,3 +149,54 @@ and its consequences ship, this ADR stays `proposed`.
 * User-facing counterpart corrected 2026-06-08: `~/source/hm/semantic-docs/docs/agentic-engineering/README.md` §2.
 * Method: ADR-0293 (verify, don't assume broken); the prior session's
   "marketing / aspirational / unproven" framing was refuted on the running code.
+
+## Addendum (2026-06-08, deeper shipped-artifact re-verification)
+
+A follow-up probe — prompted by the user disbelieving the "shelfware ⇒ no
+auto-routing" verdict — read the **shipped** packages (npx runtime + published
+tarballs), not the `v3/` fork source. Finding 1 was **mis-scoped**: it judged the
+one dead class and missed the real, shipped cross-provider router. The same
+ADR-0293 over-skepticism reflex this ADR was written to counter had reappeared
+inside the ADR itself. Correction:
+
+* **agentic-flow's `ModelRouter` (`@sparkleideas/agentic-flow/router`,
+  `dist/router/router.js`) is the real, shipped cross-provider router** — five
+  real provider classes (Anthropic / OpenRouter / Gemini / Ollama / ONNX),
+  `manual | rule-based | cost-optimized | performance-optimized` modes, and a
+  **real fallback-chain failover** (`handleProviderError` iterates
+  `config.fallbackChain`, retrying `provider.chat()`). It runs behind the
+  `agentic-flow` binary (bin → `cli-proxy.js`) and is exposed to Ruflo via
+  `cli/dist/src/services/agentic-flow-bridge.js` `getRouter()` (lazy
+  `import('@sparkleideas/agentic-flow/router')`, null-safe).
+* **Two honest, narrower gaps remain:**
+  1. agentic-flow's `selectByCost` (`router.js:270-282`) is a **static
+     provider-preference order** (`['openrouter','anthropic','openai']`) with a
+     literal `// TODO: Implement actual cost calculation` — `selectByPerformance`
+     (latency metrics) and the failover chain are real, but *dynamic per-token
+     cheapest* selection is not yet implemented.
+  2. Ruflo's own `agent_execute` hot path does **not** auto-invoke that router —
+     the `getRouter()` bridge accessor is **available-but-unconsumed** in the
+     shipped CLI (grep: no live consumer); the hot path uses
+     `agent-execute-core.ts` (explicit-env provider dispatch) + the Claude-tier
+     bandit (`ruvector/model-router.js`).
+* **`@claude-flow/integration`'s `MultiModelRouter` IS still a genuine mock**
+  (`executeCompletion` → `[Response from …]`, `dist/multi-model-router.js:617`,
+  confirmed in the newest published `@sparkleideas/integration@3.0.0-patch.987`),
+  zero consumers, not a dep of the live runtime — but it is a *sideshow*, not
+  "the" cross-provider router.
+
+**Revised task emphasis:** the highest-value wiring is NOT resurrecting the
+integration mock — it is (T2′) consuming the existing `getRouter()` bridge so
+Ruflo agents can opt into agentic-flow's `ModelRouter` (gaining its real
+failover), and (T2″) finishing `selectByCost`'s real per-token cost calculation.
+T1's triage of the `@claude-flow/integration` `MultiModelRouter` thus reduces to
+KEEP-AS-CAPABILITY or DELETE, since agentic-flow already supplies the live
+capability.
+
+* Evidence: `@sparkleideas/agentic-flow@2.0.2-alpha-patch.980`
+  `dist/router/router.js` (selectProvider :213, selectByCost :270 w/ TODO,
+  handleProviderError fallback :300-320, 5 provider imports :5-9);
+  `cli/dist/src/services/agentic-flow-bridge.js:34` `getRouter()` (no live
+  consumer); `cli/dist/src/mcp-tools/agent-tools.js:98` (Ruflo's own
+  `ruvector/model-router.js`); `@sparkleideas/integration@3.0.0-patch.987`
+  `dist/multi-model-router.js:617` (mock). User-facing README §2 corrected to match.
