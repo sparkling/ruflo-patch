@@ -545,3 +545,20 @@ verified end-to-end.
 ## More Information
 
 Original status: accepted, implemented, and completed 2026-05-19. Original frontmatter recorded `methodology: [MADR]`, `decision-makers: [Henrik Pettersen]`, `audience: ai-executor`, `related: [0072, 0082, 0191]`, and `upstream-related: [agentic-flow/ADR-058, agentic-flow/ADR-059]`.
+
+## Amendment — episode-sink re-anchor (2026-06-10, ADR-0288 Gate-3)
+
+The `AgentDBService`-shaped episode sink this ADR's Phase 1 mapped onto
+(deviation note #6: `storeEpisode` / `recallEpisodes` on the agentic-flow
+`AgentDBService`) **no longer exists**. ADR-0288 retired the fork-only
+`agentic-flow` `AgentDBService` + fastmcp island (agentic-flow `8c5ec5d7`,
+2026-06-04; published `@sparkleideas/agentic-flow` ships no `agentdb-service.js`).
+The above reference is left intact as **honest history** — it accurately records
+what the implementer mapped onto at the time — but is no longer the live sink.
+
+**Current episode sink (ground truth):** `ReflexionMemory.storeEpisode → episodes`
+SQLite table in `forks/agentdb`, reached via `hooks_post-task → agentdb_reflexion_store`
+(ADR-0268 write chain, triggered automatically per ADR-0290). The `AutopilotLearning`
+consumer was de-coupled to honest-unavailable when the island was deleted (ADR-0288
+Implementation note); the episode-capture value it described now flows through the
+hook→reflexion path, not through `AutopilotLearning`/`AgentDBService`.

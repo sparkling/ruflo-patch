@@ -408,3 +408,22 @@ Status flipped from `proposed` to `implemented` on 2026-05-19. The "still degrad
 ## More Information
 
 Original status: accepted, implemented, and completed 2026-05-19. Original frontmatter recorded `methodology: [MADR]`, `decision-makers: [Henrik Pettersen]`, `audience: ai-executor`, `related: [0058, 0072, 0191, 0192]`, `follow-up-adrs: [0194, 0195, 0196]`, and `upstream-related: [agentic-flow/ADR-058, agentic-flow/ADR-059]`.
+
+## Amendment — episode-sink re-anchor (2026-06-10, ADR-0288 Gate-3)
+
+The `AgentDBService` references in this ADR (Item A.2's "existing AgentDBService
+embedder", Item B's `AgentDBService.recordTrajectory`, and the Item D
+verification-matrix + Implementation-deviations rows recording the
+`AgentDBService.getController()` / `getSonaService()` delegates) describe the
+fork-only agentic-flow `AgentDBService`, which **ADR-0288 retired** (agentic-flow
+`8c5ec5d7`, 2026-06-04; published `@sparkleideas/agentic-flow` ships no
+`agentdb-service.js`). Those references are left intact as **honest history** of
+the commits as landed; they are no longer the live surface.
+
+**Current episode sink (ground truth):** `ReflexionMemory.storeEpisode → episodes`
+SQLite table in `forks/agentdb`, reached via `hooks_post-task → agentdb_reflexion_store`
+(ADR-0268 write chain, triggered automatically per ADR-0290) — not via the
+agentic-flow `AgentDBService`. The autopilot consumer wiring this ADR completed
+(Items A–D) rode on `AutopilotLearning` + `AgentDBService`, which were de-coupled
+to honest-unavailable when the island was deleted (ADR-0288); the capture value
+now flows through the hook→reflexion path.

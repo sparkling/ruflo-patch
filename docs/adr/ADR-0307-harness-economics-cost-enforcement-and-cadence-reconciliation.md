@@ -202,3 +202,35 @@ only at the federation boundary**. Decision: track that — T2 becomes a
 doc/honesty task (no daemon-loop change), T3 aligns cadence to upstream. The
 "gate-in-daemon" Considered Option is closed as an unwanted fork divergence.
 This ADR stays `proposed` until T2 (docs) + T3 (cadence alignment) ship.
+
+### Amendment (2026-06-10): T2/T3 shipped — pricing fix extended to opus; cadence is a documented override
+
+T2 + T3 landed in `forks/ruflo` (`f26e858c2` code, `4aa5082fe` docs):
+
+* **T2 (docs):** `plugins/ruflo-cost-tracker` README/REFERENCE reframed as
+  **attribution + alerting**; `HARD_STOP` documented as "alert + opt-in
+  fail-closed gate (`budget.mjs check && spawn`), does NOT auto-halt dispatch —
+  hard cut-off = ADR-097". No daemon-loop change.
+* **T3 (pricing):** corrected the stale tier rates in `track.mjs` +
+  REFERENCE/README, verified against the Anthropic pricing page (via the
+  `claude-api` skill, 2026-06-10): **haiku** `0.25/1.25/0.30/0.03` →
+  `1.00/5.00/1.25/0.10` (Haiku-4.5). **T3 EXTENDED beyond the originally-named
+  haiku row to the `opus` tier** — it carried Opus-4.1-era `15.00/75.00/18.75/
+  1.50`, which **3×-mispriced the default model** (current Opus 4.x =
+  `5.00/25.00/6.25/0.50`). Same stale-pricing class; leaving the default model
+  mispriced contradicts the no-wrong-data honesty posture, so it was folded into
+  this T3 fix. Stale ADR-0298-X1 freshness note removed.
+* **T3 (cadence):** provenance-checked the fork `worker-daemon.ts` cadence
+  (audit 30m / optimize 60m / consolidate 10m / testgaps 60m) vs upstream
+  (10/15/30/20). The divergence is a **deliberate, named economics override**
+  (`a3b3d7797` HW-003 + WM-108: LLM-spawning workers run LESS often to cut token
+  spend; the $0 in-process consolidate runs MORE often). **Decision: documented
+  override, NOT align** — aligning would re-introduce the more-expensive cadence
+  the fork backed off from. Fixed the stale header comment (which still showed
+  upstream values) + added an in-source provenance pointer.
+* **T3 (learn→opus):** the evidence conflation was corrected in the prior
+  2026-06-10 amendment (item 2); `learn` → in-process NightlyLearner ($0 LLM),
+  opus is only `ultralearn`/`deepdive`. No code change.
+
+This ADR can flip `proposed` → `accepted` after the release verifies acceptance
+green.

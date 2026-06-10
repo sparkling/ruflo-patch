@@ -1,0 +1,61 @@
+# ADR-0316 — CI stanza for the `--no-*` boolean-negation parser fix.
+#
+# Per `feedback-always-wire-tests-into-cicd`: wired into the standard runner
+# (scripts/test-acceptance.sh + scripts/test-acceptance-fast.sh, adr0316 group)
+# AND here. Validates the INSTALLED CLI: `init --help` advertises `--no-global`,
+# and `status --no-color` (same validateFlags path) emits no "Unknown option".
+# Goes GREEN only after the fork parser.ts fix ships. Per `feedback-no-tail-tests`
+# the run writes its log to SMOKE_LOG_DIR.
+
+name: ADR-0316 parser --no-* negation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'forks/ruflo/v3/@claude-flow/cli/src/parser.ts'
+      - 'lib/acceptance-adr-noglobal-checks.sh'
+      - '.github/workflows/v3-ci-adr0316-noglobal.yml'
+  pull_request:
+    paths:
+      - 'forks/ruflo/v3/@claude-flow/cli/src/parser.ts'
+      - 'lib/acceptance-adr-noglobal-checks.sh'
+      - '.github/workflows/v3-ci-adr0316-noglobal.yml'
+
+env:
+  REGISTRY: http://localhost:4873
+  CLI_PKG: '@sparkleideas/ruflo'
+  SMOKE_LOG_DIR: ${{ github.workspace }}/smoke-logs
+
+jobs:
+  noglobal-negation:
+    name: init --no-global advertised + parser accepts --no-* (ADR-0316)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Start local Verdaccio + publish fork packages
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/ruflo-publish.sh 2>&1 | tee "${SMOKE_LOG_DIR}/publish.log"
+
+      - name: Run ADR-0316 --no-* checks via fast runner
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/test-acceptance-fast.sh adr0316 2>&1 | tee "${SMOKE_LOG_DIR}/adr0316.log"
+
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs-adr0316-noglobal
+          path: ${{ env.SMOKE_LOG_DIR }}

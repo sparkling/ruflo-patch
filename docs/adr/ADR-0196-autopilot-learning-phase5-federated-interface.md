@@ -473,3 +473,32 @@ All of the following belong to the future federation-runtime ADR:
 | 2026-05-19 | `d06ba2c` | `feat(autopilot): ADR-0196 Phase 5 _record stamping + SyncCoordinator adapter` — _record stamps originInstallId pre-write, advances _vectorClock post-write (security hardening: failed writes do not leak clock ticks), constructs stampedEpisode + invokes provider.notifyEpisode after local persistence. |
 | 2026-05-19 | `0f6f37f` | `fix(autopilot): ADR-0196 install-id security hardening (256-byte cap + UUIDv4 validation)` — `getOrCreateInstallId` now caps file reads at 256 bytes and validates `[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}` shape before accepting; malformed / oversized content triggers a `console.warn` and re-mint. Addresses security-review item from recovery brief. |
 | 2026-05-19 | n/a (doc reconciliation) | Interface shape diverged from initial spec during implementation: `requestSync()` + `onRemoteEpisode(cb)` → `push() / pull() / notifyEpisode() / status() / conflictStrategy()`. Rationale captured in §"Interface shape" → "Spec deviation note" subsection. Source-of-truth header comment retained in `forks/agentic-flow/agentic-flow/src/services/federated-sync-provider.ts:10-33` as historical record. ADR text now matches shipped code; no source-code changes. |
+
+## Amendment — sink/owner re-anchor (2026-06-10, ADR-0288 Gate-3)
+
+The federation adapter this ADR shipped (Option 2) hung off the fork-only
+agentic-flow `AgentDBService`: `getSyncCoordinator()`, `getOrCreateInstallId()`,
+and the `AgentDBService.storeEpisode → episodes` write that `SyncCoordinator.detectChanges()`
+picks up. **ADR-0288 retired that `AgentDBService` + fastmcp island** (agentic-flow
+`8c5ec5d7`, 2026-06-04; published `@sparkleideas/agentic-flow` ships no
+`agentdb-service.js`), so the §"What `AgentDBService` already exposes" survey, the
+Option-2 `AgentDBService.getSyncCoordinator()` wiring, and the Scope/Implementation-log
+references to it **no longer describe the shipped tree**. The text is left intact
+as **honest history** of the interface+adapter as built; the `AgentDBService`
+references are not a live surface.
+
+Note the underlying federation substrate is **unaffected** — `SyncCoordinator`,
+`QUICClient`/`QUICServer`, the CRDT primitives, and `FederatedLearningManager` all
+live in `forks/agentdb` and survive ADR-0288 (which removed only the agentic-flow
+*wrapper*). What was removed is the `AgentDBService` accessor layer the autopilot
+adapter reached them through.
+
+**Current episode sink (ground truth):** `ReflexionMemory.storeEpisode → episodes`
+SQLite table in `forks/agentdb`, reached via `hooks_post-task → agentdb_reflexion_store`
+(ADR-0268 write chain, triggered automatically per ADR-0290). The `originInstallId` /
+`vectorClock` stamping this ADR added rode on `AutopilotLearning._record`, which was
+de-coupled to honest-unavailable when the island was deleted (ADR-0288). The
+runtime transport remains deferred per this ADR's original scope; any revival of
+the autopilot-side federation adapter must re-target the surviving `forks/agentdb`
+`SyncCoordinator` directly (or the hook→reflexion sink), not the retired
+`AgentDBService`.

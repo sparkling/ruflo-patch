@@ -449,3 +449,27 @@ When Phase 4 is implemented:
 | 2026-05-19 | `3fa9ec9` | `feat(autopilot): ADR-0195 Phase 4 episode:recorded emit in _record` — episode:recorded emit after storeEpisode succeeds. |
 | 2026-05-19 | `d06ba2c` | `feat(autopilot): ADR-0196 Phase 5 _record stamping + SyncCoordinator adapter` — combined commit also includes the three remaining Phase 4 trajectory emits (trajectory:opened in recordIterationStep first open, trajectory:step after each successful addStep, trajectory:closed after each successful endTrajectory). Phase 4 emit surface is now complete: all four emit points (1× episode + 3× trajectory) are wired to the bus. |
 | 2026-05-19 | `a2463ba` | `feat(autopilot): ADR-0195 trajectory step-level feedback (env-gated)` — closes §"Open questions" #3. AgentDBService._attachLearningSubscriber gains a conditional `trajectory:step` listener gated by `STEP_LEVEL_FEEDBACK_ENABLED=true` env var (default OFF → zero overhead, identical to original episode-only P4.2). New `_handleAutopilotStep` method translates each step emit into `LearningSystem.submitFeedback` against sessionId `autopilot:${sha1(trajectoryId)}:step` (one sid per trajectory so Q-learning sees policy continuity across steps; per-step sids would defeat TD updates). Reward is pass-through — no step-level reshaping (the episode-level `_computeShapedReward` formula folds critique + iteration efficiency, neither meaningful per-step). Unit test `autopilot-phase4-step-feedback.test.ts` covers: flag OFF = no submitFeedback; flag ON = one submitFeedback per step; multiple steps share one sid; distinct trajectories bind distinct sids; reward pass-through verified across `[-1, 0, 0.25, 1, 2.5]`. All 5 cases pass (3ms). |
+
+## Amendment — sink/owner re-anchor (2026-06-10, ADR-0288 Gate-3)
+
+This ADR's chosen design (Option 1) put the cross-controller event bus
+**on** the fork-only agentic-flow `AgentDBService` (`learningEvents` +
+`getLearningEvents` + `getLearningSystem` + `_attachLearningSubscriber` +
+`_handleAutopilotEpisode`/`_handleAutopilotStep`, plus the
+`AgentDBService.storeEpisode` episode write the bus fired on). **ADR-0288
+retired that `AgentDBService` + fastmcp island** (agentic-flow `8c5ec5d7`,
+2026-06-04; published `@sparkleideas/agentic-flow` ships no `agentdb-service.js`),
+so the bus/subscriber mechanism described throughout (Context, Options, Scope,
+Contract, Implementation log) **no longer exists in the shipped tree**. The text
+is left intact as **honest history** of the design as built; it is not current
+architecture and the `AgentDBService` references should not be read as a live
+surface.
+
+**Current episode sink (ground truth):** `ReflexionMemory.storeEpisode → episodes`
+SQLite table in `forks/agentdb`, reached via `hooks_post-task → agentdb_reflexion_store`
+(ADR-0268 write chain, triggered automatically per ADR-0290). The
+autopilot→`LearningSystem` Q-learning feedback this Phase 4 wired through the
+`AgentDBService` event bus is **not** carried on the current path; `AutopilotLearning`
+was de-coupled to honest-unavailable when the island was deleted (ADR-0288
+Implementation note). Any future revival of the cross-controller-feedback intent
+must re-target the hook→reflexion sink, not `AgentDBService`.

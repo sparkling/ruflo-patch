@@ -341,6 +341,13 @@ _cache_bust_bumped_packages
 }
 _record_phase "install" "$(_elapsed_ms "$_p" "$(_ns)")"
 
+# ADR-0314: source the orphan-Chrome reaper early so the BEFORE-browser sweep
+# can use it, then reap any PPID-1 agent-browser-chrome orphans left by a prior
+# crashed/SIGKILLed run before this run's browser checks contend for CPU.
+adr0314_reaper_lib="${PROJECT_DIR}/lib/acceptance-adr0314-reaper.sh"
+[[ -f "$adr0314_reaper_lib" ]] && source "$adr0314_reaper_lib"
+declare -F _adr0314_reap_orphans >/dev/null 2>&1 && _adr0314_reap_orphans "before browser group"
+
 # ADR-0283: start the P4 browser checks from a CLEAN agent-browser session.
 # agent-browser (used by browser_eval) runs a PERSISTENT per-session browser
 # daemon (~/.agent-browser/<session>.sock + .pid). A stale/stuck `default`
@@ -923,6 +930,14 @@ adr0287_dogfood_lib="${PROJECT_DIR}/lib/acceptance-adr0287-dogfood-checks.sh"
 [[ -f "$adr0287_dogfood_lib" ]] && source "$adr0287_dogfood_lib"
 adr0312_lib="${PROJECT_DIR}/lib/acceptance-adr0312-checks.sh"
 [[ -f "$adr0312_lib" ]] && source "$adr0312_lib"
+# ADR-0314 checks (reaper sourced earlier, before the BEFORE-browser sweep)
+adr0314_lib="${PROJECT_DIR}/lib/acceptance-adr0314-checks.sh"
+[[ -f "$adr0314_lib" ]] && source "$adr0314_lib"
+# ADR-0317 system_health storage honesty + ADR-0316 init --no-global parser
+adr_syshealth_lib="${PROJECT_DIR}/lib/acceptance-adr-syshealth-checks.sh"
+[[ -f "$adr_syshealth_lib" ]] && source "$adr_syshealth_lib"
+adr_noglobal_lib="${PROJECT_DIR}/lib/acceptance-adr-noglobal-checks.sh"
+[[ -f "$adr_noglobal_lib" ]] && source "$adr_noglobal_lib"
 adrcreatematrix_lib="${PROJECT_DIR}/lib/acceptance-adr-create-checks.sh"
 [[ -f "$adrcreatematrix_lib" ]] && source "$adrcreatematrix_lib"
 adr0290_lib="${PROJECT_DIR}/lib/acceptance-adr0290-checks.sh"
@@ -3077,6 +3092,28 @@ log "  e2e context: ${_E2E_CTRL_COUNT} controllers listed in health"
 _record_phase "all-checks" "$(_elapsed_ms "$_g" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
+# ADR-0314: orphan agent-browser-chrome reaper — runs AFTER the browser group
+# (p4-br-*) completed in the all-checks wave above. Reaps PPID-1 orphans + temp
+# profiles and asserts zero remain; neg-control (run FIRST) proves a
+# live-parented session survives. Self-contained (ps/kill/rm) — no ACCEPT_TEMP.
+# ════════════════════════════════════════════════════════════════════
+_adr0314_start=$(_ns)
+if [[ -f "$adr0314_lib" ]]; then
+  log "── ADR-0314: orphan agent-browser-chrome reaper (post-browser-group assertion + neg-control) ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+
+  run_check_bg "adr0314-neg-control" "ADR-0314 live-parented mock survives reaper" check_adr0314_neg_control "adr0314"
+  run_check_bg "adr0314-no-orphans"  "ADR-0314 zero orphaned agent-browser-chrome + temp profiles after browser group" check_adr0314_no_orphans "adr0314"
+
+  collect_parallel "adr0314" \
+    "adr0314-neg-control|ADR-0314 live-parented mock survives reaper" \
+    "adr0314-no-orphans|ADR-0314 zero orphaned agent-browser-chrome + temp profiles after browser group"
+
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0314-browser-reap" "$(_elapsed_ms "$_adr0314_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
 # ADR-0094 Phase 14: SLO probes — sequential, AFTER the parallel wave joins
 # ════════════════════════════════════════════════════════════════════
 # Diagnosis /tmp/phase-fixes/p14-diagnosis.md confirmed that spawning these
@@ -4199,6 +4236,50 @@ if [[ -f "$adr0287r2_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
   rm -rf "$PARALLEL_DIR" 2>/dev/null
 fi
 _record_phase "phase-adr0287r2-storeindb-rethrow" "$(_elapsed_ms "$_adr0287r2_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0317: system_health storage honesty — memory check probes the REAL store
+# set (.swarm/memory.db + *.rvf), not only legacy .claude-flow/memory/store.json.
+# M1: healthy w/ a real store; M2: arch-guard the shipped artifact probes >=3
+# paths. Needs ACCEPT_TEMP (node_modules symlink) + CLI_BIN. RED until published.
+# ════════════════════════════════════════════════════════════════════
+_adr0317_start=$(_ns)
+if [[ -f "$adr_syshealth_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
+  log "── ADR-0317: system_health probes real store (memory healthy + arch-guard candidate set) ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+
+  run_check_bg "adr0317-syshealth-m1-healthy" "ADR-0317 system_health memory healthy w/ real store" check_syshealth_m1_memory_healthy_when_store_exists "adr0317"
+  run_check_bg "adr0317-syshealth-m2-archset" "ADR-0317 system_health probes store candidate SET"   check_syshealth_m2_archguard_candidate_set          "adr0317"
+
+  collect_parallel "adr0317" \
+    "adr0317-syshealth-m1-healthy|ADR-0317 system_health memory healthy w/ real store" \
+    "adr0317-syshealth-m2-archset|ADR-0317 system_health probes store candidate SET"
+
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0317-syshealth" "$(_elapsed_ms "$_adr0317_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0316: init --no-global (and all --no-* flags) survive validateFlags.
+# Advertised: init --help lists --no-global. Negation-accepted: status --no-color
+# (same validateFlags path, hermetic) emits no "Unknown option". Lightweight CLI
+# (_cli_cmd), no mutation. RED until published.
+# ════════════════════════════════════════════════════════════════════
+_adr0316_start=$(_ns)
+if [[ -f "$adr_noglobal_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
+  log "── ADR-0316: init --no-global advertised + parser accepts --no-* negation ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+
+  run_check_bg "adr0316-noglobal-advertised" "ADR-0316 init --help advertises --no-global"          check_adr_noglobal_advertised        "adr0316"
+  run_check_bg "adr0316-noglobal-negation"   "ADR-0316 parser accepts --no-* (status --no-color)"   check_adr_noglobal_negation_accepted "adr0316"
+
+  collect_parallel "adr0316" \
+    "adr0316-noglobal-advertised|ADR-0316 init --help advertises --no-global" \
+    "adr0316-noglobal-negation|ADR-0316 parser accepts --no-* (status --no-color)"
+
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0316-noglobal" "$(_elapsed_ms "$_adr0316_start" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
 # adr-create + the 4 ADR storage mechanisms — full op matrix. Every op

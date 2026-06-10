@@ -1,0 +1,76 @@
+# ADR-0314 — CI stanza for the orphaned-agent-browser-Chrome reaper.
+#
+# Per `feedback-always-wire-tests-into-cicd`: wired into the standard runner
+# (scripts/test-acceptance.sh + scripts/test-acceptance-fast.sh, adr0314 group)
+# AND here. These checks are pure ps/kill/rm — no Verdaccio, no CLI install, no
+# network — so this workflow sources the two libs and runs the checks directly
+# (fast). Per `feedback-no-tail-tests` the run writes its log to SMOKE_LOG_DIR.
+#
+# Coverage:
+#   adr0314-no-orphans  : 0 orphaned agent-browser-chrome PPID-1 procs + 0
+#                         leftover temp profiles after the browser group.
+#   adr0314-neg-control : a LIVE-parented mock agent-browser-chrome SURVIVES the
+#                         reaper (precision contract — never kill a live agent).
+
+name: ADR-0314 browser-Chrome reaper
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'lib/acceptance-adr0314-reaper.sh'
+      - 'lib/acceptance-adr0314-checks.sh'
+      - 'forks/ruflo/v3/@claude-flow/browser/src/infrastructure/agent-browser-adapter.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/browser-tools.ts'
+      - '.github/workflows/v3-ci-adr0314-browser-reap.yml'
+  pull_request:
+    paths:
+      - 'lib/acceptance-adr0314-reaper.sh'
+      - 'lib/acceptance-adr0314-checks.sh'
+      - 'forks/ruflo/v3/@claude-flow/browser/src/infrastructure/agent-browser-adapter.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/browser-tools.ts'
+      - '.github/workflows/v3-ci-adr0314-browser-reap.yml'
+
+env:
+  SMOKE_LOG_DIR: ${{ github.workspace }}/smoke-logs
+
+jobs:
+  browser-reap:
+    name: orphan agent-browser-chrome reaper (ADR-0314)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run ADR-0314 reaper checks (no install needed — pure ps/kill/rm)
+        run: |
+          set -euo pipefail
+          mkdir -p "${SMOKE_LOG_DIR}"
+          {
+            # Both libs are self-contained; checks set _CHECK_PASSED/_CHECK_OUTPUT.
+            source lib/acceptance-adr0314-reaper.sh
+            source lib/acceptance-adr0314-checks.sh
+
+            rc=0
+
+            check_adr0314_neg_control
+            echo "neg-control: ${_CHECK_PASSED} — ${_CHECK_OUTPUT}"
+            [[ "${_CHECK_PASSED}" == "true" ]] || rc=1
+
+            check_adr0314_no_orphans
+            echo "no-orphans:  ${_CHECK_PASSED} — ${_CHECK_OUTPUT}"
+            # no-orphans may legitimately skip_accepted only if the reaper helper
+            # is missing; here it is sourced, so require a true PASS.
+            [[ "${_CHECK_PASSED}" == "true" ]] || rc=1
+
+            echo "exit rc=${rc}"
+            exit $rc
+          } 2>&1 | tee "${SMOKE_LOG_DIR}/adr0314.log"
+
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs-adr0314-browser-reap
+          path: ${{ env.SMOKE_LOG_DIR }}

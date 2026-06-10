@@ -17,6 +17,9 @@
 #         adr0305 (adr-index skill → in-process agentdb index),
 #         adr0310 (FederationHubServer DOA repair, shipped-CLI cross-process),
 #         adr0312 (hook-side .cjs helpers under type:module),
+#         adr0314 (orphan agent-browser-chrome reaper),
+#         adr0316 (init --no-global / parser --no-* negation),
+#         adr0317 (system_health storage honesty),
 #         e2e-core, e2e-storage, skills-surface (ADR-0216)
 #         (adr0309 federation Phase-2 rides the adr0265 group)
 # Default: p3,p4 (the Phase 3+4 checks)
@@ -394,6 +397,35 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0310"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
     source "$PROJECT_DIR/lib/acceptance-adr0310-checks.sh"
     echo "── ADR-0310 (FederationHubServer DOA repair — shipped-CLI cross-process) ──"
     _fast_run "adr0310-federation-xproc" check_adr0310_federation_cross_process
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0314"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0314-reaper.sh" && -f "$PROJECT_DIR/lib/acceptance-adr0314-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0314-reaper.sh"
+    source "$PROJECT_DIR/lib/acceptance-adr0314-checks.sh"
+    echo "── ADR-0314 (orphan agent-browser-chrome reaper — neg-control + zero-orphans) ──"
+    _fast_run "adr0314-neg-control" check_adr0314_neg_control
+    _fast_run "adr0314-no-orphans"  check_adr0314_no_orphans
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0317"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr-syshealth-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr-syshealth-checks.sh"
+    echo "── ADR-0317 (system_health storage honesty — probes real store) ──"
+    echo "[fast] adr0317 reusing ACCEPT_TEMP: ${ACCEPT_TEMP}"
+    _fast_run "adr0317-syshealth-m1-healthy" check_syshealth_m1_memory_healthy_when_store_exists
+    _fast_run "adr0317-syshealth-m2-archset" check_syshealth_m2_archguard_candidate_set
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0316"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr-noglobal-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr-noglobal-checks.sh"
+    echo "── ADR-0316 (init --no-global advertised + parser accepts --no-* negation) ──"
+    _fast_run "adr0316-noglobal-advertised" check_adr_noglobal_advertised
+    _fast_run "adr0316-noglobal-negation"   check_adr_noglobal_negation_accepted
   fi
 fi
 
