@@ -38,7 +38,6 @@
 import { spawn } from 'node:child_process';
 import { appendFileSync, mkdirSync, existsSync, readFileSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { createRequire } from 'node:module';
 import {
   createSmokePerf,
   setupSmokeTempDir,
@@ -66,21 +65,24 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // whole literal, so trivial whitespace/comment edits don't false-fail while a
 // missing handler or a non-empty-list regression still fails.
 function archGuard(dir) {
-  const req = createRequire(join(dir, 'package.json'));
-  // Resolve the package ROOT. We cannot req.resolve('@sparkleideas/cli/package.json')
-  // — the package's `exports` map does not expose `./package.json` (Node throws
-  // ERR_PACKAGE_PATH_NOT_EXPORTED). Resolve the `.` main entry (which IS exported)
-  // and slice back to the package root under node_modules/@sparkleideas/cli;
-  // bin/*.js are then read via fs, bypassing the exports gate entirely.
-  let pkgRoot;
-  try {
-    const mainEntry = req.resolve('@sparkleideas/cli');
-    const marker = '/node_modules/@sparkleideas/cli';
-    const idx = mainEntry.lastIndexOf(marker);
-    if (idx === -1) throw new Error(`resolved main '${mainEntry}' not under ${marker}`);
-    pkgRoot = mainEntry.slice(0, idx + marker.length);
-  } catch (e) {
-    fail('F2-ARCH', `cannot resolve @sparkleideas/cli from ${dir}: ${e.message}`);
+  // Resolve the package ROOT by walking up from the temp project looking for
+  // node_modules/@sparkleideas/cli/package.json on disk. We deliberately avoid
+  // require.resolve('@sparkleideas/cli'): the package's `exports` map defines `.`
+  // with only `types` + `import` conditions (no `require`/`default`), so a CJS
+  // require.resolve throws ERR_PACKAGE_PATH_NOT_EXPORTED — and `./package.json`
+  // is not exported either. A filesystem walk bypasses the exports gate entirely
+  // and works whether the install is hoisted at `dir` or a shared parent.
+  let pkgRoot = null;
+  let d = dir;
+  for (let i = 0; i < 40; i++) {
+    const cand = join(d, 'node_modules', '@sparkleideas', 'cli', 'package.json');
+    if (existsSync(cand)) { pkgRoot = dirname(cand); break; }
+    const up = dirname(d);
+    if (up === d) break;
+    d = up;
+  }
+  if (!pkgRoot) {
+    fail('F2-ARCH', `cannot locate node_modules/@sparkleideas/cli walking up from ${dir}`);
     return;
   }
   const binDir = join(pkgRoot, 'bin');
