@@ -866,6 +866,11 @@ adr0261_lib="${PROJECT_DIR}/lib/acceptance-adr0261-checks.sh"
 # 7 active smokes + 3 skip-by-policy stubs + benchmark
 adr0265_lib="${PROJECT_DIR}/lib/acceptance-adr0265-checks.sh"
 [[ -f "$adr0265_lib" ]] && source "$adr0265_lib"
+# ADR-0309 federation Phase-2 — rides the adr0265 group (run_check_bg +
+# collect_parallel already there). Bugfix: this source line was missing, so
+# check_adr0309_fed_memory_roundtrip was undefined ("command not found").
+adr0309_lib="${PROJECT_DIR}/lib/acceptance-adr0309-checks.sh"
+[[ -f "$adr0309_lib" ]] && source "$adr0309_lib"
 
 # ADR-0266: ADR-129 Phases 1-3 implementation amendment —
 # 5 smokes (4 dispatch checks + 1 allowlist resolution gate)

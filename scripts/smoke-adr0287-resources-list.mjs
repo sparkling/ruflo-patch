@@ -67,14 +67,23 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // missing handler or a non-empty-list regression still fails.
 function archGuard(dir) {
   const req = createRequire(join(dir, 'package.json'));
-  let cliPkgJson;
+  // Resolve the package ROOT. We cannot req.resolve('@sparkleideas/cli/package.json')
+  // — the package's `exports` map does not expose `./package.json` (Node throws
+  // ERR_PACKAGE_PATH_NOT_EXPORTED). Resolve the `.` main entry (which IS exported)
+  // and slice back to the package root under node_modules/@sparkleideas/cli;
+  // bin/*.js are then read via fs, bypassing the exports gate entirely.
+  let pkgRoot;
   try {
-    cliPkgJson = req.resolve('@sparkleideas/cli/package.json');
+    const mainEntry = req.resolve('@sparkleideas/cli');
+    const marker = '/node_modules/@sparkleideas/cli';
+    const idx = mainEntry.lastIndexOf(marker);
+    if (idx === -1) throw new Error(`resolved main '${mainEntry}' not under ${marker}`);
+    pkgRoot = mainEntry.slice(0, idx + marker.length);
   } catch (e) {
     fail('F2-ARCH', `cannot resolve @sparkleideas/cli from ${dir}: ${e.message}`);
     return;
   }
-  const binDir = join(dirname(cliPkgJson), 'bin');
+  const binDir = join(pkgRoot, 'bin');
 
   for (const entry of ['cli.js', 'mcp-server.js']) {
     const p = join(binDir, entry);
