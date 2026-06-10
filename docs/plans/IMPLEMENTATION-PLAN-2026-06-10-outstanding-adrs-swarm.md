@@ -147,6 +147,12 @@ docs + `ruflo-patch` ADRs.
 - **2 new ADRs** for swarm-found bugs: (a) `system_health` reports memory "degraded — store
   not found" while memory works (ADR-0210-class reporter honesty); (b) `init --help` advertises
   `--no-global` but the parser rejects it.
+- **ADR-0314** (written 2026-06-10) — implement the `agent-browser` headless-Chrome
+  **teardown + PPID-1 orphan reaper + acceptance check**. The recurring acceptance
+  perf-gate contention (`feedback-perf-gate-failure-check-machine-load`) traces to this
+  leak — 11 orphaned headless Chrome / ~8-9 cores, killed 2026-06-10. **Sequenced before
+  Wave 5 (Batch-U)** so the upstream-merge's measurement-sensitive perf gates run
+  contention-free.
 
 ---
 

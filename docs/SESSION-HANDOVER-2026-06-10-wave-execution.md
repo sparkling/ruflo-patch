@@ -11,7 +11,7 @@ plan via an 8-agent patch-report swarm (queen = main session applies/builds/comm
 implemented, build-verified, and committed locally (NOT pushed).** Provenance for
 all 7 recorded in the INTEGRATION-LEDGER. **What remains: the ruflo-patch
 acceptance wiring (~15 smoke/lib files + run+collect + ~4 workflows + the
-parity-test rewrite + dogfood `.claude/` config), Wave 4 (docs + 2 new ADRs),
+parity-test rewrite + dogfood `.claude/` config), Wave 4 (docs + 2 new ADRs + the now-written **ADR-0314** agent-browser leak fix, before Batch-U),
 then ONE release** (Henrik's go-ahead; carries 0304 codex fix, KEPT). Wave 5
 (Batch-U / ADR-0313) stays separately gated.
 
@@ -75,6 +75,7 @@ Exact file contents are in the preserved transcripts. Per ADR:
 - **0288 Gate-3 doc half**: re-anchor ~29 `AgentDBService` "episode store" refs across ADR-0192/0193/0195/0196 (or dispose per `feedback-old-adr-status-lines-go-stale`).
 - **0286** (optional): deferred fail-loud (default-throw + opt-in env + regression test).
 - **2 new ADRs** for swarm-found bugs: (a) `system_health` reports memory "degraded — store not found" while memory works (ADR-0210-class reporter honesty); (b) `init --help` advertises `--no-global` but the parser rejects it.
+- **ADR-0314** (WRITTEN this session — `docs/adr/ADR-0314-agent-browser-headless-chrome-leak.md`): implement the `agent-browser` headless-Chrome **teardown + PPID-1 orphan reaper + acceptance check**. Root cause of the recurring acceptance perf-gate contention (the leaked headless Chrome killed this session — 11 instances, ~8-9 cores). **MUST land before the Batch-U upstream merge** (Wave 5) — that wave's perf gates need a contention-free machine.
 
 ### 3. ONE release (Henrik's explicit go-ahead required)
 - Release from the **MAIN checkout** (`feedback-release-from-main-checkout-only`), `npm run release` / `bash scripts/ruflo-publish.sh` (`--force` if a dist was wiped). Push forks to **`sparkling`** (NEVER origin/hz).
