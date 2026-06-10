@@ -73,6 +73,19 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
+# ── mise shim foreign-HOME hang workaround (ADR-0302-adjacent) ──────────────
+# The mise `node` SHIM (PATH position 1) deterministically hangs ~12s when $HOME
+# points at a fresh/foreign dir — and many acceptance checks set HOME=$fake_home
+# (mktemp -d) for isolation, so they hang → SIGKILL → empty stdout / timeout
+# (root cause of the patch.433 adr0100-d/f + adr0069 fails, traced 2026-06-10,
+# 20/20 repro). The mise INSTALL-DIR binary (SAME pinned node major) does NOT
+# hang. Prepend it so this harness's subprocess `node` (CLI shebangs + inner
+# evals) uses the direct binary, not the buggy shim wrapper. Pin-parity intact
+# (no version change); this is NOT mise-exec-wrapping. Env-level fix (mise
+# upgrade / shim repair) is the longer-term ADR-0302 "fix the env" path — TBD.
+_MISE_NODE_DIR="$(mise which node 2>/dev/null | xargs dirname 2>/dev/null)"
+[[ -n "${_MISE_NODE_DIR:-}" && -x "${_MISE_NODE_DIR}/node" ]] && export PATH="${_MISE_NODE_DIR}:${PATH}"
+
 PORT=4873
 REGISTRY="http://localhost:${PORT}"
 ACCEPT_TEMP=""
