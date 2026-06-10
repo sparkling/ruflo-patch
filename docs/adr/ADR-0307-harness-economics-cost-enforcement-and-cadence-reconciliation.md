@@ -73,20 +73,25 @@ reconciliation. Status `proposed`; no execution until an explicit go-ahead.
 
 ### Tasks
 
-* **T1 — Decide the enforcement contract.** Does budget ≥100% gate worker/agent
-  dispatch (skip non-critical workers), or is hard cut-off exclusively the
-  federation budget circuit breaker (plugin.json's ADR-097)? Pick one; document
-  it at the call site.
-* **T2 — If gate-in-daemon:** wire `recommendedAction('HARD_STOP')` into
-  `worker-daemon.js` dispatch so non-critical scheduled workers (audit/optimize/
-  map) are skipped at ≥100% utilisation, with a green acceptance check that a
-  simulated over-budget state suppresses a scheduled fire. If breaker-only:
-  document cost-tracker as attribution+alerting (not enforcement) at the call
-  site + USERGUIDE, matching the corrected README.
-* **T3 — Reconcile worker-cadence defaults.** Make the shipped code defaults
-  (`worker-daemon.js`) and the `init` template (`claudeFlow.daemon.schedules`)
-  agree on a single documented default cadence, or document explicitly that the
-  template intentionally overrides the conservative code defaults (and why).
+* **T1 — Enforcement contract. RESOLVED 2026-06-10 → attribution-only, follow
+  upstream** (decision: Henrik; evidence in the Upstream-alignment amendment
+  below). Budget does NOT gate worker/agent dispatch; hard cut-off is
+  exclusively the federation budget circuit breaker (ADR-097). This is
+  upstream's documented model, not a fork choice — so T2 is a doc task, not a
+  daemon-loop change.
+* **T2 — Document attribution-only honestly (NOT gate-in-daemon).** State at the
+  call site + USERGUIDE that cost-tracker is attribution + alerting + the
+  opt-in `budget check && spawn` gate (all upstream), with hard cut-off =
+  ADR-097 federation circuit breaker — matching the already-corrected README.
+  No `worker-daemon.js` dispatch change. Also fix the evidence-line errors
+  (the "learn→opus" conflation; stale haiku-4.5 pricing in `track.mjs`).
+* **T3 — Reconcile worker-cadence to UPSTREAM.** Follow upstream's cadence
+  rather than inventing a number: upstream `worker-daemon.ts` documents
+  audit=10min / optimize=15min (header + the config array), so first
+  provenance-check whether the shipped 30m/60m at `:59-60` is a *different
+  array* or genuine fork divergence (`git show origin/main` / `diff`); then
+  align the code defaults + `init` template (`claudeFlow.daemon.schedules`) to
+  upstream's intended cadence, or record an explicit, justified fork override.
 
 ### Consequences
 
@@ -169,3 +174,31 @@ or track separately. The current user-facing README §3 (sole commit
 `38ac38a`, 2026-06-09) already states "HARD_STOP is an advisory
 recommendation … nothing currently gates dispatch on it" — which inherits
 the same daemon-scoped imprecision; correct it alongside T2's resolution.
+
+### Upstream-alignment amendment (2026-06-10): T1 RESOLVED → attribution-only (follow upstream intent + implementation)
+
+A provenance + upstream-ADR check (user directive: "follow upstream intent
+and implementation") settled T1 decisively against daemon gating, because
+gating would be a *divergence* from upstream's deliberate architecture:
+
+* **Upstream's `worker-daemon.ts` has ZERO budget/HARD_STOP references** — "the
+  daemon does not gate dispatch on budget" is upstream's *design*, not an
+  unfinished gap. Wiring it fork-side would diverge with no upstream basis.
+* **The opt-in `exit-1` HARD_STOP gate IS upstream** (`origin/main`
+  `plugins/ruflo-cost-tracker/scripts/budget.mjs:216`) — it is ADR-097's
+  Phase-3 consumer work, not a fork original (the earlier "fork commit
+  `b1608dee1`" attribution was at most the sync that carried it in).
+* **Upstream ADR-097 "Federation-wide Budget Circuit Breaker" (Accepted,
+  Partially Implemented)** places hard enforcement deliberately at the
+  **federation boundary** — `federation_send` caps (`maxTokens`/`maxUsd`/
+  `maxHops` across the hop chain) to stop cross-node cost cascades + recursive
+  delegation loops. Phase 1 (send-side) shipped in the federation plugin;
+  Phase 3 (consumer) in `ruflo-cost-tracker@0.14.0`. The cost-tracker contract
+  ADR-0001 confirms the split: the plugin is attribution + alerting + opt-in
+  gate, and *pairs with* ADR-097 for the hard cut-off.
+
+So upstream's intended model is **attribution-only locally, hard enforcement
+only at the federation boundary**. Decision: track that — T2 becomes a
+doc/honesty task (no daemon-loop change), T3 aligns cadence to upstream. The
+"gate-in-daemon" Considered Option is closed as an unwanted fork divergence.
+This ADR stays `proposed` until T2 (docs) + T3 (cadence alignment) ship.
