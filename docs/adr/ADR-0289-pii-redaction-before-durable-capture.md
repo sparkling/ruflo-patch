@@ -197,3 +197,36 @@ Phase-1 gate is live in the shipped pipeline: `test-acceptance.sh:4131`
 `.github/workflows/v3-ci-learning-capture.yml:67-71`, canary assertions in
 `scripts/smoke-adr0290-learning-loop.mjs:202` (metadata-only + canary-absent
 + whole-DB sweep per `lib/acceptance-adr0290-checks.sh:13`).
+
+### Phase-2 decision (2026-06-10): DEFER confirmed — and this is a deliberate divergence FROM upstream, not a gap
+
+An upstream provenance check (user directive: "follow upstream intent and
+implementation") settled Phase 2 by establishing that **upstream is the
+rejected Option D**: upstream's `ReflexionMemory.storeEpisode`
+(`ruvnet/agentic-flow .../agentdb/controllers/ReflexionMemory.ts:57-73`)
+does `INSERT INTO episodes (session_id, task, input, output, critique,
+reward, success, …)` with raw free-text passed straight through, and **no
+redaction exists anywhere upstream** (`redact`/`security/redaction` greps
+empty across `ruvnet/agentdb` + `ruvnet/agentic-flow` origin/main). So:
+
+* The fork's **Phase-1 metadata-only capture is a deliberate, ratified
+  *security divergence from* upstream** — upstream captures the raw free-text
+  this ADR judged an ungoverned PII/secret exposure (Option D).
+* **`redactFreeText` / the redaction gate is fork-original, ahead of
+  upstream** — there is nothing upstream to "follow" here.
+* Therefore "follow upstream implementation" does NOT apply to Phase 2:
+  upstream's implementation is the unsafe path this ADR exists to refuse.
+  Phase 2 (redacted free-text) would be fork-AHEAD work — the *safe* way to
+  converge toward upstream's free-text richness (which feeds
+  skill-consolidation the fork currently forgoes), not an upstream-tracking
+  task.
+
+**Decision (Henrik, 2026-06-10): DEFER Phase 2.** Phase 1 delivers the
+headline learning value (ADR-0280 routing lives entirely in the PII-free
+structured fields); free-text only feeds skill-consolidation, which is not
+pressing; and building redacted-free-text capture now is fork-ahead
+speculation (`feedback-corpus-evidence-before-feature-work`). The redaction
+gate stays wired-but-self-inert at the `storeEpisode` boundary, so a future
+producer is already protected if Phase 2 is ever greenlit. The two human
+calls (is redacted free-text wanted? which detector of record?) remain open
+by choice, not by oversight.
