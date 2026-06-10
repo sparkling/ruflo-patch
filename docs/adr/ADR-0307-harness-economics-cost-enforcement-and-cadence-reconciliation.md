@@ -123,3 +123,49 @@ is documented). Until T1 is decided and ships, this ADR stays `proposed`.
   `worker-daemon.js:175`. The real LLM spawn is `headless-worker-executor.js:914`
   `spawn('claude', ['--bare','--print'])` (per-tier: audit→haiku, optimize/
   testgaps→sonnet, learn→opus).
+
+## Amendments
+
+### Amendment (2026-06-10): premise 1 narrowed — a fail-closed gate already ships; two evidence corrections
+
+Adversarial re-verification (8-agent swarm) confirmed the cadence findings
+exactly and LIVE (code defaults `worker-daemon.js:59-60` = 30m/60m in shipped
+patch.432; this install's `settings.json` schedules = 4h/2h consumed at
+`:175`; the running daemon's `daemon-state.json` shows audit 07:36→11:36 (4h)
+/ optimize 07:38→09:38 (2h) and `logs/daemon.log` carries `interval: 14400s`
+×102 + `interval: 7200s` ×102; `spawn('claude', ['--bare','--print'])` exact
+at `headless-worker-executor.js:914`). Three corrections to the premises:
+
+1. **"No code consumes `HARD_STOP`" is true for the daemon, FALSE
+   absolutely.** `budget.mjs:208` ships
+   `if (alert.level === 'HARD_STOP') process.exit(1)` — a fail-closed
+   mechanical gate, shipped since 2026-05-09 (`b1608dee1`, a month before
+   this ADR), documented as a spawn-guard pattern in
+   `skills/cost-budget-check/SKILL.md:39` ("Wrap critical agent spawns in a
+   `budget.mjs check && spawn …` guard") and the plugin's own ADR-0003. What
+   is missing is only AUTOMATIC gating: the daemon dispatch loop has zero
+   budget/`HARD_STOP` references (confirmed across shipped
+   `worker-daemon.js` + `headless-worker-executor.js`). **T2 therefore
+   reduces further:** have the daemon consume the existing `budget check`
+   exit-1 gate (or its logic) before non-critical fires — the primitive
+   already exists.
+2. **The Evidence line "learn→opus" conflated two workers.** No headless
+   `learn` template exists; opus belongs to `ultralearn` (:167→:190) and
+   `deepdive` (:219→:236). The daemon worker literally named `learn`
+   (`worker-daemon.js:71`) is the in-process NightlyLearner
+   (`routeLearningOp`) — spawns no `claude`, costs $0 LLM. audit→haiku
+   (:70→:92) and optimize/testgaps→sonnet (:98→:115, :121→:138) confirmed
+   exact.
+3. **The Considered-Options premise "the fork's plugin.json/USERGUIDE still
+   imply enforcement" is REFUTED** — `plugin.json:3` says "budget alerts,
+   and optimization recommendations" (no enforcement claim) and the fork
+   USERGUIDE's "enforce" hits are all guidance-gate/spec-compliance
+   sections. The doc-honesty half of T2's else-branch is already satisfied;
+   drop that premise at ratification.
+
+Also recorded: `track.mjs:28-31` carries an in-file note that the haiku
+pricing constants lag haiku-4.5 (1.00/5.00) — fold into T3's reconciliation
+or track separately. The current user-facing README §3 (sole commit
+`38ac38a`, 2026-06-09) already states "HARD_STOP is an advisory
+recommendation … nothing currently gates dispatch on it" — which inherits
+the same daemon-scoped imprecision; correct it alongside T2's resolution.

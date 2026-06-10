@@ -62,3 +62,33 @@ Related decisions (surfaced by `adr-patterns` semantic search):
 * **ADR-0285** — *repair the causal/recall surfaces*: the P3/P4/P6 bug class that the silent **SQLite-engine** fallback hid; its fail-loud follow-up in `forks/agentdb/src/core/AgentDB.ts` (`resolveBetterSqlite3LoadFailure`, commit `bf90267`) is the direct sibling of the deferred work here.
 * **ADR-0091** — *sql.js Memory Fallback Removed* — prior fallback-removal precedent.
 * **ADR-0166** / **ADR-0056** — AgentDB persistence axis-separation and the RVF-primary/SQLite-fallback MCP backend; context for how the vector vs SQLite substrates relate.
+
+## Amendments
+
+### Amendment (2026-06-10): interim deliverable SHIPPED — the Context's "silent console.log" is now historical
+
+Adversarial re-verification against the shipped runtime: the interim
+loud-logging deliverable landed as agentdb commit `602ee04` ("feat(factory):
+loud-log every vector-backend fallback (ADR-0286 interim)") and SHIPS in
+`@sparkleideas/agentdb@…patch.444` (verified in BOTH the live daemon's npx
+cache and the newest Verdaccio tarball): `warnVectorBackendFallback` helper
+(`factory.ts:224-228`) with 8 call sites covering every degradation branch —
+explicit-rvf→sql.js, RuVector-init-fail→RVF, RVF-after-fail, →HNSWLib,
+→sql.js, and all three not-installed selections; the no-backend case throws;
+`⚠ VECTOR-BACKEND FALLBACK` appears ×9 in the shipped `factory.js`. The only
+remaining `console.log`s (:253, :279) are preferred-path notices, satisfying
+the interim Confirmation grep. The Context's present-tense "every degradation
+emits only an ordinary `console.log`" was accurate when written (pre-fix tree
+at `602ee04^`: 13 `console.log`, 0 warns) and is now historical.
+
+Verified still open (per this ADR's own flip rule, status stays `proposed`):
+the DEFERRED fail-loud work — default-throw on init-failure degradation,
+`AGENTDB_ALLOW_*`-style opt-in env, and a regression test mirroring
+`agentdb-no-silent-sqljs-fallback.test.ts` — none of which exists in the
+shipped factory. The init-failure degradation behavior itself persists by
+design (Option B: "logged loudly rather than refused"; now ~:286-313 in
+source). Related-context note: the ADR-0163-era recovery swallow persists in
+`memory/dist/rvf-backend.js:~2742-2752` (silent fallthrough, warn only under
+`verbose`) — a different file/package than this ADR's factory target,
+defanged for the t3-2 metric by ADR-0284's direct `listMetadataIds` durable
+probe.

@@ -81,7 +81,8 @@ and that case turns on gates this record cannot decide unilaterally:
 * **Gate 3 — re-anchor ADR-0192/0193/0195/0196/0197's "episode store"** language from `AgentDBService` to the
   duck-typed / ruflo-SQLite sink (those ADRs assume an `AgentDBService`-shaped episode sink exists).
 
-**This ADR is `proposed` and authorises nothing.** It records the investigation, the consequence inventory, and
+**This ADR was authored `proposed` and, at that time, authorised nothing.** (Gates since resolved and execution
+shipped — see the Implementation note; frontmatter is `accepted`.) It records the investigation, the consequence inventory, and
 the decision framework. The actual removal requires (i) the gates resolved toward A/C, (ii) the sandbox
 confirmation in `### Confirmation`, and (iii) a separate explicit go-ahead. **Sequencing:** land ADR-0287 §F10
 seam (a) first — it is orthogonal (it writes via the ruflo/SQLite path, never `AgentDBService`) and proves the
@@ -217,3 +218,24 @@ Before any real removal (all in a throwaway git worktree first — nothing touch
   not gate on the full cascade.
 * **Open:** Gate-3 re-anchoring (ADR-0192-family "episode store" language) remains tracked, not
   done here. Status flips with the next green release.
+
+### Gate-3 status update (2026-06-10, adversarial re-verification)
+
+* **Probe half of Gate-3: CLOSED 2026-06-06 (previously unrecorded here).**
+  `scripts/test-acceptance.sh:1203-1212` retires the `ctrl-autopilot-*`
+  probes "per ADR-0288 Gate-3"; coverage moved to `adr0290-learning-loop` +
+  `adr0089-svc`. The retirement check
+  (`check_adr0288_agentdb_service_retired`,
+  `lib/acceptance-adr0089-checks.sh:71`) is wired in BOTH `run_check_bg`
+  (`test-acceptance.sh:1465`) AND `collect_parallel` (`:2863`) — no
+  no-verdict gap. Shipped `@sparkleideas/agentic-flow@…patch.980` re-verified
+  (deep find): neither `agentdb-service.js` nor `controller-bridge.js`
+  present.
+* **Doc half of Gate-3: STILL OPEN** — `AgentDBService` "episode store"
+  language remains in ADR-0192 (1 ref), ADR-0193 (~6), ADR-0195 (~12),
+  ADR-0196 (~10); ADR-0197 is clean; none carry Amendment sections yet.
+  Either re-anchor those references to the ruflo-SQLite/duck-typed sink or
+  dispose them per `feedback-old-adr-status-lines-go-stale`.
+* The Decision-Outcome sentence "This ADR is `proposed` and authorises
+  nothing" was corrected in place this date — it contradicted the `accepted`
+  frontmatter set by the 2026-06-07 green release (patch.397).

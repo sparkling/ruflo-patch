@@ -223,3 +223,46 @@ line was initially misread (by me) as the router being merely "advisory";
 user pushback ("I don't believe it when you say the router does not work")
 prompted the live probes that re-found the breakage and refined the
 mechanism for Node 24.
+
+## Amendments
+
+### Amendment (2026-06-10, same day): mechanism narrative corrected — production still THROWS; the no-throw behavior was an eval-context artifact
+
+A fresh-eyes verification agent reproduced this ADR end-to-end the same day
+(fresh Verdaccio install of `@sparkleideas/ruflo@3.1.0-alpha.14-patch.404` →
+cli patch.432, identical to the npx-cache runtime; `ruflo init` sandbox in
+/tmp; Node v24.14.1): the control project (no `type: module`) renders the
+`Primary Recommendation | Agent: coder | 80.0%` box; adding
+`"type": "module"` produces `[INFO] Router not available, using default
+routing`. The defect, Option A, and T1–T4 are all CONFIRMED — the e2e run is
+effectively T3 executed by hand. Two corrections to this ADR's own text:
+
+* **The "mechanism drift" claim is WITHDRAWN.** Probes A/B/C ran via
+  `node -e` / `--input-type=module` (EVAL context), where Node 24 exposes a
+  global `module` binding (the `node:module` CJS `Module` ctor) and both
+  loader styles return exportless namespaces without throwing. In FILE-based
+  ESM — the real handler shape — `typeof globalThis.module` is `undefined`
+  and both loader styles THROW (`module is not defined in ES module scope` /
+  `require is not defined…`), caught → null. The generated template's
+  `safeRequire` even prints `[FAIL] hook-handler.safeRequire: module is not
+  defined in ES module scope` to stderr. **ADR-0287 F3a's throw description
+  was correct on Node 24 all along**; fix-verification keyed on the throw is
+  NOT stale — this ADR's Context said the opposite and is corrected here.
+  "Double-silenced" holds fully only for ruflo-patch's ADR-0085 `safeImport`
+  variant (`catch { /* silently fail */ }`); the template variant signals on
+  stderr while stdout shows only the fallback.
+* **T5's rationale rebased.** `createRequire` is still not a fix — but for
+  F3a's resolution-based reason (Node resolves a `.js` file by the nearest
+  package.json `type`, regardless of the requiring module's scope), not
+  Probe B's empty-namespace observation. The blessing T5 rewrites lives in
+  `ruflo-patch/tests/pipeline/init-helpers-parity.test.mjs` (the fork's
+  `executor.ts:1206` points at it): comment `:193-195` + assert message
+  `:199-202`; the assertion itself only bans top-level `require`.
+
+Minor updates from the same pass: F3a's generator citation
+(`helpers-generator.ts` ~:1212-1221) is stale at fork HEAD — the emission map
+now sits at `:1514` (`helpers['router.js']`), with `executor.ts:1210-1212`
+still referencing the `.js` names (T1 scope confirmed; fork main
+`3ccb64e0e`). Incidental finding recorded for separate triage: `ruflo init
+--help` advertises `--no-global` but the parser rejects it
+(`[ERROR] Unknown option: --global`).

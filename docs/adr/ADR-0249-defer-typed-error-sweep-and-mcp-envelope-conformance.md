@@ -121,3 +121,32 @@ Confirmation is the re-evaluation triggers themselves. Specifically:
 - `ruflo-patch/scripts/check-mcp-handler-fatal-throw.mjs` + `ruflo-patch/lib/mcp-handler-fatal-throw-allowlist.txt` — the 61-handler baseline.
 - Session 2026-05-24 follow-up audit — the parent-session conversation that surfaced the question "do these now or defer?" and produced this ADR.
 - [[ADR-0233]] §"Reviews still owed" — the second-pass parent rollup that names this work as carry-forward.
+
+## Amendments
+
+### Amendment (2026-06-10): MCP-envelope half described the lint backwards; baselines verified intact
+
+Adversarial re-verification (8-agent swarm):
+
+* **Typed-error half: intact and healthy.** `lib/throw-new-error-allowlist.txt`
+  = 781 entries, untouched since landing commit `91a1eef` (no silent
+  padding); live run 2026-06-10: 902 scanned / 17 delta — erosion +1.7%,
+  well under the 10% trigger. `@claude-flow/errors` adoption remains exactly
+  2 consumers, as the "flatline" consequence predicted. Both lints run on
+  every release (`scripts/ruflo-publish.sh:646,656`) — the erosion trigger
+  is REAL and tracked; triggers 1–2 (operator reports / client issues) have
+  no intake surface (aspirational); the ~3-month window runs to ~2026-08-24.
+* **MCP-envelope half: the body describes the rule INVERTED.** The Context
+  (:17) and Consequences say 61 handlers "throw fatally instead of returning
+  the protocol-conformant `{isError: true}` envelope" and defer a
+  throw→envelope migration. The actual deferred artifact
+  (`scripts/check-mcp-handler-fatal-throw.mjs:2-31`, per ADR-0242:48,101,107)
+  enforces the OPPOSITE direction: **fatals must THROW** (the server wrap
+  emits JSON-RPC `-32603`); the lint flags handlers that catch-and-RETURN
+  `{success:false}` for fatals. The baseline is **20 grandfathered of 63
+  found** (allowlist header), not 61; current: 66 found / 3 delta. The
+  deferral itself remains valid — the deferred work is migrating the 20
+  grandfathered catch-and-return handlers to throw (plus triaging the +3
+  delta), not wrapping throws in envelopes. Read trigger 2 accordingly:
+  client breakage would manifest as missing `-32603`s, not missing
+  envelopes.

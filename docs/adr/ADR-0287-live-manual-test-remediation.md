@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-06-02
 tags: [mcp, observability, learning, memory, honesty, infrastructure]
 supersedes: []
@@ -572,3 +572,66 @@ on-disk only.)
   `proposed`, authorises nothing), gated on the product-decision "is agentic-flow's standalone MCP server still
   wanted?" Synthesis + facets:
   `docs/research/agentic-flow-retirement/00-SYNTHESIS.md` + `01-05`.
+
+## Amendments
+
+### Amendment (2026-06-10): flipped `proposed` → `accepted` — backlog ~75% executed
+
+A finding-by-finding adversarial re-verification (8-agent swarm; shipped
+runtime = npx cache ≡ Verdaccio latest: cli patch.432, agentic-flow patch.980,
+agentdb patch.444) found this disposition record's backlog largely executed
+and its `proposed` status stale per `feedback-old-adr-status-lines-go-stale`:
+
+* **Closed, verified in shipped dist (fork commit `9767dc601` — the reporter
+  tier):** F3b (`route.js:143` prints `Confidence: n/a (untrained — no
+  learning data yet)`), F4 (doctor PID path project-root-anchored,
+  `doctor.js:163`), F8a (real dims end-to-end — live `neural_status` reports
+  `_realEmbeddings:true`, provider mpnet-768; `rvf-backend.js:1225`,
+  `agentdb-backend.js:526`), F8b (doctor recommends config.json-canonical,
+  `doctor.js:93-143`; the residual on-disk `config.yaml` was explicitly
+  split-out work), F8e (isTTY guards, `output.js:420/442/488/504/519`).
+* **Closed by sibling ADRs:** F5 via ADR-0288's executed retirement
+  (agentic-flow `8c5ec5d7`; `agentdb-service.js` absent from shipped
+  patch.980; live `agentdb_health` = 41 controllers from the canonical
+  registry). F10 via ADR-0290 (live-verified 2026-06-10: `episodes` current
+  with same-day rows, `.swarm/action-values.json` updated 09:48 with real
+  uplift rows, `lastAdaptation` = 2026-06-10T09:10, `trajectoriesRecorded`
+  715→1456 — all three formerly-frozen metrics advance). F3a extracted to
+  ADR-0312 (whose same-day verification additionally showed F3a's original
+  throw-mechanism description was correct on Node 24).
+* **F8d re-dispositioned (moot as filed):** shipped
+  `ruvector-ruvllm@2.5.5-patch.218` genuinely lacks `ContrastiveTrainer`
+  (live `require` probe: `undefined`), and the in-code comment was rewritten
+  honest (`intelligence.js:972-979`) — "Unavailable" is now a TRUTHFUL
+  report; the republish+wire-global disposition no longer applies.
+  `__claudeFlowSonaStats` remains a setter-less vestigial global (cosmetic).
+* **F6/F7/F8c/F9p/F11/T2/T3/T4 remain as documented** (non-bugs, withdrawn
+  items, and KEEPs re-confirmed; T2's `action-values.json` is now actually
+  fed, closing its starvation caveat).
+
+**Genuinely open remainder (the actionable list):**
+
+1. **F2** — both shipped bins advertise `capabilities.resources` then return
+   `-32601` for `resources/list` (live-proven via JSON-RPC pipe on patch.432;
+   advert `cli.js:206` / fallthrough `:309`; `mcp-server.js:192`/`:298`).
+   Highest-value remaining item.
+2. **R2** — `storeInAgentDB`'s SQLite INSERT + HNSW add still sit in bare
+   swallowing catches (`agentdb-backend.js:604-672`); latent (off the
+   `routeMemoryOp`→RvfBackend hot path); discriminated-rethrow disposition
+   unimplemented.
+3. **T1 silo half** — this repo's dogfood `auto-memory-hook.mjs:247-253`
+   still creates `.swarm/agentdb-memory.rvf` (1.0MB, last write Jun 1) and
+   `ruflo-patch/.claude/settings.json:151` still invokes the removed
+   `sync` subcommand on Stop (harmless usage-print). Fresh inits are clean —
+   the generator emits no silo and the drain half is fully gone
+   (`helpers-generator.js:1019-1036`, fork `b35b85a69`).
+4. **F1 band-aid** — `MCP_TIMEOUT=60000` was decided but set NOWHERE
+   (checked `.mcp.json` env, `~/.claude/settings.json`, `~/.claude.json`,
+   fish config, `launchctl getenv`, live process env). Apply it or record it
+   consciously skipped; the structural cause (1.5GB npx tree on cold
+   install) is unchanged.
+
+**New observation (same ADR-0210 family, recorded for a future sweep):** live
+`system_health` reports memory `degraded — "Memory store not found — run
+memory init"` while memory demonstrably works (1,226+ entries, live
+searches) — a fresh reporter-honesty candidate, not an 0287 finding.

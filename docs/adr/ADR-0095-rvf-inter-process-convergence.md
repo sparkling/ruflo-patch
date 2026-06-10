@@ -1054,6 +1054,6 @@ This ADR was forked from ADR-0094 Open Item #1. It is related to ADR-0086 (Stora
 
 ## Amendments
 
-### Amendment: revisited by ADR-0284 (proposed, 2026-06-01)
+### Amendment: revisited by ADR-0284 (proposed 2026-06-01; ACCEPTED 2026-06-10 — the d13 `.jslock` removal is live in shipped `@sparkleideas/memory@…patch.432`)
 
 ADR-0284 (*"Collapse RVF write coordination to a single native flock"*) revisits this ADR's **`.jslock` advisory-lock design** (item d13 — wx-create + PID-liveness steal + re-entrant depth counter) and the **2026-05-01 init-scope-down** amendment: on acceptance both are removed and the native kernel flock becomes the sole cross-process write serializer for the `.rvf` envelope. This ADR's load-bearing **native** invariants — **d11 (fsync-before-rename), d12 (`flock(LOCK_EX)`), d14 (`create_new` after `flock`)** — are **retained, not superseded** (ADR-0284 makes the flock authoritative, consistent with d12). Encoded as prose (no `supersedes:` flip — the strict `adr-index` contract requires superseded targets to carry `status: superseded`; this ADR stays `accepted`). See ADR-0284 §Supersession scope; council record: `docs/council/2026-06-01-rvf-lock-council-transcript.md`.

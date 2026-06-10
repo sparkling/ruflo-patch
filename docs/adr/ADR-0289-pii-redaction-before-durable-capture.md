@@ -171,3 +171,29 @@ must simply not write free-text until Phase 2's gates are met.
   is intentionally **not** on main — it lands only when/if Phase 2 is authorised.
 * Net: the ADR's *policy* is accepted; Phase 1 is live and locked; Phase 2 awaits
   an explicit go-ahead. `completed` is intentionally not set (Phase 2 open).
+
+### Correction (2026-06-10): the redaction mechanism WAS already wired at the storeEpisode boundary — the sentence above was stale when written
+
+Adversarial re-verification (8-agent swarm): agentdb main commit `b385492`
+(2026-06-04 — three days BEFORE the 2026-06-07 amendment above) wired
+`redactFreeText` into `ReflexionMemory.storeEpisode`
+(`ReflexionMemory.ts:20,118`) — secrets hard-blocked, PII masked, self-inert
+on metadata-only rows, env escape hatches — and it SHIPS:
+`@sparkleideas/agentdb@…patch.444` dist carries `security/redaction.js` plus
+both call-site references. The amendment's "deliberately **not** wired into
+the capture path" was therefore already false at writing time. The error is
+in the SAFE direction (more protection than claimed): every durable episode
+write now passes the redaction gate, while the Phase-1 producer still sends
+no free-text — the gate is self-inert on metadata-only rows, preserving the
+Phase-1 "identical to before" contract.
+
+Unchanged and re-verified: **Phase 2 as a POLICY remains un-greenlit** — the
+producer is metadata-only ([[ADR-0293]]:94 reaffirms the decoupling), the two
+human calls are still open, and the speculative Phase-2 acceptance
+(`smoke-adr0289-redaction.mjs`) exists only on the `smooth-snuggling-biscuit`
+worktree (commits `717979d`/`47134dc` verified NOT ancestors of main). The
+Phase-1 gate is live in the shipped pipeline: `test-acceptance.sh:4131`
+(run) + `:4133` (collect), `test-acceptance-fast.sh:530-536`,
+`.github/workflows/v3-ci-learning-capture.yml:67-71`, canary assertions in
+`scripts/smoke-adr0290-learning-loop.mjs:202` (metadata-only + canary-absent
++ whole-DB sweep per `lib/acceptance-adr0290-checks.sh:13`).

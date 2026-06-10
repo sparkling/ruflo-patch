@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-05-29
 tags: [learning, skills, flywheel, deferred-with-trigger]
 supersedes: []
@@ -22,9 +22,10 @@ against. This ADR makes them queryable with concrete triggers.
 
 ## Decision Outcome
 
-Defer each item with its named trigger below. This ADR stays
-`status: proposed, completed: false` so it surfaces in the outstanding-work
-query; when a trigger fires, the relevant item is built (and, if large, spun
+Defer each item with its named trigger below. This ADR carries
+`completed: false` so it surfaces in the outstanding-work query (status
+flipped `proposed` → `accepted` 2026-06-10 to match the deferral genre — see
+Amendments); when a trigger fires, the relevant item is built (and, if large, spun
 into its own ADR — e.g. the `code`-producer). Phase B's *implementation*
 tracker remains [[ADR-0180]] §Phase 9; it is listed here only so the deferral is
 visible in one place.
@@ -68,7 +69,7 @@ visible in one place.
 
 ## Confirmation
 
-* `adr-index` filter `status:proposed AND completed:false AND tag:adr-0268-followons` surfaces this ADR as outstanding work.
+* `adr-index` filter `completed:false` surfaces this ADR as outstanding work (per [[ADR-0270]] it is the only ADR carrying the flag; the originally-cited `tag:adr-0268-followons` existed in no frontmatter and could never match — fixed 2026-06-10).
 * Each trigger above is concrete (a corpus walk, an R7 landing, an F4-3 landing, a producer being built, a usage pattern) — checkable without re-reading [[ADR-0268]]'s narrative.
 * Phase B's implementation tracker stays [[ADR-0180]] §Phase 9; the causal-observe payoff gate stays [[ADR-0147]] R7. This ADR cross-references, does not duplicate, those.
 * When a trigger fires: build the item (spin a dedicated ADR if large — e.g. the `code`-producer), then strike it from this tracker; when all five are resolved or re-homed, flip this ADR `completed: true`.
@@ -82,3 +83,35 @@ Status (2026-05-29): `proposed`, `completed: false` — a queryable defer-with-t
 * [[ADR-0181]] — F4-3 / archivist runtime activation (the broad Phase B program; closed without Phase 9).
 * [[ADR-0147]] R7 — the causal numeric-ID gate for item 4.
 * [[ADR-0257]] — the defer-with-trigger pattern this ADR follows.
+
+## Amendments
+
+### Amendment (2026-06-10): flipped `proposed` → `accepted`; Confirmation filter fixed
+
+An adversarial re-verification (8-agent swarm) confirmed all five deferrals
+remain genuinely open in the shipped runtime (cli patch.432 / agentdb
+patch.444): no `code` producer (`SkillLibrary.js:398-501`; `createSkill` :79
+writes `skill.code || null`); Phase B unrouted (`:450` carries the TODO(F4-2),
+`bulkDispatch` is still the throw-stub at `archivist/index.js:506-508`, and
+the production call site `memory-router.js:2233` passes no ctx); no cohesion
+guard (consolidate groups via SQL `GROUP BY COALESCE(task_type, task)` only;
+`cosineSimilarity` :332 used solely in retrieval :293); causal-observe still
+instance-keyed (`hooks-tools.js:1508-1513` → KV `causal-edges` namespace);
+promotion still session-end-only (`memory-router.js:2222-2240`). Content
+accurate and current — nothing stale, nothing refuted.
+
+Corrections applied in the same pass:
+
+* **Status flipped to `accepted`** to match the deferral genre (siblings
+  ADR-0249/0250/0252 and pattern-source ADR-0257 are all `accepted`).
+  `proposed` was not load-bearing for discoverability: `completed: false`
+  alone surfaces this ADR in the outstanding-work query (ADR-0270:20 confirms
+  it is the only ADR carrying the flag). `completed: false` retained.
+* **Confirmation filter fixed in place** — it cited `tag:adr-0268-followons`,
+  which existed in no frontmatter (this ADR's tags are `[learning, skills,
+  flywheel, deferred-with-trigger]`); the clause could never match.
+* **Trigger-tracking honesty recorded:** the five trigger conditions live in
+  prose only — zero references to this ADR in `scripts/` or acceptance
+  checks (`F4-3` absent; test-acceptance.sh:834 covers ADR-0147 R6, not R7).
+  Consistent with the design (the triggers are event-shaped, not pollable),
+  recorded so nobody assumes a lint enforces them.

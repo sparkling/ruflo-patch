@@ -165,3 +165,44 @@ Accurate statement: NOT "send-only / no dispatcher" (that's the design) but "the
 published build omits the existing, tested dispatcher, and no built-in responder
 answers a memory-query from local memory." Evidence: `/tmp/ruflo-q4-validate/federation.md`.
 README §4/§10 corrected again 2026-06-09 to credit the bidirectional transport.
+
+## Addendum 2 (2026-06-10, adversarial re-verification): attribution corrected — UPSTREAM ships the dispatcher; the FORK build is the one missing it
+
+An 8-agent verification swarm re-probed the 2026-06-09 Addendum against both
+lineages (fork source + `@sparkleideas` publishes on Verdaccio + upstream
+npm):
+
+* **The Addendum's "NOT in the currently-published
+  `@claude-flow/plugin-agent-federation@latest`" is REFUTED as written.**
+  Upstream npm `@claude-flow/plugin-agent-federation@1.0.0-alpha.16`
+  (published 2026-05-17 — BEFORE this ADR existed) SHIPS
+  `dist/application/inbound-dispatcher.js` AND wires it
+  (`dist/plugin.js:319-329`). The build that lacks the dispatcher is the
+  FORK's `@sparkleideas/plugin-agent-federation@1.0.0-alpha.5-patch.197`
+  (`dist/plugin.js:322` binds `listen()` only; zero `dispatchInbound` hits).
+* **"Built + tested in source" means UPSTREAM source, not the fork tree.**
+  No `inbound-dispatcher.ts` exists anywhere in the fork
+  (`git grep dispatchInbound HEAD` is empty); it lives on upstream
+  `origin/main` (ADR-109 header; commits `77bb30fd0`/`8cb938f41`/`056ed8e48`,
+  landed alpha.11/13). The fork lineage is alpha.5 + patches.
+* **T1′ restated (effort class corrected):** NOT a "build/packaging fix" — a
+  fork release cut from fork main would still lack the dispatcher. T1′ =
+  port/cherry-pick the upstream ADR-109 dispatcher commits across the
+  alpha.5→alpha.13 drift, then release. "Not from-scratch" holds.
+* **T2′ CONFIRMED as the genuine gap in BOTH lineages:** upstream alpha.16's
+  dist has only emit-side references (`inbound-dispatcher.js:23,121-122`),
+  no `.on('federation:inbound:*')` subscriber anywhere, and the dispatcher's
+  own header says it "does NOT actually execute inbound tasks". No built-in
+  responder answers `federation:inbound:memory-query` from local memory in
+  either lineage.
+* **Probe provenance note:** the main body's quoted warn ("does not expose
+  onMessage()") exists ONLY in dispatcher-era upstream code (alpha.16
+  `plugin.js:340` — the else-branch of the onMessage wiring itself); fork
+  patch.197 emits different text ("Federation transport unavailable… ADR-0297
+  R1"). The 2026-06-08 probe therefore ran a dispatcher-era upstream build —
+  consistent with the Addendum's "misread" correction and further evidence
+  the wiring exists upstream.
+
+Sibling re-confirmed: `FederationHubServer.handlePull` genuinely serves reads
+but remains DOA-as-shipped — all four [[ADR-0310]] defects re-confirmed live
+2026-06-10 (see its Amendment, incl. the larger nested-package.json finding).

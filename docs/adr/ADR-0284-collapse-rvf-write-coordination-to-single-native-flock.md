@@ -1,9 +1,9 @@
 ---
-status: proposed
+status: accepted
 date: 2026-06-01
 tags: [rvf, ruvector, memory, lock, concurrency, architecture, t3-2]
 supersedes: []
-depends-on: [ADR-0274, ADR-0267, ADR-0095, ADR-0167, ADR-0202, ADR-0207]
+depends-on: [ADR-0274, ADR-0095, ADR-0167, ADR-0202, ADR-0207]
 implements: []
 ---
 
@@ -561,3 +561,53 @@ N/A (no Rust runtime change — the fix is JS-only + test-only Rust). Frontmatte
 - ADR-0274 (read/write handle split), ADR-0267 (lifetime-hold), ADR-0095 (`.jslock`
   + flock WriterLock), ADR-0167 (flock load-bearing), ADR-0207 (broker deleted).
 - ruvector `adab9fc36` (revert blocking flock → NB-poll).
+
+## Amendments
+
+### Amendment (2026-06-10): flipped `proposed` → `accepted` on adversarial re-verification
+
+An 8-agent verification swarm audited this ADR against the shipped runtime
+(live daemon npx cache ≡ Verdaccio `latest`: memory/cli `patch.432`) and the
+status was flipped. Every load-bearing element CONFIRMED in the shipped
+artifact:
+
+* Hash-based native ids (FNV-1a, offset basis `0xcbf29ce484222325n`, range
+  `[2^50,2^51)`): `memory/dist/rvf-backend.js:1878-1916`; the counter survives
+  only as a replay high-water mark in `_reserveAssignedNativeId`.
+* `.jslock` removed — shipped `acquireLock` (dist:2093) is depth counter +
+  `unparkNativeWriter()` only; residual `lockPath` code (dist:424-432) is
+  shutdown-time stale-file cleanup, never a lock.
+* Synchronous park at depth 1→0 (dist:2122-2137); `_scheduleNativePark` has
+  ZERO call sites (dead code). INIT-WRAP present (`loadFromDisk` under the
+  `open()` flock, `finally` park).
+* All write paths bracketed: `store`:483, `update`:604, `delete`:665,
+  `bulkInsert`:973, `bulkDelete`:1044, nested `appendToWal`:2387 +
+  `compactWal`:2621 (re-entrant).
+* Live durability trace (2026-06-10): `ADR0284_K=3 ADR0284_N=16` smoke against
+  a fresh `@latest` install — 3/3 rounds, 16/16 durable AND visible, 0 loss.
+* Standing gate green: `lib/acceptance-adr0284-checks.sh` (K=10×N=16,
+  reset-each-round) wired in `test-acceptance.sh:3815` (run) AND `:3817`
+  (collect) + `test-acceptance-fast.sh:647-653` (commit `9e04d3c`); latest
+  full acceptance (2026-06-07, 743/753, 0 failed) reports `passed=true`.
+
+Residuals recorded at flip time (tracked, none gating):
+
+1. **Confirmation §3 (two-owner lsof no-hold) and §4 (WAL-window
+   crash-recovery probe) were never wired** — closure is analytical only
+   (daemon releases via per-op shutdown→close, park bypassed; MCP releases
+   via PARK; see memory note `project-daemon-rvf-release-via-shutdown-not-park`).
+   Wire them or de-scope explicitly in a follow-up.
+2. **`.github/workflows/v3-ci-rvf-lock.yml` cannot pass on GitHub as
+   written** — the cargo pre-gate references `forks/ruvector/...`, a sibling
+   repo absent from this repository (runs 2/2 failed in 15-19s; the cli-gate
+   never executed). The operative green gate is the local acceptance
+   pipeline. Legacy t3-2 (`lib/acceptance-adr0079-tier3-checks.sh:127-134`)
+   was replaced-by-addition, not rewritten.
+3. The "331/600→600/600" bulkInsert figure is a session measurement with no
+   stored artifact; the standing zero-loss gate supersedes it as evidence.
+4. Frontmatter housekeeping per the council's own Step 5: ADR-0267 dropped
+   from `depends-on` (this amendment's commit). The ADR-0095 cross-link
+   ALREADY EXISTS (ADR-0095 `## Amendments`, 2026-06-01) — the verifier's
+   "zero 0284 mentions in ADR-0095" sub-claim was itself wrong, caught by
+   direct read before editing; ADR-0095's parenthetical updated to record
+   acceptance.

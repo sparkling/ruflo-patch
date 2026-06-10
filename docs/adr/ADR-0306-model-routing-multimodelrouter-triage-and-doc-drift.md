@@ -200,3 +200,49 @@ capability.
   consumer); `cli/dist/src/mcp-tools/agent-tools.js:98` (Ruflo's own
   `ruvector/model-router.js`); `@sparkleideas/integration@3.0.0-patch.987`
   `dist/multi-model-router.js:617` (mock). User-facing README §2 corrected to match.
+
+## Addendum 2 (2026-06-10, adversarial re-verification): T1 evidence favors DELETE; the cost-selector gap was overstated
+
+An independent 8-agent verification swarm re-probed every claim against fresh
+Verdaccio installs (`@sparkleideas/integration@3.0.0-patch.987`) and the
+shipped runtime (cli patch.432, agentic-flow patch.980; npx cache ≡ Verdaccio
+latest). All load-bearing claims CONFIRMED: the integration `MultiModelRouter`
+mock (`dist/multi-model-router.js:617`, zero consumers across fork src,
+published dist, and the live runtime closure — `integration` is not even in
+the live node_modules tree); agentic-flow's `ModelRouter` real with working
+`fallbackChain` failover (`router.js:300-320`), consumed in-package by
+reasoningbank (`judge.js:16`/`matts.js:25`/`distill.js:20`); `selectByCost`
+static order + literal TODO (`router.js:270-282`; `'openai'` in that order is
+not even an instantiated provider); the bridge `getRouter()` consumed only by
+its own `capabilities()`; USERGUIDE `:894` (wrong) vs `:45-47` (right) both
+still present in the fork today; ALL savings figures still present —
+including the 250% subscription-extension line (USERGUIDE:319/321, fork AND
+upstream), which joins T4's reconciliation set.
+
+Two material corrections:
+
+1. **T1 now has an evidence-backed answer: DELETE** (the Addendum's
+   "KEEP-AS-CAPABILITY or DELETE" narrows). The mock fabricates responses AND
+   cost figures while being re-exported from a published package index — that
+   is ADR-0210's "advertised surface that lies" category, NOT
+   `feedback-no-consumer-is-not-stub`'s protected real-honest-unadvertised
+   case; and the capability ships twice for real (agent-execute-core explicit
+   dispatch; agentic-flow `ModelRouter`). KEEP is defensible only for
+   salvaging the `scoreModels`/circuit-breaker sub-assets separately, if
+   wanted. Naming nit: `ProviderRegistry` is NOT in `integration` — it lives
+   in `v3/@claude-flow/plugins/src/providers/index.ts` (equally unconsumed;
+   separate triage).
+2. **Addendum gap (ii) — "a true dynamic cheapest-cost selector is not yet
+   implemented" — was overstated.** A real dynamic cost selector SHIPS in the
+   same agentic-flow package: `dist/services/cost-optimizer-service.js` (243
+   lines — per-1K price table, `value = qualityScore/((cost+0.0001)*latency)`
+   :118, budget-exceeded→cheapest :126-131), MCP-exposed via
+   `cost-optimizer-tools.js` and registered in `stdio-full.js` — advisory and
+   UNWIRED from `ModelRouter.selectByCost`. **T2″ therefore reduces to "wire
+   the existing service into dispatch", not "implement cost calculation".**
+   (Its header adds a FIFTH unreconciled savings figure — "90% cost savings" —
+   for T4.)
+
+The user-facing README (rewritten 2026-06-09, commit `38ac38a`) already
+reflects the CostOptimizerService; this ADR's first Addendum was one
+investigation-generation behind its own counterpart.

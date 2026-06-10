@@ -94,3 +94,50 @@ T4 green: shipped-CLI start + cross-process push/pull round-trip + tenant isolat
   the wrong artifact; the real hub was in agentic-flow).
 * User-facing README §4/§10 corrected 2026-06-09 to credit the hub (real, proven
   cross-process) while noting it doesn't run as shipped.
+
+## Amendments
+
+### Amendment (2026-06-10): all four defects re-confirmed live; Bug 3's mechanism is bigger than recorded — the ENTIRE published agentic-flow CLI is DOA
+
+Adversarial re-verification against
+`@sparkleideas/agentic-flow@2.0.2-alpha-patch.980` (npx cache ≡ Verdaccio
+latest; tarball re-pulled and listed):
+
+* **Bug 1 CONFIRMED live — and deterministic, not racy.**
+  `new FederationHubServer({port:0})` from the shipped dist throws
+  `Database not initialized` every time: the un-awaited `this.init()` at
+  `db/sql-adapter.js:20` guarantees the constructor's synchronous
+  `db.exec(schema)` (hub :28-29, throw :66-67) always loses. "Reproduced
+  twice" understated it — it cannot win.
+* **Bug 2 CONFIRMED live** — with init bypassed and the shipped `handlePush`
+  verbatim: `Failed to insert episode {"error":"Cannot read properties of
+  null (reading 'storePattern')"}`; SQLite survives via the per-episode catch
+  (`episodes: 1, ack: true`). **Uncited bonus defect:** `stop()` (:415) does
+  `await this.agentDB.close()` — an UNCAUGHT NPE on shutdown; fold into T2.
+* **Bug 3 CONFIRMED, mechanism incomplete — the published CLI dies
+  EARLIER.** The `files` allowlist also excludes the nested
+  `agentic-flow/package.json`, so `cli-proxy.js:43`'s `readFileSync` ENOENTs
+  and exits 1 before ANY command runs — **the entire published agentic-flow
+  CLI is DOA from the package, not just federation** (`node …/cli-proxy.js
+  federation start` → ENOENT). The quoted "build the project first" branch
+  is reachable only from a repo checkout. Additionally, `run-hub.js` has no
+  compiled source anywhere — the only source is
+  `docker/federation-test/run-hub.ts` (imports `../../src`, compiled
+  nowhere) — so the entry points must be AUTHORED/relocated, not merely
+  shipped.
+* **Bug 4 CONFIRMED** — the root `exports` map has 24 keys, zero
+  federation/Hub entries, and no `./*` wildcard: encapsulation blocks even
+  deep specifier imports (absolute-file-path import only).
+* **"It works once init is bypassed" re-validated** in-process with shipped
+  code (only `init` awaited): same-tenant pull `dataLen:1` with vector clock
+  `{"writer":7}`; cross-tenant `dataLen:0`; broadcast received. (Prior
+  cross-process `:8444`/lsof proof in
+  `/tmp/ruflo-q4-validate/shared-store.md:81-104`.)
+
+**T3 amended:** (a) add the nested `agentic-flow/package.json` to `files` —
+without it nothing in T1/T2 is reachable from the published package (this
+fix un-bricks the WHOLE agentic-flow CLI, a larger payoff than this ADR's
+own scope); (b) author `run-hub.js`/`run-agent.js` into `src/federation/`
+(or adapt the docker test runners) AND ship them; (c) then add the
+hub/client `exports`-map entries. T-numbering otherwise stands; status stays
+`proposed` (nothing fixed yet — nothing stale).

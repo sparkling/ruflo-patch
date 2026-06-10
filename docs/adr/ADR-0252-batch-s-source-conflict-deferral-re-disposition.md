@@ -95,3 +95,35 @@ The remaining 14 (defer) + 3 (pull-pending) are gated on:
 - [[ADR-0251]] — DA-dissent close on the neural-trader rewrite (confirms ADR-0248's disposition stands; Option D lint additions land regression protection).
 - `docs/upstream/INTEGRATION-LEDGER.md:164` — the original deferral row this ADR re-disposes.
 - `feedback-update-integration-ledger` — corpus rule mandating ledger updates per disposition.
+
+## Amendments
+
+### Amendment (2026-06-10): disposition table overtaken same-day by ADR-0257; re-eval trigger 2 has FIRED — a Batch-U sync is due
+
+Adversarial re-verification (8-agent swarm):
+
+* **16 of the 17 "still-open" dispositions were closed the SAME DAY this ADR
+  landed** — [[ADR-0257]]'s audit hand-ported them with ledger rows,
+  overturning the per-family verdicts. All 5 neural-trader
+  "SUPERSEDE → ADR-0248" commits were in fact hand-ported
+  (`8d9e20f0c→7558f967b` — Phase 1 was a REAL bug still in the fork —
+  `d9bd4e6ad→f39268978`, `9c075a3c3→8464156a1`, `48cb0a7ee→4f686f68d`,
+  `11c1ad974→136d82183`); both github DEFERs ported
+  (`7d2fc001e→7949e613e`, `b4e177667→6a78593b6`); the 3 docs PULL-PENDINGs
+  dispositioned (`32612ecdf` hand-ported-partial, `f8974c74c` +
+  `10db8e459` skip-by-policy); 8 of 9 misc closed (kg-extract→`c045ef6cb`,
+  #2042→`1c31b3ecc`, #2098/93/85→`b5d12dc93`, #2078→`6fdfae731`,
+  #2073→superseded-by-local per [[ADR-0255]], #2086→`215a600ee`,
+  #2046/#2048 deps + `4def69f00` skip-by-policy). **Sole genuine survivor:
+  `4a57be7b8` (#2028), pending with its own explicit trigger.** The
+  per-family table above is therefore historical, not operative.
+* **Re-eval trigger 2 (≥50 new upstream commits) has objectively FIRED:**
+  `forks/ruflo` `origin/main` carries **91 commits since 2026-05-23** (HEAD
+  `d065b1592`, 2026-06-04, v3.10.37, as fetched 2026-06-08; upstream GitHub
+  is further ahead — v3.10.40 / `16a55f7a5` as of 2026-06-09). No Batch-U
+  sync ADR exists (0253–0312 checked). **A Batch-U upstream-sync disposition
+  is due.** The "current state: 0 new commits" lines here and in
+  ADR-0233:263-266 are stale.
+* Confirmation items verified honored: the ledger row was amended
+  (INTEGRATION-LEDGER.md:166 region) and ADR-0233 §"Reviews still owed" was
+  updated — though that note carries the same stale "0 new commits" wording.
