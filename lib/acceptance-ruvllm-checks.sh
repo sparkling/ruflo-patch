@@ -272,13 +272,16 @@ _ruvllm_microlora_lifecycle_body() {
   E2E_DIR="$iso"
 
   # ─── Step 1: microlora_create ───────────────────────────────────
-  # inputDim must be 768 — the underlying ruvllm WASM MicroLoraWasm.adapt()
-  # enforces a 768-dim input vector (matches the project's canonical
-  # all-mpnet-base-v2 embedding size, ref memory/reference-embedding-model.md).
-  # Smaller dims pass create() but then fail adapt() with
-  # "Input size mismatch: expected 768, got N". Observed W4-A2 (2026-04-17).
+  # ADR-0308: non-768 adapters now round-trip. Pre-fix the cli wrapper wrote
+  # loraConfig.inputDim/outputDim (inert expandos) onto a WASM config that only
+  # exposes inFeatures/outFeatures, so EVERY adapter was silently built 768×768
+  # and any non-768 input failed adapt() ("Input size mismatch: expected 768,
+  # got N"; observed W4-A2, 2026-04-17, worked around by pinning inputDim:768).
+  # The fix (loraConfig.inFeatures/outFeatures) builds the adapter at its real
+  # width, so a genuinely non-768 (64-dim) adapter is created here and Step 2
+  # asserts it adapts at that width — the load-bearing regression check.
   _mcp_invoke_tool "ruvllm_microlora_create" \
-    '{"inputDim":768,"outputDim":768,"rank":2}' \
+    '{"inputDim":64,"outputDim":64,"rank":2}' \
     '"loraId"|"success"\s*:\s*true|lora|microlora' \
     "P5/microlora/create" 15 --rw
   if [[ "$_CHECK_PASSED" == "skip_accepted" ]]; then
@@ -305,17 +308,30 @@ _ruvllm_microlora_lifecycle_body() {
     _CHECK_PASSED="false"; E2E_DIR="$_saved_e2e"; return
   fi
 
-  # ─── Step 2: microlora_adapt (validates persistence + adaptation)
+  # ─── Step 2: microlora_adapt (validates persistence + REAL adapter width)
+  # ADR-0308 load-bearing assertion: feed a 64-element input matching the
+  # inputDim:64 adapter created above. Pre-fix the adapter is silently 768×768,
+  # so the WASM rejects a 64-float input ("Input size mismatch: expected 768,
+  # got 64") → the handler returns {error,isError} which matches NONE of the
+  # success alternatives below → RED. Post-fix the adapter is genuinely 64×64,
+  # the 64-float input adapts cleanly → {success:true,...} → GREEN. This is the
+  # check that forces the real fix (a mere create round-trip would not).
+  # `input` is a required param on the real handler; the stubbed unit-test CLI
+  # ignores params and returns success:true, so the unit test stays green.
+  local _in64; _in64=$(node -e 'process.stdout.write(JSON.stringify(Array(64).fill(0.01)))')
   _mcp_invoke_tool "ruvllm_microlora_adapt" \
-    "{\"loraId\":\"$lid\",\"quality\":0.75,\"learningRate\":0.02}" \
-    '"success"\s*:\s*true|"stats"|"statsChanged"' \
+    "{\"loraId\":\"$lid\",\"input\":$_in64,\"quality\":0.75,\"learningRate\":0.02}" \
+    '"success"\s*:\s*true' \
     "P5/microlora/adapt" 15 --rw
   if [[ "$_CHECK_PASSED" == "skip_accepted" ]]; then
     _CHECK_OUTPUT="SKIP_ACCEPTED: P5/microlora-lifecycle: ruvllm_microlora_adapt not in build"
     E2E_DIR="$_saved_e2e"; return
   fi
   if [[ "$_CHECK_PASSED" != "true" ]]; then
-    _CHECK_OUTPUT="P5/microlora-lifecycle step 2 (adapt) failed — lora '$lid' not persisted across processes. $_CHECK_OUTPUT"
+    # A 64-float input that fails to adapt is the ADR-0308 regression: the
+    # adapter was silently created 768×768 (loraConfig.inputDim/outputDim
+    # written onto a WASM config that only has inFeatures/outFeatures).
+    _CHECK_OUTPUT="P5/microlora-lifecycle step 2 (adapt) failed — inputDim:64 adapter did not accept a 64-dim input (ADR-0308: silent 768×768 fallthrough, or '$lid' not persisted across processes). $_CHECK_OUTPUT"
     _CHECK_PASSED="false"; E2E_DIR="$_saved_e2e"; return
   fi
 

@@ -237,31 +237,16 @@ function readConfig() {
   return defaults;
 }
 
-// ADR-0059: Backend factory — RvfBackend preferred (same package, atomic persist)
+// ADR-0287 T1: retired the `.swarm/agentdb-memory.rvf` silo backend. That RVF
+// file was written in this hook's own process and was invisible to
+// memory_search (the durable corpus is owned by the MCP/daemon RVF + the
+// read-time memory-bridge, per ADR-0083 router-as-single-write-path). The
+// auto-memory import only needs the local JSON store to dedupe MEMORY.md
+// insights. The generated `ruflo init` template never instantiates a silo
+// backend (helpers-generator.ts generateAutoMemoryHook); this re-converges the
+// dogfood with it.
 function createBackend(config, memPkg) {
-  if (config.backend === 'json') {
-    return { backend: new JsonFileBackend(STORE_PATH) };
-  }
-  const swarmDir = join(PROJECT_ROOT, '.swarm');
-  if (!existsSync(swarmDir)) mkdirSync(swarmDir, { recursive: true });
-  const rvfPath = join(swarmDir, 'agentdb-memory.rvf');
-
-  // Prefer RvfBackend — same package, no cross-package import, atomic persist
-  if (memPkg.RvfBackend) {
-    const backend = new memPkg.RvfBackend({ databasePath: rvfPath });
-    return { backend };
-  }
-  // Fallback: AgentDBBackend (heavier but functional if agentdb is installed)
-  if (memPkg.AgentDBBackend) {
-    try {
-      const backend = new memPkg.AgentDBBackend({ dbPath: rvfPath });
-      return { backend };
-    } catch (err) {
-      dim(`AgentDBBackend init failed: ${err.message} — falling back to JSON`);
-    }
-  }
-  // Last resort: JsonFileBackend
-  dim('RvfBackend and AgentDBBackend unavailable — using JSON file backend');
+  void config; void memPkg;
   return { backend: new JsonFileBackend(STORE_PATH) };
 }
 

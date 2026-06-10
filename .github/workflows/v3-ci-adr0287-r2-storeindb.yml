@@ -1,0 +1,70 @@
+# ADR-0287 R2 — CI stanza for the storeInAgentDB discriminated re-throw.
+#
+# Per `feedback-always-wire-tests-into-cicd`: wired into the standard runner
+# (scripts/test-acceptance.sh, adr0287r2 group — run_check_bg +
+# collect_parallel) AND here. The smoke imports the SHIPPED
+# `@sparkleideas/memory/dist/agentdb-backend.js`, instantiates AgentDBBackend,
+# and injects a fake `agentdb` whose SQLite + HNSW write paths throw on demand:
+# a FATAL data-integrity error (RvfCorruptError / EmbeddingDimensionError) must
+# SURFACE from store(); a benign / transient one stays swallowed (off-hot-path
+# semantics preserved). Goes GREEN only after the fork R2 fix ships to the
+# registry — RED until the release by design (it validates the PUBLISHED dist).
+#
+# Run directly via node (not the fast runner): the fast runner matches groups by
+# SUBSTRING, so "adr0287r2" would also pull in the unrelated F-tier "adr0287"
+# reporter checks. The smoke self-installs @sparkleideas/memory from Verdaccio
+# when ADR0255_SMOKE_SHARED_TEMP is unset. Per `feedback-no-tail-tests` the run
+# writes its log to SMOKE_LOG_DIR.
+
+name: ADR-0287 R2 storeInAgentDB re-throw
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'forks/ruflo/v3/@claude-flow/memory/src/agentdb-backend.ts'
+      - 'scripts/smoke-adr0287r2-storeindb-rethrow.mjs'
+      - 'lib/acceptance-adr0287r2-checks.sh'
+  pull_request:
+    paths:
+      - 'forks/ruflo/v3/@claude-flow/memory/src/agentdb-backend.ts'
+      - 'scripts/smoke-adr0287r2-storeindb-rethrow.mjs'
+      - 'lib/acceptance-adr0287r2-checks.sh'
+
+env:
+  REGISTRY: http://localhost:4873
+  CLI_PKG: '@sparkleideas/ruflo'
+  SMOKE_LOG_DIR: ${{ github.workspace }}/smoke-logs
+
+jobs:
+  storeindb-rethrow:
+    name: storeInAgentDB surfaces fatal storage errors (ADR-0287 R2)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Start local Verdaccio + publish fork packages
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/ruflo-publish.sh 2>&1 | tee "${SMOKE_LOG_DIR}/publish.log"
+
+      - name: Run ADR-0287 R2 storeInAgentDB re-throw smoke
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          node scripts/smoke-adr0287r2-storeindb-rethrow.mjs 2>&1 | tee "${SMOKE_LOG_DIR}/adr0287r2.log"
+
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs-adr0287-r2-storeindb
+          path: ${{ env.SMOKE_LOG_DIR }}

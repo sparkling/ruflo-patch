@@ -1,0 +1,63 @@
+# ADR-0312 — CI stanza for the hook-side CJS-helper fix.
+#
+# Per `feedback-always-wire-tests-into-cicd`: wired into the standard runner
+# (scripts/test-acceptance.sh, adr0312 group) AND here. Inits a fresh
+# "type":"module" project against the INSTALLED CLI, runs the route hook, and
+# asserts the recommendation box renders (NOT "Router not available"). Goes
+# GREEN only after the fork .cjs rename ships. Per `feedback-no-tail-tests`
+# the run writes its log to SMOKE_LOG_DIR.
+
+name: ADR-0312 hook CJS helpers
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'forks/ruflo/v3/@claude-flow/cli/src/init/helpers-generator.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/init/executor.ts'
+      - 'lib/acceptance-adr0312-checks.sh'
+      - 'tests/pipeline/init-helpers-parity.test.mjs'
+  pull_request:
+    paths:
+      - 'forks/ruflo/v3/@claude-flow/cli/src/init/helpers-generator.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/init/executor.ts'
+      - 'lib/acceptance-adr0312-checks.sh'
+      - 'tests/pipeline/init-helpers-parity.test.mjs'
+
+env:
+  REGISTRY: http://localhost:4873
+  CLI_PKG: '@sparkleideas/ruflo'
+  SMOKE_LOG_DIR: ${{ github.workspace }}/smoke-logs
+
+jobs:
+  hook-cjs-helpers:
+    name: route hook renders under type:module (ADR-0312)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Start local Verdaccio + publish fork packages
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/ruflo-publish.sh 2>&1 | tee "${SMOKE_LOG_DIR}/publish.log"
+
+      - name: Run ADR-0312 hook-CJS check via fast runner
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/test-acceptance-fast.sh adr0312 2>&1 | tee "${SMOKE_LOG_DIR}/adr0312.log"
+
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs-adr0312-hook-cjs
+          path: ${{ env.SMOKE_LOG_DIR }}

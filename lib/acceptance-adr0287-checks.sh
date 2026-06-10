@@ -43,6 +43,19 @@
 
 set +u 2>/dev/null || true
 
+# Timing-helper fallbacks (mirror lib/acceptance-adr0285-checks.sh). The main
+# runner defines _ns/_elapsed_ms (test-acceptance.sh:100), but the fast runner
+# does NOT, and `test-acceptance-fast.sh adr0287` sources ONLY this lib — so the
+# smoke-wrapping check below (check_adr0287_f2_resources_list) would hit an
+# undefined _ns without these. The in-bash F8a/F8b/F4/F8e/F3b checks don't use
+# them, which is why they predate this guard.
+if ! declare -f _ns >/dev/null 2>&1; then
+  _ns() { date +%s%N 2>/dev/null || echo $(( $(date +%s) * 1000000000 )); }
+fi
+if ! declare -f _elapsed_ms >/dev/null 2>&1; then
+  _elapsed_ms() { echo $(( ( ${2:-0} - ${1:-0} ) / 1000000 )); }
+fi
+
 # ── Shared: init a fresh project into $1 (symlinked node_modules, no reinstall).
 # Mirrors _adr0137_init. Writes .ruflo-project + CLAUDE.md + .claude/ +
 # .claude-flow/config.json so findProjectRoot() and the config reporter see a
@@ -424,4 +437,60 @@ check_adr0287_f3b_route_untrained_label() {
   fi
 
   rm -rf "$s" 2>/dev/null
+}
+
+# ════════════════════════════════════════════════════════════════════
+# F2 — the MCP server answers `resources/list` with `{ resources: [] }`.
+#
+# The `initialize` reply advertises `capabilities.resources` (cli.js:204-207)
+# but the JSON-RPC dispatch had no `resources/list` case, so the advertised
+# method fell through to the `-32601` default — the server contradicted its own
+# advert. ADR-0287 F2 (§Confirmation l.468) adds a `case 'resources/list'`
+# returning `{ resources: [] }` on the LIVE BIN entries (bin/cli.js +
+# bin/mcp-server.js — NOT src/mcp-server.ts; feedback-trace-bin-entry-before-patching).
+#
+# Delegates to scripts/smoke-adr0287-resources-list.mjs, which (1) spins the
+# live server (`cli mcp start`) and asserts resources/list → {resources:[]}
+# (not -32601), and (2) ARCH-GUARDs that the handler exists in BOTH shipped
+# bin entries. The smoke reuses the harness install via setupSmokeTempDir, so
+# we set ADR0255_SMOKE_SHARED_TEMP from ACCEPT_TEMP here (the adr0287 runner
+# blocks don't export it — unlike adr0285/0290 — so this check is self-contained
+# and works identically under the main and fast runners). Validates the
+# INSTALLED package → RED until the F2 fork fix ships, GREEN after (by design).
+# ════════════════════════════════════════════════════════════════════
+check_adr0287_f2_resources_list() {
+  local start_ns end_ns log_path rc
+  start_ns=$(_ns)
+  _CHECK_PASSED="false"; _CHECK_OUTPUT=""
+  log_path=$(mktemp -t "adr0287-f2-resources-list-XXXXXX.log")
+
+  if [[ ! -f "${PROJECT_DIR}/scripts/smoke-adr0287-resources-list.mjs" ]]; then
+    _CHECK_OUTPUT="missing: scripts/smoke-adr0287-resources-list.mjs"
+    end_ns=$(_ns); _EXIT=2; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"
+    return
+  fi
+
+  # The smoke uses setupSmokeTempDir → reuses ACCEPT_TEMP's install (no 440-pkg
+  # reinstall) when ADR0255_SMOKE_SHARED_TEMP points at it. Scope the export to
+  # this check so we don't perturb the surrounding runner block.
+  local _prev_shared="${ADR0255_SMOKE_SHARED_TEMP:-}"
+  if [[ -n "${ACCEPT_TEMP:-}" && -d "${ACCEPT_TEMP}/node_modules" ]]; then
+    export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+  fi
+
+  node "${PROJECT_DIR}/scripts/smoke-adr0287-resources-list.mjs" > "${log_path}" 2>&1
+  rc=$?
+
+  # Restore the prior shared-temp env (unset if it was unset before).
+  if [[ -n "$_prev_shared" ]]; then export ADR0255_SMOKE_SHARED_TEMP="$_prev_shared"; else unset ADR0255_SMOKE_SHARED_TEMP; fi
+
+  end_ns=$(_ns)
+  _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns")
+  _EXIT=$rc
+  _OUT="exit=${rc} log=${log_path} (tail -40: $(tail -40 "${log_path}" 2>/dev/null | tr '\n' ' ' | head -c 400))"
+  _CHECK_OUTPUT="$_OUT"
+
+  if [[ $rc -eq 0 ]]; then
+    _CHECK_PASSED="true"
+  fi
 }

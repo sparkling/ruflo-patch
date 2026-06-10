@@ -11,7 +11,8 @@
     "GUIDANCE_SESSION_SENTINEL": "true",
     "GUIDANCE_AUTO_MEMORY": "true",
     "GUIDANCE_LEARNING_BRIDGE": "true",
-    "GUIDANCE_STATUS_LINE": "true"
+    "GUIDANCE_STATUS_LINE": "true",
+    "MCP_TIMEOUT": "60000"
   },
   "permissions": {
     "allow": [
@@ -139,17 +140,6 @@
             "type": "command",
             "command": "sh -c 'D=\"${CLAUDE_PROJECT_DIR:-.}\"; [ -f \"$D/.claude/helpers/hook-handler.mjs\" ] || D=\"${HOME}\"; exec node \"$D/.claude/helpers/hook-handler.mjs\" session-end'",
             "timeout": 5000
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "sh -c 'D=\"${CLAUDE_PROJECT_DIR:-.}\"; [ -f \"$D/.claude/helpers/auto-memory-hook.mjs\" ] || D=\"${HOME}\"; exec node \"$D/.claude/helpers/auto-memory-hook.mjs\" sync'",
-            "timeout": 10000
           }
         ]
       }

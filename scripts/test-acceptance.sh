@@ -865,6 +865,11 @@ adr0265_lib="${PROJECT_DIR}/lib/acceptance-adr0265-checks.sh"
 adr0266_lib="${PROJECT_DIR}/lib/acceptance-adr0266-checks.sh"
 [[ -f "$adr0266_lib" ]] && source "$adr0266_lib"
 
+# ADR-0310: FederationHubServer DOA repair (shipped-CLI cross-process
+# push/pull + tenant isolation; Fix 5 un-bricks the agentic-flow CLI).
+adr0310_lib="${PROJECT_DIR}/lib/acceptance-adr0310-checks.sh"
+[[ -f "$adr0310_lib" ]] && source "$adr0310_lib"
+
 # ADR-0255: fork-native memory_export MCP tool + memory retrieve --value-only
 # 2 smokes (Phase 1 export + Phase 2 value-only)
 adr0255_lib="${PROJECT_DIR}/lib/acceptance-adr0255-checks.sh"
@@ -892,6 +897,8 @@ adr0273_lib="${PROJECT_DIR}/lib/acceptance-adr0273-checks.sh"
 [[ -f "$adr0273_lib" ]] && source "$adr0273_lib"
 adr0275_lib="${PROJECT_DIR}/lib/acceptance-adr0275-checks.sh"
 [[ -f "$adr0275_lib" ]] && source "$adr0275_lib"
+adr0305_lib="${PROJECT_DIR}/lib/acceptance-adr0305-checks.sh"
+[[ -f "$adr0305_lib" ]] && source "$adr0305_lib"
 adr0276_lib="${PROJECT_DIR}/lib/acceptance-adr0276-checks.sh"
 [[ -f "$adr0276_lib" ]] && source "$adr0276_lib"
 adr0277_lib="${PROJECT_DIR}/lib/acceptance-adr0277-checks.sh"
@@ -910,6 +917,12 @@ adr0285_lib="${PROJECT_DIR}/lib/acceptance-adr0285-checks.sh"
 [[ -f "$adr0285_lib" ]] && source "$adr0285_lib"
 adr0287_lib="${PROJECT_DIR}/lib/acceptance-adr0287-checks.sh"
 [[ -f "$adr0287_lib" ]] && source "$adr0287_lib"
+adr0287r2_lib="${PROJECT_DIR}/lib/acceptance-adr0287r2-checks.sh"
+[[ -f "$adr0287r2_lib" ]] && source "$adr0287r2_lib"
+adr0287_dogfood_lib="${PROJECT_DIR}/lib/acceptance-adr0287-dogfood-checks.sh"
+[[ -f "$adr0287_dogfood_lib" ]] && source "$adr0287_dogfood_lib"
+adr0312_lib="${PROJECT_DIR}/lib/acceptance-adr0312-checks.sh"
+[[ -f "$adr0312_lib" ]] && source "$adr0312_lib"
 adrcreatematrix_lib="${PROJECT_DIR}/lib/acceptance-adr-create-checks.sh"
 [[ -f "$adrcreatematrix_lib" ]] && source "$adrcreatematrix_lib"
 adr0290_lib="${PROJECT_DIR}/lib/acceptance-adr0290-checks.sh"
@@ -3560,6 +3573,9 @@ if [[ -f "$adr0265_lib" ]]; then
   # C6: benchmarks — p99 < 5ms loopback + 100 fan-out
   run_check_bg "adr0265-benchmark"           "ADR-0265 C6 benchmark targets"            check_adr0265_benchmark             "adr0265"
 
+  # ADR-0309: federation Phase-2 — inbound dispatcher port + local-memory responder (rides the adr0265 group)
+  run_check_bg "adr0309-fed-memory-roundtrip" "ADR-0309 fed memory-query round-trip + untrusted refused" check_adr0309_fed_memory_roundtrip "adr0265"
+
   collect_parallel "adr0265" \
     "adr0265-binding-load|ADR-0265 C1 N-API binding load" \
     "adr0265-loader-upgrade|ADR-0265 C2 loader upgrade (env-on)" \
@@ -3571,12 +3587,37 @@ if [[ -f "$adr0265_lib" ]]; then
     "adr0265-0rtt-reconnect|ADR-0265 0-RTT reconnect (skip-by-policy)" \
     "adr0265-mobility|ADR-0265 mobility (skip-by-policy)" \
     "adr0265-recovery|ADR-0265 loss recovery (skip-by-policy)" \
-    "adr0265-benchmark|ADR-0265 C6 benchmark targets"
+    "adr0265-benchmark|ADR-0265 C6 benchmark targets" \
+    "adr0309-fed-memory-roundtrip|ADR-0309 fed memory-query round-trip + untrusted refused"
 
   _adr0265_cleanup_shared_temp
   rm -rf "$PARALLEL_DIR" 2>/dev/null
 fi
 _record_phase "phase-adr0265-quic-federation" "$(_elapsed_ms "$_adr0265_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0310: FederationHubServer DOA repair — shipped-CLI cross-process
+# push/pull + tenant isolation (T4), and the base agentic-flow CLI no
+# longer ENOENTs at cli-proxy.js:43 (Fix 5 un-bricks the whole CLI).
+# 1 self-contained smoke (installs @sparkleideas/agentic-flow directly).
+# Per ADR-0310 §Confirmation: smoke FAILs until the fork bits are
+# published to Verdaccio — expected; gate is on the smoke being WIRED.
+# ════════════════════════════════════════════════════════════════════
+_adr0310_start=$(_ns)
+if [[ -f "$adr0310_lib" ]]; then
+  log "── ADR-0310: FederationHubServer DOA repair ──"
+  # Fresh per-block PARALLEL_DIR (mktemp) + rm -rf after collect_parallel
+  # per L2 lesson — block isolation. The prior block rm -rf's its own.
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+
+  run_check_bg "adr0310-federation-xproc" "ADR-0310 T4 cross-process federation round-trip + tenant isolation" check_adr0310_federation_cross_process "adr0310"
+
+  collect_parallel "adr0310" \
+    "adr0310-federation-xproc|ADR-0310 T4 cross-process federation round-trip + tenant isolation"
+
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0310-federation-doa" "$(_elapsed_ms "$_adr0310_start" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
 # ADR-0266: ADR-129 Phases 1-3 implementation amendment — 5 smokes.
@@ -4074,6 +4115,7 @@ if [[ -f "$adr0287_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
   run_check_bg "adr0287-f4-daemon-subdir" "ADR-0287 F4 doctor daemon Running from subdir"   check_adr0287_f4_doctor_daemon_running_from_subdir "adr0287"
   run_check_bg "adr0287-f8e-spinner-tty"  "ADR-0287 F8e no \\r spinner spam (non-TTY)"      check_adr0287_f8e_spinner_no_cr_on_nontty      "adr0287"
   run_check_bg "adr0287-f3b-route-cold"   "ADR-0287 F3b route box untrained label"          check_adr0287_f3b_route_untrained_label        "adr0287"
+  run_check_bg "adr0287-f2-resources-list" "ADR-0287 F2 resources/list -> {resources:[]} (no -32601) + arch-guard" check_adr0287_f2_resources_list "adr0287"
 
   collect_parallel "adr0287" \
     "adr0287-f8a-cli-dim768|ADR-0287 F8a neural status 768-dim (CLI)" \
@@ -4081,11 +4123,82 @@ if [[ -f "$adr0287_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
     "adr0287-f8b-doctor-json|ADR-0287 F8b doctor config.json canonical" \
     "adr0287-f4-daemon-subdir|ADR-0287 F4 doctor daemon Running from subdir" \
     "adr0287-f8e-spinner-tty|ADR-0287 F8e no \\r spinner spam (non-TTY)" \
-    "adr0287-f3b-route-cold|ADR-0287 F3b route box untrained label"
+    "adr0287-f3b-route-cold|ADR-0287 F3b route box untrained label" \
+    "adr0287-f2-resources-list|ADR-0287 F2 resources/list -> {resources:[]} (no -32601) + arch-guard"
 
   rm -rf "$PARALLEL_DIR" 2>/dev/null
 fi
 _record_phase "phase-adr0287-reporter-honesty" "$(_elapsed_ms "$_adr0287_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0312 — hook-side CJS helpers under "type":"module". Inits a fresh
+# project, forces "type":"module", runs the route hook, asserts the
+# recommendation box renders and "Router not available" does NOT. Validates
+# the PUBLISHED package — RED until the fork .cjs fix ships, GREEN after.
+# ════════════════════════════════════════════════════════════════════
+_adr0312_start=$(_ns)
+if [[ -f "$adr0312_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
+  log "── ADR-0312: route hook renders recommendation box under type:module (.cjs helpers) ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+
+  run_check_bg "adr0312-route-type-module" "ADR-0312 route hook box under type:module" check_adr0312_route_hook_type_module "adr0312"
+
+  collect_parallel "adr0312" \
+    "adr0312-route-type-module|ADR-0312 route hook box under type:module"
+
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0312-hook-cjs-helpers" "$(_elapsed_ms "$_adr0312_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0287 T1-silo + F1 — dogfood config drift (greps THIS repo, not a fresh
+# init; the template is already clean). T1a: no agentdb-memory.rvf silo in the
+# dogfood auto-memory hook (JSON-only createBackend). T1b: no stale Stop->sync
+# wire in settings.json. F1: MCP_TIMEOUT=60000 in a launch env (user or project
+# .claude/settings.json top-level env — NOT .mcp.json). Server-less.
+# ════════════════════════════════════════════════════════════════════
+_adr0287_dogfood_start=$(_ns)
+if [[ -f "$adr0287_dogfood_lib" ]] && { [[ "${_FAST_RUN_GROUPS:-all}" == *"adr0287dogfood"* ]] || [[ "${_FAST_RUN_GROUPS:-all}" == "all" ]]; }; then
+  log "── ADR-0287 dogfood: no RVF silo · no stale Stop->sync · MCP_TIMEOUT set ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+
+  run_check_bg "adr0287-t1-no-silo"     "ADR-0287 T1 no agentdb-memory.rvf silo in dogfood hook" check_adr0287_t1_no_rvf_silo_in_dogfood_hook "adr0287dogfood"
+  run_check_bg "adr0287-t1-no-stop"     "ADR-0287 T1 no stale Stop->sync hook"                   check_adr0287_t1_no_stale_stop_sync_hook     "adr0287dogfood"
+  run_check_bg "adr0287-f1-mcp-timeout" "ADR-0287 F1 MCP_TIMEOUT=60000 in launch env"            check_adr0287_f1_mcp_timeout_set             "adr0287dogfood"
+
+  collect_parallel "adr0287dogfood" \
+    "adr0287-t1-no-silo|ADR-0287 T1 no agentdb-memory.rvf silo in dogfood hook" \
+    "adr0287-t1-no-stop|ADR-0287 T1 no stale Stop->sync hook" \
+    "adr0287-f1-mcp-timeout|ADR-0287 F1 MCP_TIMEOUT=60000 in launch env"
+
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0287-dogfood-drift" "$(_elapsed_ms "$_adr0287_dogfood_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0287 R2: storeInAgentDB discriminated re-throw. The smoke imports the
+# SHIPPED @sparkleideas/memory/dist/agentdb-backend.js, instantiates
+# AgentDBBackend, runs the real initialize() (populating the module-level
+# HNSWIndex), then injects a fake `agentdb` whose SQLite + HNSW write paths
+# throw on demand: a FATAL data-integrity error (RvfCorruptError /
+# EmbeddingDimensionError) must SURFACE from store(); a benign/transient one
+# stays swallowed. Validates the PUBLISHED dist → RED until the R2 fix ships.
+# ════════════════════════════════════════════════════════════════════
+_adr0287r2_start=$(_ns)
+if [[ -f "$adr0287r2_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
+  log "── ADR-0287 R2: storeInAgentDB surfaces fatal storage errors, swallows benign ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+  export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+
+  run_check_bg "adr0287r2-storeindb-rethrow" "ADR-0287 R2 storeInAgentDB discriminated re-throw" check_adr0287r2_storeindb_rethrow "adr0287r2"
+
+  collect_parallel "adr0287r2" \
+    "adr0287r2-storeindb-rethrow|ADR-0287 R2 storeInAgentDB discriminated re-throw"
+
+  unset ADR0255_SMOKE_SHARED_TEMP
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0287r2-storeindb-rethrow" "$(_elapsed_ms "$_adr0287r2_start" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
 # adr-create + the 4 ADR storage mechanisms — full op matrix. Every op

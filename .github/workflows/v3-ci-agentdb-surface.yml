@@ -23,9 +23,12 @@ on:
       - 'scripts/smoke-adr0282-agentdb-surface-fixes.mjs'
       - 'scripts/smoke-adr0285-causal-crud-and-purge.mjs'
       - 'scripts/smoke-adr-create-storage-matrix.mjs'
+      - 'forks/ruflo/plugins/ruflo-adr/skills/adr-index/SKILL.md'
+      - 'scripts/smoke-adr0305-index-skill-migration.mjs'
       - 'lib/acceptance-adr0282-checks.sh'
       - 'lib/acceptance-adr0285-checks.sh'
       - 'lib/acceptance-adr-create-checks.sh'
+      - 'lib/acceptance-adr0305-checks.sh'
   pull_request:
     paths:
       - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts'
@@ -36,9 +39,12 @@ on:
       - 'scripts/smoke-adr0282-agentdb-surface-fixes.mjs'
       - 'scripts/smoke-adr0285-causal-crud-and-purge.mjs'
       - 'scripts/smoke-adr-create-storage-matrix.mjs'
+      - 'forks/ruflo/plugins/ruflo-adr/skills/adr-index/SKILL.md'
+      - 'scripts/smoke-adr0305-index-skill-migration.mjs'
       - 'lib/acceptance-adr0282-checks.sh'
       - 'lib/acceptance-adr0285-checks.sh'
       - 'lib/acceptance-adr-create-checks.sh'
+      - 'lib/acceptance-adr0305-checks.sh'
 
 env:
   REGISTRY: http://localhost:4873
@@ -140,4 +146,36 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: smoke-logs-adr-create-storage-matrix
+          path: ${{ env.SMOKE_LOG_DIR }}
+
+  adr-index-skill-migration:
+    name: adr-index skill → agentdb index parity (ADR-0305)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Start local Verdaccio + publish fork packages
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/ruflo-publish.sh 2>&1 | tee "${SMOKE_LOG_DIR}/publish.log"
+
+      - name: Run ADR-0305 adr-index skill-migration parity smoke via fast runner
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/test-acceptance-fast.sh adr0305 2>&1 | tee "${SMOKE_LOG_DIR}/adr0305.log"
+
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs-adr-index-skill-migration
           path: ${{ env.SMOKE_LOG_DIR }}

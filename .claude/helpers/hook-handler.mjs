@@ -49,9 +49,14 @@ async function safeImport(modulePath) {
   return null;
 }
 
-const router = await safeImport(path.join(helpersDir, 'router.js'));
-const session = await safeImport(path.join(helpersDir, 'session.js'));
-const memory = await safeImport(path.join(helpersDir, 'memory.js'));
+// ADR-0312: prefer .cjs (explicit CommonJS), fall back to legacy .js.
+const resolveHelper = (base) => {
+  const cjs = path.join(helpersDir, base + '.cjs');
+  return fs.existsSync(cjs) ? cjs : path.join(helpersDir, base + '.js');
+};
+const router = await safeImport(resolveHelper('router'));
+const session = await safeImport(resolveHelper('session'));
+const memory = await safeImport(resolveHelper('memory'));
 const intelligence = await safeImport(path.join(helpersDir, 'intelligence.cjs'));
 
 // ── Intelligence timeout protection (fixes #1530, #1531) ───────────────────

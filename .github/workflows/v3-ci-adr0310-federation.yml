@@ -1,0 +1,87 @@
+# ADR-0310 — CI stanza for the FederationHubServer DOA repair.
+#
+# One job: publish the fork packages to Verdaccio, then run the T4
+# cross-process federation round-trip smoke against the freshly-published
+# @sparkleideas/agentic-flow. Per ADR-0310 §T4 the smoke must:
+#   - start the hub via the SHIPPED CLI (proves Fix 5 un-bricks the CLI +
+#     Fix 3 ships dist/federation/run-hub.js + Fix 1 resolves the sql.js
+#     init race),
+#   - push an episode from one process, pull it from a SEPARATE process with
+#     the correct vector clock (Fix 2: no null-agentDB NPE on storePattern),
+#   - confirm cross-tenant isolation (dataLen:0).
+#
+# Single job (no env-on/env-off matrix): the federation hub is not
+# transport-backend-dependent, unlike ADR-0265's QUIC vs WS-fallback split.
+#
+# Reference shape: .github/workflows/v3-ci-quic.yml (the ADR-0265 stanza).
+# Per feedback-trunk-only-fork-development ruflo-patch ships the
+# source-of-truth; the fork's v3-ci.yml is rebuilt from this stanza.
+#
+# Discipline:
+# - set -e per ADR-0245 so failures propagate (no squelching per
+#   feedback-no-squelch-tests).
+# - Per feedback-no-tail-tests the smoke writes its own LOG_FILE
+#   (env: SMOKE_LOG_DIR); logs are uploaded as an artifact.
+#
+# IMPORTANT (RED-until-published): the smoke WILL FAIL until the fork bits
+# (forks/agentic-flow ADR-0310 patches — sql-adapter `ready`, hub Fix 1/2,
+# run-hub.ts/run-agent.ts, federation exports, and the nested package.json
+# added to the publish `files`) are published to Verdaccio by `npm run
+# release`. The acceptance gate is on the smoke being WIRED into the harness,
+# not on it passing pre-publish.
+
+name: ADR-0310 federation DOA repair
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'forks/agentic-flow/agentic-flow/src/federation/**'
+      - 'forks/agentic-flow/agentic-flow/src/db/sql-adapter.ts'
+      - 'forks/agentic-flow/package.json'
+      - 'scripts/smoke-federation-cross-process.mjs'
+      - 'lib/acceptance-adr0310-checks.sh'
+  pull_request:
+    paths:
+      - 'forks/agentic-flow/agentic-flow/src/federation/**'
+      - 'forks/agentic-flow/agentic-flow/src/db/sql-adapter.ts'
+      - 'forks/agentic-flow/package.json'
+      - 'scripts/smoke-federation-cross-process.mjs'
+      - 'lib/acceptance-adr0310-checks.sh'
+
+env:
+  REGISTRY: http://localhost:4873
+  SMOKE_LOG_DIR: ${{ github.workspace }}/smoke-logs
+
+jobs:
+  federation-cross-process:
+    name: Federation T4 (cross-process push/pull + tenant isolation)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Start local Verdaccio + publish fork packages
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/ruflo-publish.sh 2>&1 | tee "${SMOKE_LOG_DIR}/publish.log"
+
+      - name: Run ADR-0310 smoke
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/test-acceptance-fast.sh adr0310 2>&1 | tee "${SMOKE_LOG_DIR}/adr0310.log"
+
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs-adr0310-federation
+          path: ${{ env.SMOKE_LOG_DIR }}

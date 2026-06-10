@@ -29,6 +29,8 @@ on:
       - 'forks/ruflo/v3/@claude-flow/memory/src/hybrid-backend.ts'
       - 'forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts'
       - 'forks/ruflo/v3/@claude-flow/memory/src/types.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/bin/cli.js'
+      - 'forks/ruflo/v3/@claude-flow/cli/bin/mcp-server.js'
       - 'lib/acceptance-adr0287-checks.sh'
   pull_request:
     paths:
@@ -39,6 +41,8 @@ on:
       - 'forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts'
       - 'forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts'
       - 'forks/ruflo/v3/@claude-flow/memory/src/types.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/bin/cli.js'
+      - 'forks/ruflo/v3/@claude-flow/cli/bin/mcp-server.js'
       - 'lib/acceptance-adr0287-checks.sh'
 
 env:

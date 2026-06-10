@@ -1,25 +1,30 @@
 // @tier pipeline
 // ADR-0235 — Init helpers generator-vs-bundled parity invariant.
+// ADR-0312 — Hook-side CJS helpers MUST be emitted as .cjs (not .js), and the
+//            hook-handler loader MUST resolve them by .cjs with a legacy .js
+//            fallback. Under a "type":"module" project a .js name is parsed as
+//            ESM and the module.exports CJS helper loads as an empty namespace
+//            (or throws), nulling the router → the hook prints "Router not
+//            available". The .cjs extension states the module system explicitly,
+//            immune to package.json "type" at any directory depth.
 //
-// Asserts the structural invariants that close F-12-001 / F-12-003:
+// Asserts the structural invariants that close F-12-001 / F-12-003 (ADR-0235)
+// AND the ADR-0312 .cjs emission/resolution:
 //
 //   (1) The bundled-static directory at
 //       forks/ruflo/v3/@claude-flow/cli/.claude/helpers/ has been deleted
 //       (Option B per ADR-0235). Any reintroduction trips the test.
-//
 //   (2) helpers-generator.ts:generateHookHandler() defines the 14 handler
-//       keys expected post-ADR-0211 (the source-side fix that this ADR
-//       makes visible to npx users). Drift in either direction trips it.
+//       keys expected post-ADR-0211. Drift in either direction trips it.
+//   (3) IF a future commit DOES re-add the bundled dir, each generator-
+//       overlapping bundled file must match the generator's handler keys.
+//   (4) ADR-0312: BOTH emission maps (executor.writeHelpers + generator
+//       generateHelpers) emit router/session/memory as `.cjs`, NOT `.js`;
+//       the generateHookHandler() loader resolves them via the .cjs-first
+//       resolveHelper() and emits NO `'router.js'`/`'session.js'`/`'memory.js'`
+//       literal (the pre-ADR-0312 createRequire-blessed shape).
 //
-//   (3) IF a future commit DOES re-add v3/@claude-flow/cli/.claude/helpers/
-//       (the conservative-fallback path of Option B), each generator-
-//       overlapping bundled file (hook-handler.mjs, intelligence.cjs,
-//       auto-memory-hook.mjs) must contain the same handler keys as the
-//       generator (no silent dual-source drift).
-//
-// FAIL LOUD — there is NO UPDATE_GOLDEN-style escape hatch. If the test
-// fails, the structural invariant is broken; the only remedy is to fix
-// the bundled / source side.
+// FAIL LOUD — there is NO UPDATE_GOLDEN-style escape hatch.
 //
 // Pattern: node --test + literal-grep, per ADR-0215
 // (skill-shell-integrity.test.mjs).
@@ -41,13 +46,10 @@ const FORK_RUFLO = upstream.ruflo.dir;
 const CLI_PKG = join(FORK_RUFLO, 'v3', '@claude-flow', 'cli');
 const BUNDLED_HELPERS_DIR = join(CLI_PKG, '.claude', 'helpers');
 const HELPERS_GENERATOR = join(CLI_PKG, 'src', 'init', 'helpers-generator.ts');
+const EXECUTOR = join(CLI_PKG, 'src', 'init', 'executor.ts');
 
 // 14 handler keys from helpers-generator.ts:generateHookHandler(), per
-// ADR-0211 / ADR-0235 §Pre-flight Check 3. The bundled static carried
-// 8 of these (route, pre-bash, post-edit, session-restore, session-end,
-// pre-task, post-task, stats) — the other 6 (pre-edit, post-command,
-// notify, compact-manual, compact-auto, status) were the F-12-001
-// silent no-op symptoms.
+// ADR-0211 / ADR-0235 §Pre-flight Check 3.
 const EXPECTED_HANDLER_KEYS = [
   'route',
   'pre-bash',
@@ -90,9 +92,7 @@ describe('ADR-0235 — init helpers generator-vs-bundled parity', { skip }, () =
     const content = readFileSync(HELPERS_GENERATOR, 'utf8');
     const missing = [];
     for (const key of EXPECTED_HANDLER_KEYS) {
-      // Match `'<key>':` inside the generated handler dispatch.
-      // The actual literal in source is e.g. `'pre-edit': () => {...},`
-      const pattern = new RegExp(`'${key.replace(/[.*+?^${}()|[\\\]\\\\]/g, '\\\\$&')}':`);
+      const pattern = new RegExp(`'${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}':`);
       if (!pattern.test(content)) missing.push(key);
     }
     assert.equal(
@@ -106,14 +106,8 @@ describe('ADR-0235 — init helpers generator-vs-bundled parity', { skip }, () =
 
   it('if bundled-static directory exists, generator-overlapping files match generator keys', () => {
     if (!existsSync(BUNDLED_HELPERS_DIR)) {
-      // Expected post-ADR-0235 Option B. Skip per-file parity (no bundled
-      // tree to compare); the first assertion already locks the invariant.
       return;
     }
-    // Conservative-fallback path: bundled directory retained. Each overlap
-    // file MUST have generator-equivalent handler key coverage. The check
-    // is structural (key presence) — byte equality is impractical because
-    // the generator emits template literals with build-time interpolations.
     const overlaps = ['hook-handler.mjs'];
     const missing = [];
     for (const file of overlaps) {
@@ -121,7 +115,7 @@ describe('ADR-0235 — init helpers generator-vs-bundled parity', { skip }, () =
       if (!existsSync(bundled)) continue;
       const content = readFileSync(bundled, 'utf8');
       for (const key of EXPECTED_HANDLER_KEYS) {
-        const pattern = new RegExp(`'${key.replace(/[.*+?^${}()|[\\\]\\\\]/g, '\\\\$&')}':`);
+        const pattern = new RegExp(`'${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}':`);
         if (!pattern.test(content)) missing.push({ file, key });
       }
     }
@@ -136,34 +130,8 @@ describe('ADR-0235 — init helpers generator-vs-bundled parity', { skip }, () =
     );
   });
 
-  // ────────────────────────────────────────────────────────────────────────
-  // Post-Batch-5 second-pass remediation: the 4 grep invariants that the
-  // release-pipeline acceptance checks enforce on init'd projects. The
-  // checks live in:
-  //   - lib/acceptance-init-checks.sh:check_init_helper_syntax (literal
-  //     `grep -qE 'import|export'` against .mjs helpers)
-  //   - lib/acceptance-adr0074-checks.sh:check_adr0074_eviction_cap
-  //     (`grep -q 'MAX_STORE_ENTRIES.*=.*1000'`)
-  //   - lib/acceptance-adr0074-checks.sh:check_adr0074_consolidate_evicts
-  //     (`grep -q 'evicted'` AND `grep -q 'EVICTION_AGE_MS'`)
-  //   - lib/acceptance-adr0080-checks.sh:check_adr0080_store_cap (matches
-  //     MAX_STORE_ENTRIES = 1000 in init'd intelligence.cjs)
-  //
-  // These four assertions promote those runtime greps to build-time
-  // assertions against the generator source — drift fails the test, not
-  // the slow release pipeline. ADR-0235 §Confirmation #1 was about
-  // handler-key parity; this block is the analogous gate for the four
-  // ADR-0074 / ADR-0080 invariants that have to ship through the same
-  // generator-as-sole-source-of-truth path.
   it('generator emits hook-handler.mjs as ESM (top-level import or export)', () => {
-    assert.ok(
-      existsSync(HELPERS_GENERATOR),
-      `Generator source file not found: ${HELPERS_GENERATOR}`,
-    );
     const content = readFileSync(HELPERS_GENERATOR, 'utf8');
-    // Locate the generateHookHandler() body — bounded by its opening line
-    // and the next exported function declaration so the assertion does not
-    // leak across into adjacent generators.
     const hookHandlerStart = content.indexOf('export function generateHookHandler()');
     assert.ok(
       hookHandlerStart > -1,
@@ -174,10 +142,6 @@ describe('ADR-0235 — init helpers generator-vs-bundled parity', { skip }, () =
       hookHandlerStart,
       nextExportStart > -1 ? nextExportStart : content.length,
     );
-    // The emitted file content lives inside an array of string lines that
-    // gets joined with '\n'. Search for the literal ESM tokens in the
-    // emitted code (the string literals can be either double- or single-
-    // quoted in the TS source).
     const hasImportLiteral = /["']\s*import\s/m.test(hookHandlerBody);
     assert.ok(
       hasImportLiteral,
@@ -185,14 +149,6 @@ describe('ADR-0235 — init helpers generator-vs-bundled parity', { skip }, () =
         '(check_init_helper_syntax greps `import|export` in .mjs helpers; require() ' +
         'in a .mjs file is a runtime error under Node ESM)',
     );
-    // Stricter: no top-level bare `require()` calls emitted at module
-    // scope (those would crash at runtime under Node ESM). Each string
-    // literal in this generator holds one emitted file line, with leading
-    // whitespace inside the quote when the emitted code is nested in a
-    // function body. Top-level lines have NO leading whitespace inside
-    // the quotes (e.g. `'const path = ...'`). Match only those — nested
-    // `require(modulePath)` inside the safeRequire() helper is legal
-    // because it binds to createRequire(import.meta.url).
     const hasTopLevelRequire = /["']const\s+\w+\s*=\s*require\(/.test(hookHandlerBody);
     assert.ok(
       !hasTopLevelRequire,
@@ -247,19 +203,11 @@ describe('ADR-0235 — init helpers generator-vs-bundled parity', { skip }, () =
       intelStart,
       nextExportStart > -1 ? nextExportStart : content.length,
     );
-    // Locate the consolidate function's emitted body (string-literal array
-    // entries between "consolidate: function()" and the next member key).
-    // The actual return statement contains `evicted` as a tracked key.
     const consolidateStart = intelBody.indexOf("'  consolidate: function()");
     assert.ok(
       consolidateStart > -1,
       'consolidate: function() not found in generateIntelligenceStub() body',
     );
-    // The return ships at the end of consolidate before the closing brace.
-    // The grep contract is: `evicted` must appear in the emitted
-    // intelligence.cjs. The cleanest place is the return object — that's
-    // what check_adr0074_consolidate_evicts ultimately reads. Confirm both
-    // the substring is present AND it's wired into a return statement.
     const consolidateEnd = intelBody.indexOf("'  },'", consolidateStart);
     const consolidateBody = intelBody.slice(
       consolidateStart,
@@ -270,13 +218,87 @@ describe('ADR-0235 — init helpers generator-vs-bundled parity', { skip }, () =
       'consolidate() must reference `evicted` (ADR-0074 Phase 3 eviction count; ' +
         'check_adr0074_consolidate_evicts greps this literal in init\'d intelligence.cjs)',
     );
-    // Stricter check: it should be in the return statement (so the value
-    // is observable to callers), not just a stray comment.
     assert.ok(
       /return\s+\{[^}]*evicted/s.test(consolidateBody),
       'consolidate() must return `evicted` count in its result object ' +
         '(callers including the hook handler read the result; if `evicted` is ' +
         'only commented, callers cannot observe eviction)',
+    );
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// ADR-0312 — CJS helpers emitted as .cjs; loader resolves .cjs-first.
+// Replaces the pre-ADR-0312 assertion family that blessed createRequire as the
+// fix: under "type":"module" Node resolves a .js file by the nearest
+// package.json "type" regardless of the requiring module's scope, so neither
+// createRequire nor a .cjs *dispatcher* rescues a .js *helper* — only the .cjs
+// extension on the helper itself does. (See ADR-0312 §Decision Outcome /
+// Amendment 2026-06-10; the throw is real on Node 24 in FILE-based ESM.)
+// ──────────────────────────────────────────────────────────────────────────
+describe('ADR-0312 — hook-side CJS helpers emit as .cjs, loader resolves .cjs-first', { skip }, () => {
+  const HELPER_BASES = ['router', 'session', 'memory'];
+
+  it('executor.writeHelpers emits router/session/memory as .cjs (not .js)', () => {
+    const content = readFileSync(EXECUTOR, 'utf8');
+    for (const base of HELPER_BASES) {
+      assert.ok(
+        new RegExp(`'${base}\\.cjs':`).test(content),
+        `executor.ts writeHelpers must emit '${base}.cjs' (ADR-0312). ` +
+          `A '.js' key is parsed as ESM under "type":"module" and the ` +
+          `module.exports CJS helper fails to load → "Router not available".`,
+      );
+      assert.ok(
+        !new RegExp(`'${base}\\.js':`).test(content),
+        `executor.ts still emits the legacy '${base}.js' key — ADR-0312 renames ` +
+          `it to '${base}.cjs'. Leaving the .js key re-introduces the bug.`,
+      );
+    }
+  });
+
+  it('generator.generateHelpers emits router/session/memory as .cjs (not .js)', () => {
+    const content = readFileSync(HELPERS_GENERATOR, 'utf8');
+    for (const base of HELPER_BASES) {
+      assert.ok(
+        new RegExp(`helpers\\['${base}\\.cjs'\\]`).test(content),
+        `helpers-generator.ts generateHelpers must set helpers['${base}.cjs'] (ADR-0312).`,
+      );
+      assert.ok(
+        !new RegExp(`helpers\\['${base}\\.js'\\]`).test(content),
+        `helpers-generator.ts still sets helpers['${base}.js'] — ADR-0312 renames ` +
+          `it to '${base}.cjs'.`,
+      );
+    }
+  });
+
+  it('generateHookHandler() loader resolves helpers .cjs-first and emits no bare .js helper literal', () => {
+    const content = readFileSync(HELPERS_GENERATOR, 'utf8');
+    const start = content.indexOf('export function generateHookHandler()');
+    assert.ok(start > -1, 'generateHookHandler() not found');
+    const next = content.indexOf('export function ', start + 1);
+    const body = content.slice(start, next > -1 ? next : content.length);
+
+    // The loader must use a .cjs-preferring resolver for the three CJS helpers.
+    assert.ok(
+      /resolveHelper\(/.test(body) && /\+\s*'\.cjs'/.test(body),
+      'generateHookHandler() must emit a resolveHelper() that prefers `.cjs` ' +
+        "(then falls back to legacy `.js`) for router/session/memory (ADR-0312).",
+    );
+    // It must NOT load any of the three by a hard-coded `.js` name — that is the
+    // pre-ADR-0312 shape the createRequire-blessing test wrongly endorsed.
+    for (const base of HELPER_BASES) {
+      assert.ok(
+        !new RegExp(`'${base}\\.js'`).test(body),
+        `generateHookHandler() still references '${base}.js' literally — must go ` +
+          `through resolveHelper('${base}') so .cjs is preferred (ADR-0312). ` +
+          `createRequire/.js does NOT cure "type":"module" (Node resolves by the ` +
+          `nearest package.json type, not the requiring module's scope).`,
+      );
+    }
+    // intelligence.cjs stays a direct .cjs path (already correct) — sanity.
+    assert.ok(
+      /'intelligence\.cjs'/.test(body),
+      'generateHookHandler() must still load intelligence.cjs directly (.cjs).',
     );
   });
 });

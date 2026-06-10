@@ -14,7 +14,11 @@
 #         adr0265 (fork-native QUIC federation transport, upstream ADR-108),
 #         adr0266 (ADR-129 Phases 1-3 implementation amendment),
 #         adr0255 (fork-native memory_export + retrieve --value-only),
+#         adr0305 (adr-index skill → in-process agentdb index),
+#         adr0310 (FederationHubServer DOA repair, shipped-CLI cross-process),
+#         adr0312 (hook-side .cjs helpers under type:module),
 #         e2e-core, e2e-storage, skills-surface (ADR-0216)
+#         (adr0309 federation Phase-2 rides the adr0265 group)
 # Default: p3,p4 (the Phase 3+4 checks)
 
 # DELIBERATE-ADR0245: fast-acceptance runner intentionally tolerates per-
@@ -359,6 +363,10 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0265"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
     _fast_run "adr0265-mobility"             check_adr0265_mobility
     _fast_run "adr0265-recovery"             check_adr0265_recovery
     _fast_run "adr0265-benchmark"            check_adr0265_benchmark
+    if [[ -f "$PROJECT_DIR/lib/acceptance-adr0309-checks.sh" ]]; then
+      source "$PROJECT_DIR/lib/acceptance-adr0309-checks.sh"
+      _fast_run "adr0309-fed-memory-roundtrip" check_adr0309_fed_memory_roundtrip
+    fi
     _adr0265_cleanup_shared_temp
   fi
 fi
@@ -378,6 +386,14 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0266"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
     _fast_run "adr0266-group4-compose"       check_adr0266_group4_compose
     _fast_run "adr0266-allowlist"            check_adr0266_allowlist
     _adr0266_cleanup_shared_temp
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0310"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0310-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0310-checks.sh"
+    echo "── ADR-0310 (FederationHubServer DOA repair — shipped-CLI cross-process) ──"
+    _fast_run "adr0310-federation-xproc" check_adr0310_federation_cross_process
   fi
 fi
 
@@ -513,6 +529,16 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0287"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
     _fast_run "adr0287-f4-daemon-subdir" check_adr0287_f4_doctor_daemon_running_from_subdir
     _fast_run "adr0287-f8e-spinner-tty"  check_adr0287_f8e_spinner_no_cr_on_nontty
     _fast_run "adr0287-f3b-route-cold"   check_adr0287_f3b_route_untrained_label
+    _fast_run "adr0287-f2-resources-list" check_adr0287_f2_resources_list
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0312"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0312-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0312-checks.sh"
+    echo "── ADR-0312 (route hook recommendation box under type:module — .cjs helpers) ──"
+    echo "[fast] adr0312 reusing ACCEPT_TEMP: ${ACCEPT_TEMP}"
+    _fast_run "adr0312-route-type-module" check_adr0312_route_hook_type_module
   fi
 fi
 
@@ -662,6 +688,17 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0273"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
     export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
     echo "[fast] adr0273 reusing ACCEPT_TEMP: ${ACCEPT_TEMP}"
     _fast_run "adr0273-index" check_adr0273_index
+    unset ADR0255_SMOKE_SHARED_TEMP
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0305"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0305-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0305-checks.sh"
+    echo "── ADR-0305 (adr-index skill → agentdb index — parity with import.mjs) ──"
+    export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+    echo "[fast] adr0305 reusing ACCEPT_TEMP: ${ACCEPT_TEMP}"
+    _fast_run "adr0305-index-skill" check_adr0305_index_skill
     unset ADR0255_SMOKE_SHARED_TEMP
   fi
 fi

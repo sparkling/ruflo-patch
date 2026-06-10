@@ -29,6 +29,10 @@ on:
       - 'forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts'
       - 'scripts/smoke-adr0293-c1-reconvergence.mjs'
       - 'lib/acceptance-adr0293-checks.sh'
+      # ADR-0308: re-run when the ruvllm acceptance lib changes (the MicroLoRA
+      # non-768 round-trip check lives here; the ruvllm-wasm.ts trigger above
+      # already covers the fork-source fix).
+      - 'lib/acceptance-ruvllm-checks.sh'
   pull_request:
     paths:
       - 'forks/ruflo/v3/@claude-flow/cli/src/ruvector/ruvllm-wasm.ts'
@@ -36,6 +40,8 @@ on:
       - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts'
       - 'scripts/smoke-adr0293-c1-reconvergence.mjs'
       - 'lib/acceptance-adr0293-checks.sh'
+      # ADR-0308: re-run when the ruvllm acceptance lib changes.
+      - 'lib/acceptance-ruvllm-checks.sh'
 
 env:
   REGISTRY: http://localhost:4873
