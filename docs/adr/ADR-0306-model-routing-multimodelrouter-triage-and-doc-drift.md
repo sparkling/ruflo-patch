@@ -94,17 +94,17 @@ no execution until an explicit go-ahead on the triage direction.
 
 ### Tasks
 
-* **T1 — Triage `MultiModelRouter` (the real decision).** Decide WIRE vs
-  KEEP-AS-CAPABILITY vs DELETE per `feedback-no-consumer-is-not-stub`. Default
-  lean: KEEP-AS-CAPABILITY + document it as available-but-unwired, OR WIRE it if
-  cross-provider auto-failover/cost-arbitrage is a wanted product capability.
-  NOT delete (real code).
-* **T2 — If WIRE:** route `agent-execute-core.ts`'s provider selection through
-  the router's `scoreModels()` + circuit-breaker (replace its mock
-  `executeCompletion` with the real `callOpenAICompat`/`callOllamaCompat`/
-  Anthropic dispatch), with an acceptance check proving cost-based selection +
-  failover on the live path. If KEEP: document the unwired status honestly at the
-  call site + in the USERGUIDE.
+* **T1 — Triage `MultiModelRouter`. RESOLVED 2026-06-10 → KEEP, track upstream**
+  (full evidence + decision in Addendum 2 §1). The file is byte-identical to
+  upstream `origin/main`; it is upstream-incidental decision/orchestration
+  scaffold (real `route()`, stubbed execution leaf — as is its sibling
+  `ProviderAdapter`). Not WIRE (don't get ahead of upstream), not DELETE
+  (merge-tax on identical code, no positive divergence case). The live
+  cross-provider path is already served by `agent-execute-core`.
+* **T2 — WIRE branch CLOSED by T1's KEEP resolution.** No fork-side wiring of
+  `executeCompletion`; if upstream later wires the integration router the fork
+  inherits it on sync. The only KEEP obligation is the doc work below: T3/T4
+  must not let any surface describe this router as a wired live executor.
 * **T3 — Fix USERGUIDE:894** "Q-learning with epsilon-greedy" → "cost-adjusted
   Thompson sampling (Beta-Bernoulli bandit)"; cross-reference the separate
   `QLearningRouter` as the agent/task router so the two aren't conflated.
@@ -201,7 +201,7 @@ capability.
   `ruvector/model-router.js`); `@sparkleideas/integration@3.0.0-patch.987`
   `dist/multi-model-router.js:617` (mock). User-facing README §2 corrected to match.
 
-## Addendum 2 (2026-06-10, adversarial re-verification): T1 evidence favors DELETE; the cost-selector gap was overstated
+## Addendum 2 (2026-06-10, adversarial re-verification + provenance trace): T1 RESOLVED → KEEP (track upstream); the cost-selector gap was overstated
 
 An independent 8-agent verification swarm re-probed every claim against fresh
 Verdaccio installs (`@sparkleideas/integration@3.0.0-patch.987`) and the
@@ -221,17 +221,45 @@ upstream), which joins T4's reconciliation set.
 
 Two material corrections:
 
-1. **T1 now has an evidence-backed answer: DELETE** (the Addendum's
-   "KEEP-AS-CAPABILITY or DELETE" narrows). The mock fabricates responses AND
-   cost figures while being re-exported from a published package index — that
-   is ADR-0210's "advertised surface that lies" category, NOT
-   `feedback-no-consumer-is-not-stub`'s protected real-honest-unadvertised
-   case; and the capability ships twice for real (agent-execute-core explicit
-   dispatch; agentic-flow `ModelRouter`). KEEP is defensible only for
-   salvaging the `scoreModels`/circuit-breaker sub-assets separately, if
-   wanted. Naming nit: `ProviderRegistry` is NOT in `integration` — it lives
-   in `v3/@claude-flow/plugins/src/providers/index.ts` (equally unconsumed;
-   separate triage).
+1. **T1 RESOLVED → KEEP, track upstream (NOT delete, NOT wire).** An earlier
+   same-day draft of this addendum wrongly recommended **DELETE** ("ADR-0210
+   advertised-lie") — reproducing the exact over-deletion reflex this corpus
+   warns against (`feedback-no-consumer-is-not-stub`). A provenance trace,
+   prompted by the user disbelieving that call, corrected it on evidence:
+   * The file is **byte-identical to `ruvnet/ruflo` `origin/main`** (`diff`
+     clean) — vendored UPSTREAM code, not fork-authored, added by rUv's
+     2026-01-05 V3 checkpoint commit `aa89620a7`. Deleting it buys permanent
+     merge-tax on identical code with no positive divergence case.
+   * `executeCompletion` is **upstream's own** stub (comment: "Provider API
+     integration point — external calls via provider adapters"), and the
+     sibling `ProviderAdapter.executeRequest` in the same package is **also**
+     a stub ("actual API calls via external integrations"). So the package is
+     a routing-**decision/orchestration scaffold** — real `route()` scoring +
+     circuit-breaker, deliberately stubbed execution leaf — NOT a lie about a
+     working executor. The ADR-0210 "advertised-lie" framing was wrong: it is
+     upstream's sectioned library export of a coexisting decision layer, not a
+     fork-introduced advertisement of a working tool.
+   * **Upstream's documented routing intention lives in the REAL systems, not
+     this mock:** ADR-026 (the live 3-tier Agent-Booster + haiku/sonnet/opus
+     tier router, `ruvector/model-router.ts`), ADR-011 (`@claude-flow/providers`,
+     6 validated real providers), ADR-001 (adopt agentic-flow, don't
+     duplicate). ADR-011 references this integration router **once**, under
+     **Neutral** consequences ("Integration with existing … multi-model-router"
+     / "Can coexist with agentic-flow's provider system"); upstream's own
+     stub-remediation ADRs (063/064/066) never mention it. It is
+     upstream-**incidental** scaffolding — neither ADR-blessed as load-bearing
+     nor ADR-flagged for removal.
+   * The live cross-provider need is already met on the hot path by
+     `agent-execute-core` (real `fetch` to anthropic/openrouter/ollama,
+     verified), so there is no forcing need to WIRE.
+
+   **Decision (Henrik, 2026-06-10): KEEP, track upstream; do NOT wire it
+   unless/until upstream wires it; do NOT delete.** The earlier
+   "salvage `scoreModels`/circuit-breaker separately" note is withdrawn — no
+   fork-side extraction; track upstream verbatim and inherit any future
+   upstream wiring on sync. Naming nit retained: `ProviderRegistry` is NOT in
+   `integration` — it lives in `v3/@claude-flow/plugins/src/providers/index.ts`
+   (equally unconsumed; same KEEP-track-upstream logic applies).
 2. **Addendum gap (ii) — "a true dynamic cheapest-cost selector is not yet
    implemented" — was overstated.** A real dynamic cost selector SHIPS in the
    same agentic-flow package: `dist/services/cost-optimizer-service.js` (243
