@@ -15,6 +15,15 @@ parity-test rewrite + dogfood `.claude/` config), Wave 4 (docs + 2 new ADRs + th
 then ONE release** (Henrik's go-ahead; carries 0304 codex fix, KEPT). Wave 5
 (Batch-U / ADR-0313) stays separately gated.
 
+## STATUS (live — updated during /loop execution, 2026-06-10 PM)
+
+- ✅ **Step 1 (ruflo-patch acceptance wiring) DONE + committed `6ee882e`** (ruflo-patch main): all 8 Wave-1–3 ADR checks wired into `scripts/test-acceptance.sh` + `test-acceptance-fast.sh` (every id paired run_check_bg + collect_parallel) + 6 CI workflows. Live dogfood applied: 0312 helpers `git mv .js→.cjs` + `.cjs`-first `resolveHelper` in `hook-handler.mjs`; 0287 `auto-memory-hook` createBackend→JSON-only, stale `Stop→sync` removed, `MCP_TIMEOUT=60000` added to `.claude/settings.json` env. Lint (`lint-acceptance-checks` findings:[]), bash -n, node --check, YAML all green. RED-until-published by design. INTEGRATION-LEDGER already carried all 7 fork-fix rows (no edit needed). 0308 serial (no test-acceptance.sh change); 0309 rides adr0265 (26/26 vitest green now); 0287r2 no fast-runner (substring collision).
+- ⏳ **Step 2 (Wave 4) IN PROGRESS** — 6 background agents: `w4-0314` (Chrome teardown+PPID-1 reaper, CRITICAL — before Batch-U), `w4-0306`/`w4-0307`/`w4-0288` (doc honesty), `w4-bug-syshealth` + `w4-bug-noglobal` (investigate 2 swarm-found bugs — noglobal may be ALREADY-FIXED, verify not manufacture). 0286 DEFERRED (optional per plan). Agents in patch-report mode → queen applies fork diffs serially, builds once, creates the 2 new ADRs serially (no adr-create numbering race).
+- ⬜ **Step 3 (ONE release)** — after Wave 4 lands + forks build: release from MAIN checkout, push forks to `sparkling`, FULL acceptance green, flip ADR statuses (0308 amended / 0312 / 0287 remainder / 0305 / 0309 / 0310 / 0314), commit ADRs. Carries 0304 codex fix (KEPT).
+- ⬜ **Step 4 (Wave 5 / Batch-U / ADR-0313)** — last, after a separate green release.
+- 🆕 **ADR-0315 (ADR-tooling skill drift) — CREATED, status `proposed`, fix PARKED pending maintainer decision** (Henrik interjection 2026-06-10). Three drifts: (1) `mcp__ruflo__` prefix assumes `ruflo` server registration — provenance is **ADR-0113 Phase C `b24e46829` + ADR-0117**, NOT the ODR mirror (ODR skills live in `~/.claude/skills/`, inherited the prefix); (2) `adr/<id>` `/`-key — current fork accepts it (`validateString` length-only, ADR-0281/0285) but upstream/older `validateIdentifier` rejects `/`; (3) `path:`→`key:` stale in `agents/adr-architect.md`. **Open question to Henrik: fix emphasis A2+C1 (keep `adr/<id>`, align registration to `ruflo`) vs A1 (colon keys for upstream portability), and whether to fix the CLAUDE.md `claude mcp add claude-flow` bootstrap line.** Do NOT implement until answered. Fix lands this release if answered before publish, else a follow-up.
+- **Loop:** `/loop 15 implement the remainder...` self-paced; agent completions drive it. Do NOT stop until the final post-Wave-5 release is green.
+
 ## Agents — ALL 8 COMPLETED (none running)
 
 5 Wave-1 + 3 Wave-2/3 agents all finished. Full transcripts (with the exact
