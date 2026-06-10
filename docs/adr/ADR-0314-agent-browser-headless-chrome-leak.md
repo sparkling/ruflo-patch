@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-06-10
 tags: [acceptance, browser-automation, agent-browser, resource-leak, perf-gate, dev-machine-hygiene]
 supersedes: []

@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-06-09
 tags: [federation, memory-sharing, agentic-flow, federation-hub, shipping-bug, websocket-sync]
 supersedes: []

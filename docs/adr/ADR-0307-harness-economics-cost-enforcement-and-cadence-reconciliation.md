@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-06-08
 tags: [cost-tracker, daemon, budget-enforcement, worker-cadence, honesty, harness-economics]
 supersedes: []

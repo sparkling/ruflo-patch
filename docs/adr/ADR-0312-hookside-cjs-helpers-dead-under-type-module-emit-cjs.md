@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-06-10
 tags: [hooks, init-template, esm-cjs, routing, helpers-generator, honesty]
 supersedes: []

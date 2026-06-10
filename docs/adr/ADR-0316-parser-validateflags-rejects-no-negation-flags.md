@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-06-10
 tags: [cli, parser, flag-validation, doc-drift, fix, upstream-shared]
 supersedes: []

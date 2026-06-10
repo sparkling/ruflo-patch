@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-06-08
 tags: [federation, memory-sharing, quic, inbound-dispatcher, phase-2, team-memory]
 supersedes: []

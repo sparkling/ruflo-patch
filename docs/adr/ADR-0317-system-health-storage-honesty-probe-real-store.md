@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-06-10
 tags: [mcp, observability, memory, honesty, infrastructure, upstream-sync, fix]
 supersedes: []

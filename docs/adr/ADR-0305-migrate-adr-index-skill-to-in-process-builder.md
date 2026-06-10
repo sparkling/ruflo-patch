@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-06-08
 tags: [adr-tooling, performance, indexing, cli, memory]
 supersedes: []

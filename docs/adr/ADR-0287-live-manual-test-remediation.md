@@ -635,3 +635,29 @@ and its `proposed` status stale per `feedback-old-adr-status-lines-go-stale`:
 `system_health` reports memory `degraded — "Memory store not found — run
 memory init"` while memory demonstrably works (1,226+ entries, live
 searches) — a fresh reporter-honesty candidate, not an 0287 finding.
+
+### Amendment (2026-06-11): remainder items F2 + R2 shipped in patch.436
+
+This release (`@sparkleideas/cli@3.7.0-alpha.10-patch.436`; full acceptance
+757 pass / 0 fail / 10 skip_accepted) closes two of the four open-remainder
+items above:
+
+* **F2 — CLOSED.** Both shipped bins now answer `resources/list` with
+  `{ resources: [] }` instead of falling through to `-32601`. Proven live by
+  the `adr0287-f2-resources-list` acceptance check — F2-ARCH on both `cli.js`
+  and `mcp-server.js` plus F2-FUNC end-to-end over the JSON-RPC pipe — green
+  against the published artifact.
+* **R2 — CLOSED.** `storeInAgentDB`'s SQLite-INSERT / HNSW-add path now
+  discriminates fatal vs benign and re-throws fatals
+  (`feedback-best-effort-must-rethrow-fatals`), guarded by the
+  `adr0287r2-storeindb-rethrow` acceptance check (green in patch.436).
+
+The **"New observation"** above (system_health reporting memory `degraded`
+while memory demonstrably works) was promoted to its own decision —
+**ADR-0317** (system-health storage-honesty probe: probe the real store) —
+shipped and `accepted` in this same release.
+
+Still open: **T1 silo half** (dogfood `.swarm/agentdb-memory.rvf` residue plus
+the harmless `sync`-on-Stop usage print) and **F1 band-aid** (`MCP_TIMEOUT`
+unset). Both are low-value and non-blocking; tracked for a future dogfood
+sweep, not this release.
