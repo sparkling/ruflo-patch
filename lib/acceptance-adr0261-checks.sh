@@ -99,8 +99,16 @@ _check_adr0261_smoke() {
 
   # Full tee per feedback-no-tail-tests + feedback-full-test-output — never
   # pipe through tail/head; the log lives on disk for post-hoc inspection.
-  node "${PROJECT_DIR}/scripts/${script_name}" > "${log_path}" 2>&1
-  local rc=$?
+  # ADR-0321: retry once on failure — the P6 benchmark is perf-sensitive and the
+  # uncapped acceptance wave self-loads, so a transient target-miss can fail; a
+  # genuine perf regression / broken smoke fails BOTH attempts (non-weakening).
+  local rc _adr0261_attempt
+  for _adr0261_attempt in 1 2; do
+    node "${PROJECT_DIR}/scripts/${script_name}" > "${log_path}" 2>&1
+    rc=$?
+    [[ $rc -eq 0 ]] && break
+    [[ $_adr0261_attempt -eq 1 ]] && sleep 2
+  done
 
   end_ns=$(_ns)
   _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns")

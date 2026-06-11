@@ -1,7 +1,7 @@
 ---
 status: proposed
 date: 2026-06-11
-tags: [acceptance, harness, flaky-test, capture-race, perf-gate, partial]
+tags: [acceptance, harness, flaky-test, capture-race, perf-gate]
 supersedes: []
 depends-on: [ADR-0094, ADR-0314]
 implements: []
@@ -41,34 +41,40 @@ weaken assertions (`feedback-no-squelch-tests`): a genuinely broken command
 fails both attempts (non-zero exit or a persistent real mismatch); only a
 transient capture race is rescued.
 
-**Implemented (this ADR, partial):**
+**Implemented (this ADR):**
 
-- `_p7_cli_check` (`lib/acceptance-cli-commands-checks.sh`) — wrapped the
-  capture+match in a 2-attempt loop; covers all 8 P7 CLI checks. ✅
+- `_p7_cli_check` (`lib/acceptance-cli-commands-checks.sh`) — 2-attempt loop;
+  covers all 8 P7 CLI checks. ✅
+- `_expect_mcp_body` (`lib/acceptance-harness.sh`) — a thin retry-once-on-hard-
+  FAIL wrapper around the renamed `__expect_mcp_body_once`. Retries only when
+  `_CHECK_PASSED == "false"`; **never** retries a PASS or the `tool-not-found →
+  skip_accepted` branch (a legitimate skip, not a transient). Covers the
+  hundreds of INV / qual / claims / coordination / aidefence checks that route
+  through `_mcp_invoke_tool` → `_expect_mcp_body`. ✅
+- `_check_adr0261_smoke` (`lib/acceptance-adr0261-checks.sh`) — retry-once-on-
+  nonzero for the perf benchmark (transient target-miss vs real regression). ✅
 
-**Deferred (tracked here, not yet done — the careful part):**
+**Deferred (optional root, not needed now):**
 
-- `_expect_mcp_body` (`lib/acceptance-harness.sh`) — the shared MCP-invoke
-  helper behind p8/INV checks. Needs the same retry **without** retrying its
-  `tool-not-found → skip_accepted` branch (that's a legitimate skip, not a
-  transient) — a more delicate refactor of a heavily-shared helper.
-- `_check_adr0261_smoke` (`lib/acceptance-adr0261-checks.sh`) — retry the perf
-  benchmark once on a target miss.
-- **Root option (evaluate):** a concurrency cap in `run_check_bg` so the wave
-  stops self-overloading — a single-point fix, but a bigger behavioral change to
-  the ~900 s run that needs its own validation.
+- A concurrency cap in `run_check_bg` so the wave stops self-overloading — a
+  single-point structural fix, but a bigger behavioral change to the ~900 s run.
+  The per-helper retries above resolve the observed flakes without it; revisit
+  only if the capture race recurs in a helper not covered above.
 
 ## Consequences
 
-- Good: the most common flaker (P7 CLI family) is now load-tolerant.
-- Neutral: the deferred helpers can still flake until hardened; a release may
-  need a re-run (mitigated by killing stray Chrome + running at low load first,
-  per `feedback-perf-gate-failure-check-machine-load`).
-- The partial status is deliberate (shipped per a "ship now, harden the shared
-  helpers carefully later" decision, 2026-06-11).
+- Good: all three observed flaky helpers are now load-tolerant — the P7 CLI
+  family, the entire `_mcp_invoke_tool` → `_expect_mcp_body` class (INV / qual /
+  claims / coordination / aidefence, hundreds of checks), and the adr0261 perf
+  gate. The recurring "different check flakes each run" symptom is addressed at
+  the three shared helpers rather than per-check.
+- Neutral: a residual race in a capture helper NOT covered above could still
+  surface; the optional `run_check_bg` concurrency cap is the structural backstop
+  if so. Killing stray Chrome + running at low load first remains good practice
+  (`feedback-perf-gate-failure-check-machine-load`).
 
 ## Confirmation
 
-`_p7_cli_check`: `bash -n` clean, `lint-acceptance-checks` findings `[]`. Full
-closure = the two deferred helpers hardened (or a concurrency cap) + a green
-acceptance run with no capture-race fails.
+All three helpers (`_p7_cli_check`, `_expect_mcp_body`, `_check_adr0261_smoke`)
+hardened: `bash -n` clean, `lint-acceptance-checks` findings `[]`. Closure
+confirmed by a green acceptance run with no capture-race fails.

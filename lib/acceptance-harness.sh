@@ -504,7 +504,26 @@ collect_parallel() {
 #     helper returns — no intermediate commands may touch it.
 #   - --rw selects `_run_and_kill` (WAL grace). --ro selects `_run_and_kill_ro`.
 #     Default is --ro (most MCP probes are read-only).
+#
+# ADR-0321: retry-once-on-transient wrapper. The acceptance wave fans out with
+# no concurrency cap, so under peak self-load the `_run_and_kill_ro` capture can
+# race — the MCP tool exits 0 and returns matching output, yet the read at
+# match-time is short (observed intermittently as "body did not match" / "empty
+# body" across DIFFERENT INV/qual/claims/coordination checks each run, while the
+# diagnostic body clearly matches). Retry ONCE only on a hard FAIL
+# (_CHECK_PASSED == "false"); never retry a PASS or a tool-not-found
+# skip_accepted. Non-weakening: a genuine wrong-output mismatch or a real
+# empty-body bug fails BOTH attempts.
 _expect_mcp_body() {
+  local _emb_attempt
+  for _emb_attempt in 1 2; do
+    __expect_mcp_body_once "$@"
+    [[ "$_CHECK_PASSED" != "false" ]] && return
+    [[ "$_emb_attempt" -eq 1 ]] && { sleep 1; continue; }
+  done
+}
+
+__expect_mcp_body_once() {
   local tool="$1" params="$2" regex="$3"
   local label="${4:-$tool}" timeout="${5:-15}" mode="${6:---ro}"
 
