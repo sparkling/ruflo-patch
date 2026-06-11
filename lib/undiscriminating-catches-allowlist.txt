@@ -150,6 +150,7 @@
 ../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts :: catch { // SONA learning failed, continue without it }
 ../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/memory-tools.ts :: catch { /* QueryOptimizer cache write failed — non-fatal */ }
 ../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/memory-tools.ts :: catch { /* ignore */ }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/memory-tools.ts :: catch { /* namespace probe failed — omit */ }
 ../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/memory-tools.ts :: catch { /* scan error */ }
 ../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/memory-tools.ts :: catch { // AttentionService re-ranking is non-fatal -- continue with unranked results }
 ../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/memory-tools.ts :: catch { // Keep as string }
@@ -179,12 +180,14 @@
 ../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/system-tools.ts :: catch { // empty store }
 ../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/task-tools.ts :: catch { // Return empty store on error }
 ../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/terminal-tools.ts :: catch { // Return empty store }
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/types.ts :: catch { // best-effort — resolver MUST NOT throw }
 ../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/wasm-agent-tools.ts :: catch { /* already gone */ }
 ../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/workflow-tools.ts :: catch { // Return default store on error }
 ../forks/ruflo/v3/@claude-flow/cli/src/memory/ewc-consolidation.ts :: catch { // Ignore deletion errors }
 ../forks/ruflo/v3/@claude-flow/cli/src/memory/ewc-consolidation.ts :: catch { // Ignore stat errors }
 ../forks/ruflo/v3/@claude-flow/cli/src/memory/ewc-consolidation.ts :: catch { // Silently fail - persistence is best-effort }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/intelligence.ts :: catch { /* SONA not yet initialised */ }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/intelligence.ts :: catch { /* memory-tools module not loadable */ }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/intelligence.ts :: catch { /* neural module not loadable */ }
 ../forks/ruflo/v3/@claude-flow/cli/src/memory/intelligence.ts :: catch { // EWC not available, proceed without consolidation protection }
 ../forks/ruflo/v3/@claude-flow/cli/src/memory/intelligence.ts :: catch { // Ignore load errors, start fresh }
 ../forks/ruflo/v3/@claude-flow/cli/src/memory/intelligence.ts :: catch { // Ignore save errors }
@@ -196,7 +199,6 @@
 ../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { /* deferred init failed — controllers that depend on it will surface via getController falling back to intercept.getExisting → null */ }
 ../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { /* deferred init failed; fall through to intercept */ }
 ../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { /* fall through */ }
-../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { /* fall through to fallback */ }
 ../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { /* fall through to intercept */ }
 ../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { /* fall through to namespace read */ }
 ../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { /* fall through to router fallback */ }
@@ -225,6 +227,7 @@
 ../forks/ruflo/v3/@claude-flow/cli/src/ruvector/agent-wasm.ts :: catch { /* best-effort */ }
 ../forks/ruflo/v3/@claude-flow/cli/src/ruvector/diskann-backend.ts :: catch { // Backend failed, skip }
 ../forks/ruflo/v3/@claude-flow/cli/src/ruvector/enhanced-model-router.ts :: catch { // AST analysis not available, continue with text-based routing }
+../forks/ruflo/v3/@claude-flow/cli/src/ruvector/enhanced-model-router.ts :: catch { // read error → leave best-effort Tier-1 (execute() will verify) }
 ../forks/ruflo/v3/@claude-flow/cli/src/ruvector/graph-analyzer.ts :: catch { // Directory not readable, skip }
 ../forks/ruflo/v3/@claude-flow/cli/src/ruvector/graph-analyzer.ts :: catch { // File not readable, skip }
 ../forks/ruflo/v3/@claude-flow/cli/src/ruvector/lora-adapter.ts :: catch { /* fall through to JS fallback */ }
