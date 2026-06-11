@@ -563,3 +563,150 @@ arch-tests trip immediately if a re-introduction slips through.
 | ADR-0317: system_health storage honesty — probe the real store (#1843 hand-port) | hand-ported (upstream #1843) | The `system_health` memory check probed only legacy `.claude-flow/memory/store.json`; the live store is `.swarm/memory.db` + `*.rvf`, so a healthy store reported `degraded` (ADR-0210/0287 reporter-honesty class). Upstream fixed the identical defect in #1843 (`1884ed101`) via a candidate-set `some(existsSync)`. Surgically hand-ported the memory-check hunk (superset of #1843's paths + fork-default RVF surfaces); kept fork `findProjectRoot()`. Out of scope (deferred to a Batch sync): upstream's deep disk/network probes + scorer rewrite. forks/ruflo `f26e858c2`. |
 
 | ADR-0306/0307 doc honesty + cost-tracker pricing | fork-patch (docs; 0307 pricing DIVERGE-correctness) | 0306: USERGUIDE model-tier router relabeled Q-learning→Thompson (matches `model-router.ts`); savings figures reconciled as distinct axes (token/API-$/usage-×/provider) with projected/measured qualifiers; Multi-Model Router mentions labeled as agentic-flow's real ModelRouter (opt-in). 0307: cost-tracker reframed attribution+alerting (HARD_STOP = opt-in gate, hard cut-off = ADR-097); pricing corrected vs the Anthropic pricing page — haiku 0.25/1.25→1.00/5.00/1.25/0.10 AND opus 15/75/18.75/1.50→5.00/25.00/6.25/0.50 (was Opus-4.1-era, 3×-mispriced the default model — same stale class as the named haiku fix); worker cadence documented as a deliberate override (HW-003/WM-108), not aligned. Doc surfaces byte-identical to upstream → fork divergence, but factual-correctness/honesty fixes. forks/ruflo `f26e858c2` + `4aa5082fe`. |
+
+---
+
+## Batch-U upstream sync (ADR-0313) — 2026-06-11
+
+Range `619b263aa..58716fd14` (upstream `ruvnet/ruflo`) — **105 commits** since the
+Batch-T cut (`619b263aa`, 2026-05-23, [[ADR-0228]]). Full per-commit rationale +
+fork-evidence lives in `docs/upstream/batch-u/disposition-{A..F}.md` (6 read-only
+analyst slices: A-intelligence, B-beir, C-graph/rvagent, D-memory/security,
+E-gaia/statusline, F-chore/ci). This section is the canonical disposition record;
+the table at the end accounts for every SHA.
+
+**Disposition summary:** 51 SKIP-by-policy (own pipeline/marketplace/CI/version-scheme,
+ADR-0301/0302) · 24 SKIP-fork-ahead · ~12 HAND-PORT applied · 8 SUPERSEDE · 5 DEFERRED
+(port-eligible follow-ups) · 3 SKIP-merge. Substantive count (feat+fix) was the real
+work; the ~39 chore/release/ci commits were policy skips.
+
+**Applied (fork commits, all tsc --noEmit clean; verified against the release acceptance gate):**
+
+| fork SHA | upstream | what |
+|---|---|---|
+| `d0c991469` | `28eb57543` | #2250 model-router escalation guard (was: opus ~40% on trivial / haiku never — defeated the ADR-0278 bandit) + #2251 daemon-trigger headless race |
+| `cb51b34a0` | `a73a2cbe3`,`bb3489665`,`455152da0`,`313f2f88e`,`c983c0d80`,`5f3d7f33f` | intelligence carve-outs: route-cache BugB, route saveModel #2222, flashAttention honesty #2215, uptime #2235B, prompt-cache #8, EWC-doc honesty, witness sha512Sync crash #2274 |
+| `9a4dfe95c` | `facec4ccc`,`844f68dbe`,`eaaf59d1b`,`4c0144371`,`427308308` | memory/init: auto-memory frontmatter #2282/#2283 + hook cwd #2284, agentdb mock-warning suppress, session atomic writes #2307 + hive-mind await #2297, router regex #2257, RUFLO_DB_PATH env tier #2105 |
+| `1198bc0c3` | `189e14b47` | router-header honesty (Tiny-Dancer/FastGRNN → heuristic+Thompson-bandit) — **amends ADR-0306** (it scoped out the `ruvector/*.ts` headers) |
+| `3d4b68c3d` | `b8a49cfb8`,`02aa8ed53`,`a6dd4ab3d` | statusline cost-symbol toggle, CLAUDE.md `--force` backup #2208, Stop-hook bash-wrap |
+
+**Deferred (recorded, no code this batch — tracked follow-ups):**
+
+- `f5a180423` ADR-147 nested-subagent (depth=5) — large multi-stage feature, branding-coupled, needs ADR-0098/0115 reconciliation; dedicated effort if wanted.
+- `b099b705f` ADR-147 entity arm + signal provenance — clean additive hybridSearch feature (S/LOW), but a feature not a bug; port-eligible follow-up.
+- `1c98cbee6` ADR-144/145 security P1 (AuthorizationPropagator + PluginIntegrityVerifier) — net-new **off-by-default** capability; tension with `feedback-no-dormant-off-by-default-flags` (ship ON+self-inert or not at all); needs a fork ADR + `@noble/ed25519` in `security/package.json`. ADR-146 P2 depends on ToolOutputGuardrail (ADR-131, absent) → inert; don't port alone.
+- `0988d92ce` ADR-143 deterministic Tier-1 codemods — needs a fork trace of whether `enhanced-model-router`'s Agent-Booster Tier-1 is dead/mislabeled like upstream's before porting the TS-compiler codemod engine (no embedding conflict if adopted).
+- `ca77f8307` unified-learning-stats view — observability surface; mechanism superseded by ADR-0290 but the cross-store drift-flagging *view* is port-eligible.
+- Partial carve-out deferrals: `a73a2cbe3` BugC (`--explore false` parser — verify vs ADR-0316) · `455152da0` #2234 (MCP ppid-watchdog — overlaps ADR-0314 leak-hygiene) · `c983c0d80` #14/#6 (reasoning-scrub / tool-loop-guardrail — need the fork's distill seam) · `f08318f2c` two "Use when…" tool-desc clauses (minor).
+
+**Notable SUPERSEDE (deliberate fork divergence — picking would regress):** self-learning ADR-074/075/076/077 → ADR-0290/0295 (re-introduces MiniLM `structured-distill`, conflicts with mpnet ADR-0068/0069) · bandit ADR-142 → ADR-0278 (`${taskType}:${model}` priors subsume upstream's 3-bucket keying) · graph ADR-130 → ADR-0261 · rvagent ADR-129 → ADR-0266/0256/0295 · init allow-rule `cc8830d79` → ADR-0301 (already fixed) · the entire BEIR/BGE/cross-encoder retrieval line (B slice) → fork's mpnet+RVF architecture.
+
+**Per-SHA disposition (all 105):**
+
+| upstream SHA | subject | disposition | fork SHA / note |
+|---|---|---|---|
+| `58716fd14` | chore: sync root package-lock.json to 3.10.41 | SKIP-by-policy |  |
+| `6a2964ac9` | chore(release): bump claude-flow / @claude-flow/cli / ruflo to | SKIP-by-policy |  |
+| `eaaf59d1b` | fix: community bug batch — session atomic writes (#2307), hive | HAND-PORT | 9a4dfe95c |
+| `16a55f7a5` | chore(security): document Socket.dev alert baseline + remove b | SKIP-fork-ahead / SKIP-by-policy |  |
+| `f5a180423` | feat(agents): ADR-147 nested subagent (depth=5) infrastructure | HAND-PORT | DEFERRED — port-eligible follow-up |
+| `4b9b3ba44` | fix(statusline): regenerate committed artifact after #2331 gen | SKIP-by-policy |  |
+| `0f98c80a9` | fix(statusline): resolve version for custom npm prefix + popul | SKIP-fork-ahead |  |
+| `5c2875a25` | docs: fix typo 'ruvflo' -> 'ruflo' in install instructions (#2 | SKIP-by-policy |  |
+| `189e14b47` | docs(router): make model-router docs match shipped impl (#2329 | HAND-PORT | 1198bc0c3 |
+| `cc8830d79` | fix(init): correct MCP allow rule mcp__claude-flow__:* -> mcp_ | SUPERSEDE |  |
+| `568193917` | chore(release): 3.10.39 — ADR-147 entity arm + signal provenan | SKIP-by-policy |  |
+| `b099b705f` | feat(memory): ADR-147 entity arm + signal provenance in hybrid | HAND-PORT | DEFERRED — port-eligible follow-up |
+| `6c1abcf02` | fix(arena): post-merge review patches for #2315 (5 items) (#23 | SKIP-fork-ahead |  |
+| `05f20eaa5` | fix(ci): mark graph-trajectory smoke non-blocking pending #231 | SKIP-by-policy |  |
+| `609649953` | fix(ci): bypass ruvllm forwarding in graph-trajectory smoke (# | SKIP-by-policy |  |
+| `87682a6e7` | feat(plugins): add ruflo-arena — competitive ruliology (arenas | SKIP-by-policy |  |
+| `acb23efcf` | chore(ci): regen v3/pnpm-lock.yaml after @noble/ed25519 dep ad | SKIP-by-policy |  |
+| `0740ec741` | chore(release): 3.10.38 — CI/witness/security cluster fixes (# | SKIP-by-policy |  |
+| `5f3d7f33f` | fix(ci+witness): unblock CI build, witness verify, and traject | SKIP-by-policy | cb51b34a0 |
+| `d065b1592` | chore(release): 3.10.37 — auto-memory cluster fixes (#2281–#22 | SKIP-by-policy |  |
+| `facec4ccc` | fix(memory): auto-memory cluster — frontmatter parse, `_` path | HAND-PORT | 9a4dfe95c |
+| `844f68dbe` | fix(memory): drop agentdb's stale "Falling back to mock embedd | HAND-PORT | 9a4dfe95c |
+| `9db902489` | fix(memory): rescue agentdb's mock-embedder fallback when ruve | SKIP-fork-ahead |  |
+| `1c98cbee6` | feat(security): P1 implementations for ADR-144, ADR-145, ADR-1 | HAND-PORT | DEFERRED — port-eligible follow-up |
+| `08bf1cf32` | docs(adr): three Proposed security ADRs (144, 145, 146) coveri | SKIP-fork-ahead |  |
+| `d79f51b74` | fix(ci): 3 last newly-visible failures — env-var audit, wizard | SKIP-by-policy |  |
+| `920ba4b04` | fix(supply-chain): correct tracking issue ref in vitest accept | SKIP-by-policy |  |
+| `f08318f2c` | fix(ci): green up the 3 audit jobs newly visible after the YAM | SKIP-by-policy |  |
+| `7d67d3246` | fix(ci): regenerate v3/pnpm-lock.yaml — agentdb alpha.14→alpha | SKIP-by-policy |  |
+| `07b4c8609` | release: 3.10.33 + CI regression guards for #2267 / #2257 / #2 | SKIP-by-policy |  |
+| `4c0144371` | fix: #2267 #2257 #2256 #2253 — CI/router/ONNX bug cluster | HAND-PORT | 9a4dfe95c |
+| `f57b69876` | Update README.md | SKIP-by-policy |  |
+| `f5570eb70` | chore(data): clone snapshot #5 — 0 clones (14d) | SKIP-by-policy |  |
+| `28eb57543` | fix: #2250 model router escalation override + #2251 daemon tri | HAND-PORT | d0c991469 |
+| `ef4acc49d` | feat(beir): 4-dataset BEIR (SciDocs joins) + config divergence | SKIP-by-policy |  |
+| `05bb9cf7e` | feat(beir): 3-dataset BEIR + ruvector@0.2.27 + #2246 fixes (AD | SKIP-by-policy |  |
+| `aa810856f` | feat(beir): Lucene BM25 + RRF + CE rerank — passes the accepta | SKIP-fork-ahead / SKIP-by-policy |  |
+| `ea99215f8` | feat(beir): RRF ablation harness + HONEST NEGATIVE RESULT (ADR | SKIP-by-policy |  |
+| `149027817` | feat(intelligence): BEIR matrix + bootstrap CIs + 2nd dataset  | SKIP-by-policy |  |
+| `004cc2524` | feat(intelligence): BEIR public benchmark + BGE bi-encoder — r | SKIP-fork-ahead |  |
+| `709b85949` | feat(intelligence): cross-repo generalisation proof (ADR-084,  | SKIP-by-policy |  |
+| `d3223dc3d` | feat(intelligence): joint rerank re-grid + conditional default | SKIP-fork-ahead |  |
+| `fc39e29f2` | feat(intelligence): grid-search retrieval defaults vs labelled | SKIP-fork-ahead |  |
+| `17ce6ba67` | feat(intelligence): labelled held-out corpus + nDCG metrics (A | SKIP-by-policy |  |
+| `57a4a1b73` | feat(intelligence): cross-encoder reranker (ADR-080, 3.10.20) | SKIP-fork-ahead |  |
+| `e6b557cb3` | feat(intelligence): multi-field BM25 + opt-in type penalty (AD | SKIP-fork-ahead |  |
+| `62df8a184` | feat(intelligence): hybrid retrieval + outcome signal (ADR-078 | SKIP-fork-ahead |  |
+| `0aac1e13f` | feat(intelligence): pretrain self-learning from repo history ( | SUPERSEDE |  |
+| `2b9e2de89` | feat(intelligence): Round B (post-edit/-command + trajectory-e | SUPERSEDE |  |
+| `ca77f8307` | feat(intelligence): unified learning-stats aggregator (ADR-075 | SUPERSEDE | DEFERRED — port-eligible follow-up |
+| `d29d87fb7` | Merge fix/self-learning-2245: ADR-074 self-learning wiring (cl | SKIP-merge |  |
+| `d3771e1cf` | chore(release): bump 3.10.13 → 3.10.14 (ADR-074 self-learning  | SKIP-by-policy |  |
+| `aca2280f1` | feat(intelligence): self-learning wiring + honest multi-path o | SUPERSEDE |  |
+| `e6dc21fc7` | chore(release): bump 3.10.12 → 3.10.13 + agentdb@3.0.0-alpha.1 | SKIP-by-policy |  |
+| `367cb82ad` | chore: remove conflicting root overrides.agentdb (kept in rufl | SKIP-fork-ahead |  |
+| `cea01866e` | chore(release): bump 3.10.11 → 3.10.12 + agentdb@3.0.0-alpha.1 | SKIP-by-policy |  |
+| `48ca36948` | chore(release): bump 3.10.10 → 3.10.11 (4-issue bug cluster) | SKIP-by-policy |  |
+| `455152da0` | fix(intelligence): 4-issue bug cluster — Opus 4.8 + uptime + M | Mixed → #2235B HAND-PORT + #2234 FLAG; #2232 f | cb51b34a0 |
+| `0403a3427` | feat(cost-tracker): wire codemod benchmark into cost-trend (AD | SKIP-fork-ahead |  |
+| `0545d7643` | Merge feat/deterministic-tier1-codemods: deterministic Tier-1  | SKIP-merge |  |
+| `0988d92ce` | feat(intelligence): deterministic Tier-1 codemods replacing Ag | SKIP-fork-ahead | DEFERRED — port-eligible follow-up |
+| `6198abfab` | fix(plugins): reconcile stale smoke contract assertions across | SKIP-fork-ahead |  |
+| `fd483f28d` | feat(workflows): add full-system-test native workflow | SKIP-by-policy |  |
+| `c983c0d80` | feat(intelligence): Hermes-Agent Tier-1 adoptions — prompt cac | HAND-PORT | cb51b34a0 |
+| `313f2f88e` | feat(intelligence): per-task bandit priors (ADR-142) + honest  | SUPERSEDE | cb51b34a0 |
+| `951cc320f` | docs: ruflo-workflows v0.4.0 native-Workflow orchestration + A | SKIP-by-policy |  |
+| `a73a2cbe3` | fix(routing): stale route cache + --explore false (3.10.8) (#2 | HAND-PORT | cb51b34a0 |
+| `08b362375` | fix+perf+docs(intelligence): self-learning audit, hardening fi | SKIP-fork-ahead |  |
+| `bb3489665` | fix: #2219 #2221 #2222 #2215 #2226 — memory/routing/statusline | Mixed → #2222 + #2215 = HAND-PORT; rest SKIP-f | cb51b34a0 |
+| `b8a49cfb8` | feat(statusline): configurable cost symbol and hide toggle (#2 | HAND-PORT | 3d4b68c3d |
+| `6efe68fa1` | docs(adr): ADR-129 status → Accepted + Gap 2 implementation re | SKIP-fork-ahead |  |
+| `e7005d4d2` | docs(gaia): submission reproducibility package (stable 34/53 c | SKIP-by-policy |  |
+| `9085a4b34` | chore: remove one-shot publish workflows (3.10.4 + 3.10.5 both | SKIP-fork-ahead |  |
+| `9fa352ede` | chore(release): bump 3.10.4 → 3.10.5 (wizard init fixes #2206  | SKIP-fork-ahead |  |
+| `02aa8ed53` | fix(init): #2206 #2207 #2208 — wizard server key, init detecto | HAND-PORT | 3d4b68c3d |
+| `3ef6e175d` | feat(gaia): #2156 iter 63 — convergence layer (34/53, +2.5 vs  | SKIP-by-policy |  |
+| `663f5fe24` | feat(gaia): #2156 iter 62 — convergence layer (deterministic f | SKIP-by-policy |  |
+| `e7ec82f8c` | benchmarks: iter 56 — CodeAgent 53Q full measurement (30/53, 5 | SKIP-by-policy |  |
+| `cea20282d` | feat(gaia): #2156 iter 53b — attachment tools (xlsx, pptx, py, | SKIP-by-policy |  |
+| `2158808f7` | fix(gaia): #2156 iter 53a — narrow T2 extraction to fix iter 5 | SKIP-by-policy |  |
+| `a042ded01` | fix(publish-workflow): build full v3 workspace before @claude- | SKIP-by-policy |  |
+| `38a016e1d` | chore(release): bump 3.10.3 → 3.10.4 (statusline fix #2195) +  | SKIP-by-policy |  |
+| `2b9c0e714` | fix(statusline): #2195 — generator delegates to hooks-statusli | SKIP-fork-ahead |  |
+| `a6dd4ab3d` | fix(plugins/ruflo-core/hooks): #2155 — wrap 3 unwrapped .sh ho | HAND-PORT | 3d4b68c3d |
+| `3a919a60f` | chore(data): clone snapshot #4 — 0 clones (14d) | SKIP-by-policy |  |
+| `733ada1b9` | fix(release): #2151 — three-way version lockstep + CI guard (# | SKIP-by-policy |  |
+| `60f37f2d3` | fix(ci): graph benchmark process.exit — eliminate 40-min hang  | SKIP-fork-ahead |  |
+| `427308308` | feat: #2105 CLAUDE_FLOW_DB_PATH + #2058 team gateway checklist | HAND-PORT | 9a4dfe95c |
+| `6778628e9` | fix(security): #security-review v3.10 — bounds-check decodeEmb | SKIP-fork-ahead |  |
+| `3b0dc837a` | chore: project-wide quality sweep — no dead code, no slop, wit | SKIP-by-policy |  |
+| `00f8a9fb2` | chore(deps): bump pnpm/action-setup from 2 to 6 | SKIP-by-policy |  |
+| `cdd5308d8` | fix(hooks): #2132 — Windows-compatible Node shim + init-time p | SKIP-by-policy |  |
+| `19984c206` | feat(ci): #2132 — cross-platform audit for plugin hooks.json c | SKIP-by-policy |  |
+| `31809ebeb` | feat(ci): #2127 — guard against stale alpha-tagged wrapper dep | SKIP-by-policy |  |
+| `792044633` | fix(ruflo): #2127 — tighten @claude-flow/cli dep from ^3.7.0-a | SKIP-by-policy |  |
+| `10086c4bb` | ci: add timeout-minutes: 40 to graph-benchmark job (ADR-130 P6 | SKIP-by-policy |  |
+| `e1bd1f072` | chore: bump all packages to 3.10.0 — ADR-130 P4+P5+P6 | SKIP-by-policy |  |
+| `16810c3e2` | fix(bench): ADR-130 P6 — CI-friendly benchmark using single-se | SKIP-fork-ahead |  |
+| `edde98f9e` | feat(graph): ADR-130 — unified graph intelligence backend (P1- | SUPERSEDE |  |
+| `542481053` | docs(adr): #ADR-130 — graph intelligence integration + improve | SUPERSEDE |  |
+| `899163cb8` | docs(readme): link Benchmarks gist + SOTA internals from Docum | SKIP-by-policy |  |
+| `bf0f505c9` | chore(release): v3.8.0 — ADR-129 rvagent full integration | SKIP-by-policy |  |
+| `47a7825b0` | feat(rvagent): #ADR-129 — full rvagent integration (4 phases)  | SKIP-fork-ahead |  |
+| `c9ec2b607` | Merge pull request #2122 from ruvnet/fix/2120-memory-status-ba | SKIP-merge |  |
+| `cfc341706` | fix(memory): #2120 — accept NULL status in memory_entries (leg | SKIP-fork-ahead |  |

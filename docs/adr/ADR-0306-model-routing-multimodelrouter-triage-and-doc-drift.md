@@ -274,3 +274,16 @@ Two material corrections:
 The user-facing README (rewritten 2026-06-09, commit `38ac38a`) already
 reflects the CostOptimizerService; this ADR's first Addendum was one
 investigation-generation behind its own counterpart.
+
+### Amendment (2026-06-11): source-header honesty closed via Batch-U
+
+ADR-0306 scoped itself to `USERGUIDE.md:894` (Q-learning→Thompson) + the
+`integration/multi-model-router.ts` triage, and explicitly left the
+`v3/@claude-flow/cli/src/ruvector/*.ts` source headers untouched — which still
+described a "Tiny Dancer / FastGRNN" neural router the fork never wired in.
+Upstream `189e14b47` (#2329) fixed the identical drift on its side; that
+hand-port landed in Batch-U ([[ADR-0313]], forks/ruflo `1198bc0c3`):
+`model-router.ts` header rewritten to the accurate heuristic + Thompson/Beta
+bandit mechanism, and `enhanced-model-router.ts`'s `tinyDancerRouter` field
+renamed `baseRouter` (public `tinyDancerStats` telemetry key preserved). Zero
+behavioural delta; closes the source-header half of the doc-drift this ADR opened.

@@ -62,8 +62,8 @@ Rationale:
 
 The remaining 14 (defer) + 3 (pull-pending) are gated on:
 
-1. **Primary** — next upstream-sync ADR (any future "Batch U" or successor against `ruvnet/ruflo`).
-2. **Secondary** — `ruvnet/ruflo` accumulating ≥50 new commits since 2026-05-23 (signals divergence cost is growing; current state: 0 new commits).
+1. **Primary** — next upstream-sync ADR (any future "Batch U" or successor against `ruvnet/ruflo`). **CLOSED 2026-06-11 — [[ADR-0313]] is that Batch-U sync.**
+2. **Secondary** — `ruvnet/ruflo` accumulating ≥50 new commits since 2026-05-23 (signals divergence cost is growing; ~~current state: 0 new commits~~ → **FIRED: 105 commits by 2026-06-09; dispositioned + closed in Batch-U, [[ADR-0313]], 2026-06-11**).
 3. **Tertiary** — a fork-side bug surfaces whose fix lives in one of the 9 misc commits — pick that one ad-hoc with provenance recorded in INTEGRATION-LEDGER.md.
 
 ### Consequences
