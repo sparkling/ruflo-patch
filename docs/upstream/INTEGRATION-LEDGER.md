@@ -733,3 +733,21 @@ the real TS-compiler codemod executor), `f5a180423` ADR-147 nested-subagent,
 unified-stats view, `c983c0d80` #14/#6 (reasoning-scrub / tool-loop-guardrail).
 Plus a separate "Token Optimizer (Agent Booster) 352x" CLAUDE.md claim in an
 unrelated subsystem (`getTokenOptimizer`) flagged for its own verification.
+
+### Batch-U follow-up wave 2 (2026-06-11): deferred features implemented via /ruflo-swarm:swarm
+
+5 parallel implementation agents (queen integration: build/review/commit/ADRs/release).
+
+| item | upstream | verdict | fork SHA | ADR |
+|---|---|---|---|---|
+| codemod ENGINE — executable Tier-1 ($0, "fix B") | `0988d92ce` | IMPLEMENTED | `a19e479b7` + `bf8d585f9` (tool) | 0322 |
+| entity arm + signal provenance (hybridSearch) | `b099b705f` | IMPLEMENTED | `92aa25e23` | 0323 |
+| ADR-144/145 security P1 (Ed25519, ON+self-inert) | `1c98cbee6` | IMPLEMENTED | `955df69db` | 0324 |
+| unified-learning-stats read-through view | `ca77f8307` | IMPLEMENTED | `bf8d585f9` | 0326 |
+| reasoning-scrub + tool-loop-guardrail | `c983c0d80` #14/#6 | IMPLEMENTED | `bf8d585f9` | 0327 |
+| Token-Optimizer "352x"/"100%" doc claim | (fork CLAUDE.md) | FIXED (vaporware → honest) | `31d628e6f` | 0319-amend |
+| nested-subagent depth=5 | `f5a180423` | **DEFERRED** — INERT (CLI 2.1.169 strips `Task` from children) + `ruflo-agent` plugin-name unresolved + tier-2 conflicts ADR-0098/0115 | — | 0325 (design record) |
+
+Notes: `typescript` moved cli devDep→dependency (codemod engine imports it at
+runtime). `@noble/ed25519` added to `security/package.json`. Security shipped
+ON+self-inert (not upstream's off-by-default) per `feedback-no-dormant-off-by-default-flags`.

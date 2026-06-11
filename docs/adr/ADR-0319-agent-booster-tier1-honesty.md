@@ -72,3 +72,15 @@ for the inference intents. Rides the cli vitest suite (pipeline test-ci).
 
 Batch-U row in `docs/upstream/INTEGRATION-LEDGER.md`; upstream `0988d92ce`/ADR-143.
 Honesty lineage: [[ADR-0287]], [[ADR-0306]], [[ADR-0317]].
+
+### Amendment (2026-06-11): Token Optimizer "352x"/"100%" claims (same vaporware class)
+
+The Batch-U deferred-followup sweep found a sibling overclaim in the root
+`CLAUDE.md` "Token Optimizer (Agent Booster)" section (the separate
+`getTokenOptimizer` / `@claude-flow/integration` subsystem): "352x faster edits"
++ "100% success rate". `optimizedEdit()` returns `speedupFactor:1`/`'traditional'`
+when no agent-booster backend is present — and the fork ships none (this ADR) — so
+352x never happens; `getOptimalConfig` returns 0.90-0.95, not 100%. Reworded to
+honest/projected framing; real $0 deterministic edits now point at the [[ADR-0322]]
+codemod engine. `getCompactContext` + `getTokenOptimizer` are real (kept).
+Doc-only (the impl already falls back honestly). forks/ruflo `31d628e6f`.
