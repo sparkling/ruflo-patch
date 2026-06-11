@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-06-11
 tags: [acceptance, harness, flaky-test, capture-race, perf-gate]
 supersedes: []

@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-06-11
 tags: [routing, honesty, agent-booster, dead-code, fix, batch-u-followup]
 supersedes: []

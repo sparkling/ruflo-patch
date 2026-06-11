@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-06-11
 tags: [cli, parser, flag-validation, fix, upstream-shared, batch-u-followup]
 supersedes: []
