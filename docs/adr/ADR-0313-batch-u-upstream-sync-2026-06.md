@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-06-10
 tags: [upstream-sync, batch-u, integration-ledger, sequenced-last]
 supersedes: []
@@ -126,3 +126,29 @@ Until then this ADR stays `proposed`.
   `16a55f7a5` (2026-06-09, #2340) — refresh at execution.
 * Sequencing decision: Henrik, 2026-06-10 — "needs to be its own ADR … do this
   last, after we fixed everything else."
+
+## Amendment (2026-06-11): Batch-U executed + shipped — ACCEPTED
+
+All five tasks complete; status `proposed` → `accepted`.
+
+- **T1** — baseline pinned: Batch-T cut `619b263aa` (2026-05-23); upper bound
+  refreshed to `58716fd14` (2026-06-10). Range = **105 commits**.
+- **T2** — every commit dispositioned (6 read-only analyst slices,
+  `docs/upstream/batch-u/disposition-{A..F}.md`). ~12 HAND-PORT applied across 5
+  fork commits (`forks/ruflo` `d0c991469`, `cb51b34a0`, `9a4dfe95c`, `1198bc0c3`,
+  `3d4b68c3d`); 51 SKIP-by-policy, 24 SKIP-fork-ahead, 8 SUPERSEDE, 5 DEFERRED
+  (port-eligible follow-ups), 3 SKIP-merge.
+- **T3** — `docs/upstream/INTEGRATION-LEDGER.md` Batch-U section: summary +
+  applied-pick→fork-SHA map + deferred list + full 105-row per-SHA table.
+- **T4** — [[ADR-0252]] re-eval trigger 2 + [[ADR-0233]] §A "0 new commits"
+  lines reconciled → FIRED + CLOSED by this record.
+- **T5** — released from the main checkout: `@sparkleideas/cli@3.7.0-alpha.10-patch.437`,
+  **full acceptance 757 pass / 0 fail / 10 skip_accepted**; gated fork push to
+  `sparkling` fired (4 forks). The high-value picks (#2250 escalation, #2222+BugB
+  route persistence, #2274 witness crash, #2283 frontmatter parse, #2257 router
+  regex, RUFLO_DB_PATH env tier) are live.
+
+Deferred follow-ups (tracked in the ledger, no code this batch): ADR-147
+nested-subagent + entity-arm, ADR-144/145 off-by-default security (needs a fork
+ADR), ADR-143 Tier-1 codemods (needs Agent-Booster-dead trace), unified-stats
+view, `--explore` parser (vs ADR-0316), MCP ppid-watchdog (vs ADR-0314).
