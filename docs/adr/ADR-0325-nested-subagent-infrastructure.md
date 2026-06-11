@@ -264,20 +264,53 @@ The tier-2 "queen" agents (per-spawn `swarm_init`/`hive-mind_spawn`) conflict wi
 [[ADR-0098]]/[[ADR-0115]] and were already scoped out. Revisit when the CLI
 Task-strip gate lifts + the plugin-home is ratified.
 
-### Verification (2026-06-11): inert-claim confirmed EMPIRICALLY on CLI 2.1.173
+### Verification (2026-06-11): the real evidence is UPSTREAM's own probe — and it is INCONCLUSIVE
 
-The "inert" deferral rationale was initially relayed from upstream's ADR-147
-finding (tested on CLI **2.1.169**). On challenge, it was re-verified on the
-running CLI **2.1.173** with a live probe: a spawned `general-purpose` subagent's
-toolset was exactly `[Bash, Edit, Read, Skill, ToolSearch, Write]` — **no `Task`
-/ `Agent` tool** — and `ToolSearch("select:Task,Agent")` returned "No matching
-deferred tools found". So the native nested-`Task` capability that upstream's
-ADR-147 depends on is still stripped from spawned children on 2.1.173 (the
-denylist has NOT lifted across 2.1.169→2.1.173). The deferral stands, now
-evidence-backed.
+This section corrects two earlier overstatements (the record matters more than
+saving face):
 
-Caveat: spawned children DO retain the MCP spawn surfaces
+**Retraction 1 — "strips `Task` from spawned children" was an oversimplification.**
+That phrasing was relayed from the A4 implementation agent, not from upstream's
+text.
+
+**Retraction 2 — my own re-verification tested the WRONG configuration.** On
+challenge I spawned a `general-purpose` agent and observed it had no `Task`/`Agent`
+tool, and called that confirmation. But `general-purpose` declares **no `tools:`
+frontmatter**, so it only demonstrates the *default baseline* (plain children
+don't inherit `Task`). Upstream's entire mechanism is the **override**: grant
+`Task` to a child via explicit `tools: [Task]` frontmatter. My probe never
+exercised that path, so it did not bear on the question at all. You cannot test
+a feature we never ported by probing an unrelated default-config agent.
+
+**The authoritative evidence is upstream's own committed probe** (`f5a180423`,
+`docs/probes/nested-spawn-depth-*.txt`), read directly:
+
+- The probed agent `nested-coordinator.md` **does** declare the override:
+  `tools: [Task, Read, Grep, Glob, TodoWrite, Bash]`.
+- Upstream's probe (`scripts/probe-nested-spawn-depth.mjs`) spawned exactly that
+  agent on CLI **2.1.169** and recorded, **twice**:
+  `FINAL: level=1 status=NO_AGENT_TOOL`.
+- Upstream's own verdict, verbatim: *"INCONCLUSIVE — Agent tool was missing at
+  level=1. Likely the `tools: [Task]` frontmatter is not being honored by this
+  CLI build, or the cache stage didn't include the agent file at that level."*
+- The commit is **"P1 + P2 stage 1" of a 4-phase rollout** — staging plumbing
+  shipped with an explicit hedge, not a demonstrated working capability.
+
+**Honest status:** "does nested-subagent work upstream?" → by upstream's *own*
+evidence, **not demonstrated** — even with the correct `tools: [Task]` agent,
+nesting failed at the first level and upstream could not say why (frontmatter not
+honored, or plugin-cache not propagated). So the deferral is **correct, and
+stronger than originally argued**: we would be hand-porting non-working staged
+infrastructure, under a `ruflo-agent` plugin name the fork rejected.
+
+**Still genuinely untested (do not claim otherwise):** whether a properly-declared
+`tools: [Task]` agent gets `Task` as a spawned child on *our* running CLI
+**2.1.173**. Settling that would require building a minimal `tools: [Task]` probe
+agent and running it — i.e. implementing a slice of the feature. Not done; not
+needed to justify the deferral.
+
+Caveat (unchanged): spawned children DO retain the MCP spawn surfaces
 (`mcp__ruflo__agent_spawn`, `mcp__ruflo__hive-mind_spawn`) — a *different*
 mechanism the fork already ships. A nested-orchestration feature built on the MCP
-surface (rather than upstream's native-`Task` ADR-147 design) could function
-today; that would be a distinct design, not this hand-port.
+surface (rather than upstream's native-`Task` design) is a distinct option, not
+this hand-port.
