@@ -263,3 +263,21 @@ Two blockers surfaced during implementation:
 The tier-2 "queen" agents (per-spawn `swarm_init`/`hive-mind_spawn`) conflict with
 [[ADR-0098]]/[[ADR-0115]] and were already scoped out. Revisit when the CLI
 Task-strip gate lifts + the plugin-home is ratified.
+
+### Verification (2026-06-11): inert-claim confirmed EMPIRICALLY on CLI 2.1.173
+
+The "inert" deferral rationale was initially relayed from upstream's ADR-147
+finding (tested on CLI **2.1.169**). On challenge, it was re-verified on the
+running CLI **2.1.173** with a live probe: a spawned `general-purpose` subagent's
+toolset was exactly `[Bash, Edit, Read, Skill, ToolSearch, Write]` — **no `Task`
+/ `Agent` tool** — and `ToolSearch("select:Task,Agent")` returned "No matching
+deferred tools found". So the native nested-`Task` capability that upstream's
+ADR-147 depends on is still stripped from spawned children on 2.1.173 (the
+denylist has NOT lifted across 2.1.169→2.1.173). The deferral stands, now
+evidence-backed.
+
+Caveat: spawned children DO retain the MCP spawn surfaces
+(`mcp__ruflo__agent_spawn`, `mcp__ruflo__hive-mind_spawn`) — a *different*
+mechanism the fork already ships. A nested-orchestration feature built on the MCP
+surface (rather than upstream's native-`Task` ADR-147 design) could function
+today; that would be a distinct design, not this hand-port.
