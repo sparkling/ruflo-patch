@@ -30,38 +30,43 @@ _p7_cli_check() {
   _CHECK_OUTPUT=""
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp /tmp/p7-cli-${label}-XXXXX)
-
   local cmd="cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli $subcmd 2>&1"
-  _run_and_kill_ro "$cmd" "$work" "$timeout"
-  local exit_code="${_RK_EXIT:-1}"
-  local body; body=$(cat "$work" 2>/dev/null || echo "")
 
-  rm -f "$work" 2>/dev/null
+  # ADR-0321: the acceptance wave fans out with no concurrency cap, so under
+  # peak self-load a `_run_and_kill_ro` capture can race (command exits 0 and
+  # produces matching output, yet the read at match-time is short — observed
+  # intermittently as "exited 0 but output did not match" while the diagnostic
+  # body clearly matches). Retry ONCE on any transient outcome (kill, empty,
+  # or no-match). This does NOT weaken the assertion: a genuinely broken
+  # command fails both attempts (non-zero exit or a persistent mismatch); only
+  # a transient capture race is rescued.
+  local attempt exit_code body
+  for attempt in 1 2; do
+    local work; work=$(mktemp /tmp/p7-cli-${label}-XXXXX)
+    _run_and_kill_ro "$cmd" "$work" "$timeout"
+    exit_code="${_RK_EXIT:-1}"
+    body=$(cat "$work" 2>/dev/null || echo "")
+    rm -f "$work" 2>/dev/null
 
-  # ─── Exit code check ──────────────────────────────────────────
+    if [[ "$exit_code" -eq 0 && -n "$body" ]] && echo "$body" | grep -qiE "$expected_pattern"; then
+      _CHECK_PASSED="true"
+      _CHECK_OUTPUT="P7/${label}: exits 0, output matches /${expected_pattern}/i${attempt:+ (attempt ${attempt})}"
+      return
+    fi
+    # Non-pass: retry once (transient), else fall through to the diagnostic.
+    [[ "$attempt" -eq 1 ]] && { sleep 1; continue; }
+  done
+
+  # ─── Final diagnostic (both attempts non-pass) ────────────────
   if [[ "$exit_code" -ne 0 ]]; then
-    _CHECK_OUTPUT="P7/${label}: exited ${exit_code} (expected 0). Output (first 10 lines):
+    _CHECK_OUTPUT="P7/${label}: exited ${exit_code} (expected 0; 2 attempts). Output (first 10 lines):
 $(echo "$body" | head -10)"
-    return
-  fi
-
-  # ─── Non-empty output check ───────────────────────────────────
-  if [[ -z "$body" ]]; then
-    _CHECK_OUTPUT="P7/${label}: exited 0 but produced no output"
-    return
-  fi
-
-  # ─── Pattern match ────────────────────────────────────────────
-  if echo "$body" | grep -qiE "$expected_pattern"; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="P7/${label}: exits 0, output matches /${expected_pattern}/i"
-    return
-  fi
-
-  _CHECK_PASSED="false"
-  _CHECK_OUTPUT="P7/${label}: exited 0 but output did not match /${expected_pattern}/i. Output (first 10 lines):
+  elif [[ -z "$body" ]]; then
+    _CHECK_OUTPUT="P7/${label}: exited 0 but produced no output (2 attempts)"
+  else
+    _CHECK_OUTPUT="P7/${label}: exited 0 but output did not match /${expected_pattern}/i (2 attempts). Output (first 10 lines):
 $(echo "$body" | head -10)"
+  fi
 }
 
 # ════════════════════════════════════════════════════════════════════
