@@ -710,3 +710,26 @@ work; the ~39 chore/release/ci commits were policy skips.
 | `47a7825b0` | feat(rvagent): #ADR-129 — full rvagent integration (4 phases)  | SKIP-fork-ahead |  |
 | `c9ec2b607` | Merge pull request #2122 from ruvnet/fix/2120-memory-status-ba | SKIP-merge |  |
 | `cfc341706` | fix(memory): #2120 — accept NULL status in memory_entries (leg | SKIP-fork-ahead |  |
+
+### Batch-U follow-up (2026-06-11): 3 flagged items verified GENUINE + implemented
+
+The Batch-U deferred-FLAG items were investigated (3 read-only verification
+agents) and all three came back GENUINE → hand-ported (own ADRs):
+
+| upstream | flag | verdict | fix | fork SHA | ADR |
+|---|---|---|---|---|---|
+| `a73a2cbe3` (Bug C) | `--explore false` parser vs ADR-0316 | GENUINE (orthogonal to ADR-0316) | consume space-form boolean literal | `17a5932f7` | ADR-0318 |
+| `0988d92ce` (ADR-143) | Agent-Booster Tier-1 dead/mislabeled? | GENUINE honesty gap | narrow $0 Tier-1 to 3 deterministic intents, drop WASM/352x/$0 + phantom tool, delete dead `execute()`/`tryAgentBooster()` | `2227145c2` | ADR-0319 |
+| `455152da0` (#2234) | MCP ppid-watchdog vs ADR-0314 | GENUINE (ADR-0314 = browser only; inline MCP path has no SIGTERM fallback) | parent-death watchdog wired into `bin/cli.js` inline (NOT mcp.ts dead-path) | `393ed7ee7` | ADR-0320 |
+
+Key correction for future syncs: #2234 = **ADAPT not cherry-pick** — upstream
+wired its watchdog into `mcp.ts` startCommand, which is DEAD in the fork (live
+path is `bin/cli.js` inline). Shipped post-Batch-U.
+
+**Still deferred (ledger-tracked, unchanged):** `0988d92ce` engine port (fix B —
+the real TS-compiler codemod executor), `f5a180423` ADR-147 nested-subagent,
+`b099b705f` ADR-147 entity arm, `1c98cbee6` ADR-144/145 off-by-default security
+(needs a fork ADR per `feedback-no-dormant-off-by-default-flags`), `ca77f8307`
+unified-stats view, `c983c0d80` #14/#6 (reasoning-scrub / tool-loop-guardrail).
+Plus a separate "Token Optimizer (Agent Booster) 352x" CLAUDE.md claim in an
+unrelated subsystem (`getTokenOptimizer`) flagged for its own verification.
