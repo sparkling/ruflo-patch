@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-06-11
 tags: [memory, hybrid-search, entity, rrf, batch-u-followup, upstream-port]
 supersedes: []

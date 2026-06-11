@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-06-11
 tags: [intelligence, hooks, embeddings, guardrail, batch-u-followup, upstream-port]
 supersedes: []

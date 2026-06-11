@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-06-11
 tags: [security, authorization, plugin-integrity, ed25519, batch-u-followup, upstream-port]
 supersedes: []
